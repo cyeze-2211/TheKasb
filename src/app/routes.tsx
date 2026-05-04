@@ -9,6 +9,7 @@ const DashboardPremium = lazy(() =>
   import('./pages/DashboardPremium').then((m) => ({ default: m.DashboardPremium })),
 );
 const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
+const UserDetail = lazy(() => import('./pages/UserDetail').then((m) => ({ default: m.UserDetail })));
 const Candidates = lazy(() => import('./pages/Candidates').then((m) => ({ default: m.Candidates })));
 const CandidateDetail = lazy(() =>
   import('./pages/CandidateDetail').then((m) => ({ default: m.CandidateDetail })),
@@ -76,6 +77,14 @@ export const router = createBrowserRouter([
             element: (
               <LazyBoundary>
                 <Users />
+              </LazyBoundary>
+            ),
+          },
+          {
+            path: 'users/:id',
+            element: (
+              <LazyBoundary>
+                <UserDetail />
               </LazyBoundary>
             ),
           },

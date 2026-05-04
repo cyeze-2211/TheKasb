@@ -2,16 +2,16 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
-
-const STORAGE_KEY = 'kasb_admin_session';
+import type { LoginResult } from '../api/auth';
+import { loginWithApi, parseLoginResponse } from '../api/auth';
+import { clearKasbAuthStorage, readLoginSessionRaw } from './loginSession';
 
 export type AuthUser = {
-  email: string;
+  phone: string;
   displayName: string;
   roleLabel: string;
 };
@@ -19,44 +19,38 @@ export type AuthUser = {
 type AuthContextValue = {
   user: AuthUser | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => boolean;
+  /** `phone` — API formatida, masalan `+998901234567` */
+  login: (phone: string, password: string) => Promise<LoginResult>;
   logout: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 function readStoredUser(): AuthUser | null {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as AuthUser;
-    if (!parsed?.email) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  const raw = readLoginSessionRaw();
+  if (!raw) return null;
+  const { user } = parseLoginResponse(raw, '');
+  if (!user.phone) return null;
+  return user;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
 
-  useEffect(() => {
-    if (user) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-    else sessionStorage.removeItem(STORAGE_KEY);
-  }, [user]);
-
-  const login = useCallback((email: string, password: string) => {
-    const trimmed = email.trim();
-    if (!trimmed || password.length < 4) return false;
-    setUser({
-      email: trimmed,
-      displayName: 'Sardor A.',
-      roleLabel: 'SUPER ADMIN',
-    });
-    return true;
+  const login = useCallback(async (phone: string, password: string): Promise<LoginResult> => {
+    const result = await loginWithApi(phone, password);
+    if (result.success) {
+      setUser(result.user);
+    } else {
+      setUser(null);
+    }
+    return result;
   }, []);
 
-  const logout = useCallback(() => setUser(null), []);
+  const logout = useCallback(() => {
+    clearKasbAuthStorage();
+    setUser(null);
+  }, []);
 
   const value = useMemo(
     () => ({

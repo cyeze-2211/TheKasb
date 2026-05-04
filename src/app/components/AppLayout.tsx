@@ -87,7 +87,7 @@ export function AppLayout() {
   };
 
   const displayName = user?.displayName ?? 'Administrator';
-  const email = user?.email ?? '';
+  const phone = user?.phone ?? '';
   const sidebarWidthClass = collapsed ? 'w-[4.25rem]' : 'w-60';
   const ini = initials(displayName) || 'A';
 
@@ -191,7 +191,7 @@ export function AppLayout() {
                 </div>
                 <div className="min-w-0 flex-1 pt-0.5">
                   <p className="truncate text-sm font-semibold tracking-tight text-white">{displayName}</p>
-                  <p className="mt-0.5 truncate text-xs leading-relaxed text-slate-400">{email}</p>
+                  <p className="mt-0.5 truncate text-xs leading-relaxed text-slate-400">{phone}</p>
                 </div>
               </div>
               <button

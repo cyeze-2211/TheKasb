@@ -2,6 +2,12 @@ import { useState, useEffect, type FormEvent } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { btnPrimaryLg, ctlInputLg, pageKicker, panelEliteRaised } from '../components/pageChrome';
+import {
+  formatNationalDisplay,
+  sanitizeNationalDigits,
+  toApiPhone,
+  UZ_PHONE_PREFIX,
+} from '../lib/uzPhone';
 
 export function Login() {
   const { login, isAuthenticated } = useAuth();
@@ -9,9 +15,11 @@ export function Login() {
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from ?? '/admin/dashboard';
 
-  const [email, setEmail] = useState('admin@kasb.uz');
+  /** Faqat milliy 9 raqam (998siz) */
+  const [nationalDigits, setNationalDigits] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     document.title = 'Kirish | The Kasb';
@@ -21,16 +29,31 @@ export function Login() {
     if (isAuthenticated) navigate(from, { replace: true });
   }, [isAuthenticated, from, navigate]);
 
-  const onSubmit = (e: FormEvent) => {
+  const onNationalChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNationalDigits(sanitizeNationalDigits(e.target.value));
+  };
+
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
-    const ok = login(email, password);
-    if (!ok) {
-      setError('Email va kamida 4 belgili parol kiriting.');
+    const apiPhone = toApiPhone(nationalDigits);
+    if (!apiPhone) {
+      setError('Telefon raqamini to‘liq kiriting (9 raqam, +998 dan keyin).');
       return;
     }
-    navigate(from, { replace: true });
+    setLoading(true);
+    try {
+      const result = await login(apiPhone, password);
+      if (!result.success) {
+        setError(result.message);
+        return;
+      }
+    } finally {
+      setLoading(false);
+    }
   };
+
+  const nationalDisplay = formatNationalDisplay(nationalDigits);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-slate-50/80 to-primary/[0.07] p-4">
@@ -50,17 +73,31 @@ export function Login() {
 
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <label htmlFor="kasb-email" className="mb-1.5 block text-xs font-medium text-text-primary">
-              Email
+            <label htmlFor="kasb-phone" className="mb-1.5 block text-xs font-medium text-text-primary">
+              Telefon
             </label>
-            <input
-              id="kasb-email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={ctlInputLg}
-            />
+            <div
+              className={`${ctlInputLg} flex items-center gap-0.5 !py-0`}
+            >
+              <span
+                className="shrink-0 select-none text-sm font-medium tracking-tight text-text-primary"
+                aria-hidden
+              >
+                {UZ_PHONE_PREFIX}
+              </span>
+              <input
+                id="kasb-phone"
+                type="tel"
+                inputMode="numeric"
+                autoComplete="tel-national"
+                value={nationalDisplay}
+                onChange={onNationalChange}
+                placeholder="90 123 45 67"
+                className="min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm text-text-primary outline-none placeholder:text-text-muted/60"
+                disabled={loading}
+                aria-describedby="kasb-phone-hint"
+              />
+            </div>
           </div>
           <div>
             <label htmlFor="kasb-password" className="mb-1.5 block text-xs font-medium text-text-primary">
@@ -74,6 +111,8 @@ export function Login() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="••••••••"
               className={ctlInputLg}
+              disabled={loading}
+              required
             />
           </div>
           {error ? (
@@ -81,13 +120,11 @@ export function Login() {
               {error}
             </p>
           ) : null}
-          <button type="submit" className={`${btnPrimaryLg} w-full`}>
-            Kirish
+          <button type="submit" className={`${btnPrimaryLg} w-full`} disabled={loading}>
+            {loading ? 'Kirilmoqda…' : 'Kirish'}
           </button>
         </form>
-        <p className="mt-6 text-center text-xs text-text-muted">
-          Demo: istalgan email va kamida 4 belgili parol
-        </p>
+     
       </div>
     </div>
   );
