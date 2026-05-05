@@ -11,3 +11,79 @@
     color: var(--text-primary);
   }
 }
+
+/* Admin login — decorative motion */
+@keyframes kasb-float-y {
+  from {
+    transform: translateY(0) rotate(var(--kasb-rot, 0deg));
+  }
+  to {
+    transform: translateY(-12px) rotate(var(--kasb-rot, 0deg));
+  }
+}
+
+@keyframes kasb-grid-pulse {
+  0%,
+  100% {
+    opacity: 0.04;
+  }
+  50% {
+    opacity: 0.07;
+  }
+}
+
+@keyframes kasb-glow-breathe {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+.kasb-float-card {
+  animation: kasb-float-y 6s ease-in-out infinite alternate;
+}
+
+.kasb-login-grid {
+  animation: kasb-grid-pulse 4s ease-in-out infinite;
+}
+
+.kasb-login-glow {
+  animation: kasb-glow-breathe 6s ease-in-out infinite;
+}
+
+/* Dashboard premium vibe */
+.kasb-dash-shell {
+  background:
+    radial-gradient(900px 500px at 12% 0%, rgba(59,130,246,0.18), transparent 60%),
+    radial-gradient(700px 420px at 92% 8%, rgba(139,92,246,0.14), transparent 62%),
+    radial-gradient(640px 420px at 60% 110%, rgba(16,185,129,0.10), transparent 60%),
+    linear-gradient(180deg, rgba(255,255,255,0.02), transparent 18%),
+    var(--kasb-dash-bg);
+}
+
+.kasb-dash-card {
+  position: relative;
+  background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01)) , var(--kasb-dash-card);
+  border: 1px solid rgba(255,255,255,0.07);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 24px 48px -28px rgba(0,0,0,0.85);
+}
+
+.kasb-dash-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(900px 220px at 10% 0%, rgba(255,255,255,0.035), transparent 60%);
+  opacity: 0.9;
+  border-radius: inherit;
+}
+
+.kasb-dash-soft-border {
+  border-color: rgba(255,255,255,0.07);
+}
+

@@ -26,6 +26,10 @@
   --dashboard-warning: #F59E0B;
   --dashboard-purple: #8B5CF6;
 
+  /* Admin Dashboard (spec) */
+  --kasb-dash-bg: #0f1117;
+  --kasb-dash-card: #1a1d27;
+
   /* Tailwind compatibility */
   --font-size: 14px;
   --foreground: #0F172A;

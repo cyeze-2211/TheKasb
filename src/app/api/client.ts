@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { getAccessTokenFromLoginSession } from '../auth/loginSession';
 
-const DEFAULT_API_PUBLIC = 'https://7490-213-230-87-156.ngrok-free.app';
+const DEFAULT_API_PUBLIC = 'http://localhost:7080';
 
 /**
  * Dev: Vite `/api` proxy orqali so‘rov (CORS yo‘q).
@@ -17,8 +17,6 @@ export const api = axios.create({
   timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
-    /** Ngrok bepul tunnel sahifasini aylanib o‘tish */
-    'ngrok-skip-browser-warning': '69420',
   },
 });
 

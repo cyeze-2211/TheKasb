@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { KASB_ACCESS_TOKEN_KEY, KASB_REFRESH_TOKEN_KEY } from '../../constants/kasbAuth';
 import { api } from './client';
 import type { AuthUser } from '../auth/AuthContext';
 import { saveLoginSession } from '../auth/loginSession';
@@ -90,7 +91,16 @@ export async function loginWithApi(phone: string, password: string): Promise<Log
     });
 
     saveLoginSession(data);
-    const { user } = parseLoginResponse(data, trimmed);
+    const { token, user } = parseLoginResponse(data, trimmed);
+    if (token) {
+      localStorage.setItem(KASB_ACCESS_TOKEN_KEY, token);
+      let root = data as Record<string, unknown>;
+      if (root.data && typeof root.data === 'object') root = root.data as Record<string, unknown>;
+      const refresh = root.refreshToken ?? root.refresh_token;
+      if (typeof refresh === 'string' && refresh) {
+        localStorage.setItem(KASB_REFRESH_TOKEN_KEY, refresh);
+      }
+    }
 
     return { success: true, user };
   } catch (err) {

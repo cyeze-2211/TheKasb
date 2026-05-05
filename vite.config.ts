@@ -3,7 +3,7 @@ import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
-const DEFAULT_API_TARGET = 'https://7490-213-230-87-156.ngrok-free.app'
+const DEFAULT_API_TARGET = 'http://localhost:7080'
 
 
 function figmaAssetResolver() {
@@ -60,8 +60,15 @@ export default defineConfig(({ mode }) => {
       '/api': {
         target: apiProxyTarget,
         changeOrigin: true,
-        secure: true,
+        secure: false,
         rewrite: (p) => p.replace(/^\/api/, ''),
+      },
+      /** Backend `/api/auth/*` — serverda `/api` prefiksi bilan */
+      '/kasb-backend': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/kasb-backend/, '/api'),
       },
     },
   },

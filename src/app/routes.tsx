@@ -4,10 +4,8 @@ import { AppLayout } from './components/AppLayout';
 import { RequireAuth } from './components/RequireAuth';
 import { RootRedirect } from './components/RootRedirect';
 
-const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
-const DashboardPremium = lazy(() =>
-  import('./pages/DashboardPremium').then((m) => ({ default: m.DashboardPremium })),
-);
+const LoginPage = lazy(() => import('../pages/LoginPage'));
+const DashboardPage = lazy(() => import('../pages/Dashboard'));
 const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
 const UserDetail = lazy(() => import('./pages/UserDetail').then((m) => ({ default: m.UserDetail })));
 const Candidates = lazy(() => import('./pages/Candidates').then((m) => ({ default: m.Candidates })));
@@ -49,7 +47,7 @@ export const router = createBrowserRouter([
     path: '/login',
     element: (
       <LazyBoundary>
-        <Login />
+        <LoginPage />
       </LazyBoundary>
     ),
   },
@@ -68,7 +66,7 @@ export const router = createBrowserRouter([
             path: 'dashboard',
             element: (
               <LazyBoundary>
-                <DashboardPremium />
+                <DashboardPage />
               </LazyBoundary>
             ),
           },
