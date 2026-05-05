@@ -56,6 +56,10 @@ export function Users() {
         accountType: filters.role === 'ALL' ? 'ALL' : (filters.role as AccountType),
         page: 0,
         size: 200,
+        is_active:
+          filters.active === 'YES' ? true : filters.active === 'NO' ? false : undefined,
+        is_verified:
+          filters.verified === 'YES' ? true : filters.verified === 'NO' ? false : undefined,
       });
       setRows(list);
     } catch (e) {
@@ -88,9 +92,9 @@ export function Users() {
           <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
           <h1 className="mb-1">Foydalanuvchilar</h1>
           <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-            <span className="mono text-xs">GET /sdg/uz</span> — har so‘rovda majburiy{' '}
-            <span className="mono text-xs">accountType</span>; «Barchasi» tanlansa 4 ta tur parallel
-            yuboriladi.
+            <span className="mono text-xs">GET /api/admin/users</span> —{' '}
+            <span className="mono text-xs">role</span>, <span className="mono text-xs">is_active</span>,{' '}
+            <span className="mono text-xs">is_verified</span>, sahifalash.
           </p>
         </div>
         <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)}>

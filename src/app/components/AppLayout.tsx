@@ -246,7 +246,13 @@ export function AppLayout() {
           </header>
         ) : null}
 
-        <main className="min-h-0 flex-1 overflow-auto bg-background [background-image:radial-gradient(ellipse_120%_80%_at_50%_-40%,rgba(37,99,235,0.07),transparent_50%),radial-gradient(ellipse_60%_40%_at_100%_0%,rgba(15,23,42,0.03),transparent_45%)]">
+        <main
+          className={
+            isDashboard
+              ? 'min-h-0 flex-1 overflow-auto bg-[var(--dashboard-bg)]'
+              : 'min-h-0 flex-1 overflow-auto bg-background [background-image:radial-gradient(ellipse_120%_80%_at_50%_-40%,rgba(37,99,235,0.07),transparent_50%),radial-gradient(ellipse_60%_40%_at_100%_0%,rgba(15,23,42,0.03),transparent_45%)]'
+          }
+        >
           <Outlet />
         </main>
       </div>

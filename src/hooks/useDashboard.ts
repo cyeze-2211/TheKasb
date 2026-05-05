@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import type { DashboardData, DashboardResponse } from '../types/dashboard';
-import { KASB_ACCESS_TOKEN_KEY } from '../constants/kasbAuth';
+import type { DashboardData } from '../types/dashboard';
+import { fetchDashboardData } from '../app/api/dashboard';
+import { axiosErrorMessage } from '../app/api/users';
 
 type UseDashboardState = {
   data: DashboardData | null;
@@ -9,13 +10,6 @@ type UseDashboardState = {
   lastUpdatedAt: number | null;
   refetch: () => Promise<void>;
 };
-
-const DASHBOARD_URL_DEV = '/kasb-backend/v1/admin/dashboard/stats';
-
-function authHeader(): HeadersInit {
-  const token = localStorage.getItem(KASB_ACCESS_TOKEN_KEY);
-  return token ? { Authorization: `Bearer ${token}` } : {};
-}
 
 export function useDashboard(): UseDashboardState {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -27,29 +21,16 @@ export function useDashboard(): UseDashboardState {
   const fetchData = useCallback(async () => {
     if (inFlight.current) return;
     inFlight.current = true;
+    setLoading(true);
 
     try {
       setError(null);
-      const res = await fetch(DASHBOARD_URL_DEV, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...authHeader(),
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error('Ma\'lumot yuklanmadi');
-      }
-
-      const json = (await res.json()) as DashboardResponse;
-      if (json?.success) {
-        setData(json.object);
-        setLastUpdatedAt(Date.now());
-      } else {
-        setError(json?.message || "Ma'lumot yuklanmadi");
-      }
-    } catch {
-      setError("Ma'lumot yuklanmadi");
+      const result = await fetchDashboardData();
+      setData(result);
+      setLastUpdatedAt(Date.now());
+    } catch (e) {
+      setError(axiosErrorMessage(e, "Ma'lumot yuklanmadi"));
+      setData(null);
     } finally {
       setLoading(false);
       inFlight.current = false;

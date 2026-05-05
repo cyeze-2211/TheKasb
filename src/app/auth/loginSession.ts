@@ -21,6 +21,30 @@ export function readLoginSessionRaw(): unknown | null {
 }
 
 /** Bearer uchun access token (OTP `accessToken` yoki legacy `token`) */
+/** Login `object` / `data` / `user` dan SDG foydalanuvchi `id` (upload/delete uchun `userId`) */
+export function getLoggedInSdgUserId(): number | null {
+  const data = readLoginSessionRaw();
+  if (!data || typeof data !== 'object') return null;
+  const root = data as Record<string, unknown>;
+
+  const pickId = (node: unknown): number | null => {
+    if (!node || typeof node !== 'object') return null;
+    const o = node as Record<string, unknown>;
+    const id = o.id ?? o.userId ?? o.user_id;
+    if (typeof id === 'number' && !Number.isNaN(id)) return id;
+    if (typeof id === 'string' && /^\d+$/.test(id)) return Number(id);
+    return null;
+  };
+
+  let id = pickId(root.object);
+  if (id != null) return id;
+  id = pickId(root.data);
+  if (id != null) return id;
+  id = pickId(root.user);
+  if (id != null) return id;
+  return pickId(root);
+}
+
 export function getAccessTokenFromLoginSession(): string | null {
   const fromOtp = localStorage.getItem(KASB_ACCESS_TOKEN_KEY);
   if (fromOtp) return fromOtp;

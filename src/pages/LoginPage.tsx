@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
-import { useNavigate, useLocation } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../app/auth/AuthContext';
 import { sanitizeNationalDigits, toApiPhone } from '../app/lib/uzPhone';
 import { FloatingStatCard } from '../components/FloatingStatCard';
@@ -277,6 +277,11 @@ export default function LoginPage() {
             </motion.form>
 
             <div className="mt-8 border-t border-[#1F2937]" />
+            <p className="mt-4 text-center text-[11px]">
+              <Link to="/" className="text-blue-400 hover:text-blue-300 hover:underline">
+                Nomzod sifatida ro‘yxatdan o‘tish (bosh sahifa)
+              </Link>
+            </p>
             <p className="mt-4 text-center text-[11px] leading-relaxed text-gray-600">
               Faqat ADMIN, SUPER_ADMIN va AGENT rollari kira oladi
             </p>

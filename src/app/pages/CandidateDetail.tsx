@@ -69,7 +69,7 @@ function initialsFromName(name: string): string {
 
 export function CandidateDetail() {
   const { id: idParam } = useParams();
-  const numericId = idParam ? Number(idParam) : NaN;
+  const candidateRouteId = (idParam ?? '').trim();
 
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,7 +81,7 @@ export function CandidateDetail() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!Number.isFinite(numericId)) {
+    if (!candidateRouteId) {
       setErr('Noto‘g‘ri ID');
       setLoading(false);
       return;
@@ -90,7 +90,7 @@ export function CandidateDetail() {
     setErr(null);
     setActionMsg(null);
     try {
-      const d = await fetchCandidateById(numericId);
+      const d = await fetchCandidateById(candidateRouteId);
       setDetail(d);
       if (!d) setErr('Ma’lumot topilmadi.');
       const ag = pickNum(d, 'agent_id', 'agentId', 'assigned_agent_id');
@@ -101,7 +101,7 @@ export function CandidateDetail() {
     } finally {
       setLoading(false);
     }
-  }, [numericId]);
+  }, [candidateRouteId]);
 
   useEffect(() => {
     void load();
@@ -150,12 +150,12 @@ export function CandidateDetail() {
   const isActiveProfile = profileStatus === 'ACTIVE';
 
   async function handleStatusToggle(checked: boolean) {
-    if (!Number.isFinite(numericId)) return;
+    if (!candidateRouteId) return;
     setStatusSaving(true);
     setActionMsg(null);
     const next: AdminProfileStatus = checked ? 'ACTIVE' : 'SUSPENDED';
     try {
-      await updateCandidateProfileStatus(numericId, next);
+      await updateCandidateProfileStatus(candidateRouteId, next);
       await load();
       setActionMsg(checked ? 'Profil faollashtirildi.' : 'Profil to‘xtatildi (SUSPENDED).');
     } catch (e) {
@@ -166,7 +166,7 @@ export function CandidateDetail() {
   }
 
   async function handleAssignAgent() {
-    if (!Number.isFinite(numericId)) return;
+    if (!candidateRouteId) return;
     const n = Number(agentIdInput.trim());
     if (!Number.isFinite(n) || n <= 0) {
       setActionMsg('Agent ID musbat son bo‘lishi kerak.');
@@ -175,7 +175,7 @@ export function CandidateDetail() {
     setAgentSaving(true);
     setActionMsg(null);
     try {
-      await assignCandidateAgent(numericId, n);
+      await assignCandidateAgent(candidateRouteId, n);
       await load();
       setActionMsg('Agent biriktirildi.');
     } catch (e) {
@@ -249,7 +249,9 @@ export function CandidateDetail() {
           Nomzodlar
         </Link>
         <span className="mx-1.5 text-text-muted">/</span>
-        <span className="text-text-primary">{displayName || `ID ${numericId}`}</span>
+        <span className="text-text-primary">
+          {displayName || phone || 'Nomzod'}
+        </span>
       </nav>
 
       {actionMsg ? (

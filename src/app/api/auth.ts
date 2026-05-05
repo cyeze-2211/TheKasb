@@ -85,9 +85,11 @@ export async function loginWithApi(phone: string, password: string): Promise<Log
     return { success: false, message: 'Telefon va parol kiriting.' };
   }
 
-  try {
+  const loginAlt = trimmed.startsWith('+') ? trimmed.slice(1) : null;
+
+  const tryOnce = async (loginValue: string): Promise<LoginResult> => {
     const { data } = await api.post<unknown>('/sdg/uz/login', null, {
-      params: { login: trimmed, password },
+      params: { login: loginValue, password },
     });
 
     saveLoginSession(data);
@@ -103,19 +105,34 @@ export async function loginWithApi(phone: string, password: string): Promise<Log
     }
 
     return { success: true, user };
-  } catch (err) {
-    if (axios.isAxiosError(err)) {
-      const body = err.response?.data as Record<string, unknown> | string | undefined;
-      let message = 'Kirish amalga oshmadi.';
-      if (body && typeof body === 'object') {
-        const m =
-          body.message ?? body.error ?? body.detail ?? body.msg;
-        if (typeof m === 'string') message = m;
-        else if (Array.isArray(m) && typeof m[0] === 'string') message = m[0];
-      } else if (typeof body === 'string' && body) message = body;
-      if (err.response?.status === 401) message = message || 'Telefon yoki parol noto‘g‘ri.';
-      return { success: false, message };
+  };
+
+  const formatAxiosError = (err: unknown): LoginResult => {
+    if (!axios.isAxiosError(err)) {
+      return { success: false, message: 'Tarmoq xatosi. Qayta urinib ko‘ring.' };
     }
-    return { success: false, message: 'Tarmoq xatosi. Qayta urinib ko‘ring.' };
+    const body = err.response?.data as Record<string, unknown> | string | undefined;
+    let message = 'Kirish amalga oshmadi.';
+    if (body && typeof body === 'object') {
+      const m = body.message ?? body.error ?? body.detail ?? body.msg;
+      if (typeof m === 'string') message = m;
+      else if (Array.isArray(m) && typeof m[0] === 'string') message = m[0];
+    } else if (typeof body === 'string' && body) message = body;
+    if (err.response?.status === 401) message = message || 'Telefon yoki parol noto‘g‘ri.';
+    return { success: false, message };
+  };
+
+  try {
+    return await tryOnce(trimmed);
+  } catch (err) {
+    // Ba'zi backendlar `login` ni raqam sifatida parse qilib, `+` bo'lsa 500 berishi mumkin.
+    if (axios.isAxiosError(err) && err.response?.status === 500 && loginAlt) {
+      try {
+        return await tryOnce(loginAlt);
+      } catch (err2) {
+        return formatAxiosError(err2);
+      }
+    }
+    return formatAxiosError(err);
   }
 }

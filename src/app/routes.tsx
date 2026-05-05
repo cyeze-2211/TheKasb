@@ -2,9 +2,8 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AppLayout } from './components/AppLayout';
 import { RequireAuth } from './components/RequireAuth';
-import { RootRedirect } from './components/RootRedirect';
-
 const LoginPage = lazy(() => import('../pages/LoginPage'));
+const CandidatePortal = lazy(() => import('../pages/CandidatePortal'));
 const DashboardPage = lazy(() => import('../pages/Dashboard'));
 const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
 const UserDetail = lazy(() => import('./pages/UserDetail').then((m) => ({ default: m.UserDetail })));
@@ -13,6 +12,7 @@ const CandidateDetail = lazy(() =>
   import('./pages/CandidateDetail').then((m) => ({ default: m.CandidateDetail })),
 );
 const Vacancies = lazy(() => import('./pages/Vacancies').then((m) => ({ default: m.Vacancies })));
+const VacancyDetail = lazy(() => import('./pages/VacancyDetail').then((m) => ({ default: m.VacancyDetail })));
 const VacancyForm = lazy(() => import('./pages/VacancyForm').then((m) => ({ default: m.VacancyForm })));
 const CustomProfessions = lazy(() =>
   import('./pages/CustomProfessions').then((m) => ({ default: m.CustomProfessions })),
@@ -39,7 +39,7 @@ export const router = createBrowserRouter([
     path: '/',
     element: (
       <LazyBoundary>
-        <RootRedirect />
+        <CandidatePortal />
       </LazyBoundary>
     ),
   },
@@ -107,6 +107,14 @@ export const router = createBrowserRouter([
             element: (
               <LazyBoundary>
                 <Vacancies />
+              </LazyBoundary>
+            ),
+          },
+          {
+            path: 'vacancies/:id',
+            element: (
+              <LazyBoundary>
+                <VacancyDetail />
               </LazyBoundary>
             ),
           },

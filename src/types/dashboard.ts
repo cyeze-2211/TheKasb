@@ -14,6 +14,8 @@ export interface DashboardData {
     pendingApproval: number;
     overdueApprovalCount: number;
     activeUsersLast24h: number;
+    /** Tasdiqlanmagan maxsus kasblar (GET /admin/custom-professions?isReviewed=false) */
+    pendingCustomProfessions?: number;
   };
   candidateFlow: Array<{
     date: string; // "2026-05-05"

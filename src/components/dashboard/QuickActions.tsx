@@ -37,6 +37,7 @@ export function QuickActions({
 }) {
   const navigate = useNavigate();
   const pct = todayGoal.target > 0 ? Math.min(100, Math.round((todayGoal.completed / todayGoal.target) * 100)) : 0;
+  const pendingCustom = summary.pendingCustomProfessions ?? 0;
 
   return (
     <div className="space-y-4">
@@ -56,7 +57,7 @@ export function QuickActions({
             onClick={() => navigate('/admin/candidates')}
           />
           <ActionCard
-            title={`🟡 ${summary.urgentVacancies.toLocaleString('ru-RU')} ta yangi maxsus kasb`}
+            title={`🟡 ${pendingCustom.toLocaleString('ru-RU')} ta yangi maxsus kasb`}
             subtitle="Rasmiylashtirish kerak"
             tint="rgba(245,158,11,0.10)"
             onClick={() => navigate('/admin/custom-professions')}

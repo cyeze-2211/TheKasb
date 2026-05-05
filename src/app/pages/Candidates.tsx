@@ -88,6 +88,71 @@ function statusColor(s: string): string {
   }
 }
 
+function initialsFromRow(name: string, phone: string): string {
+  const n = name.trim();
+  if (n) {
+    return n
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => p[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+  }
+  const d = phone.replace(/\D/g, '').slice(-2);
+  return d || '?';
+}
+
+function candidateDetailHref(row: Record<string, unknown>): string | null {
+  const uuid = pickStr(row, 'id');
+  if (uuid) return `/admin/candidates/${encodeURIComponent(uuid)}`;
+  const uid = pickNum(row, 'user_id', 'userId');
+  if (uid != null) return `/admin/candidates/${encodeURIComponent(String(uid))}`;
+  return null;
+}
+
+function ProfileMetrics({
+  score,
+  completeness,
+}: {
+  score: number | undefined;
+  completeness: number | undefined;
+}) {
+  const clamp = (v: number) => Math.min(100, Math.max(0, v));
+  return (
+    <div className="flex min-w-[7.5rem] flex-col gap-2">
+      <div>
+        <div className="mb-0.5 flex justify-between text-[10px] font-medium uppercase tracking-wide text-text-muted">
+          <span>Ball</span>
+          <span className="tabular-nums text-text-primary">
+            {score != null ? `${clamp(score)}%` : '—'}
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted/80">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-primary/70 to-primary transition-[width] duration-300"
+            style={{ width: score != null ? `${clamp(score)}%` : '0%' }}
+          />
+        </div>
+      </div>
+      <div>
+        <div className="mb-0.5 flex justify-between text-[10px] font-medium uppercase tracking-wide text-text-muted">
+          <span>To‘liqlik</span>
+          <span className="tabular-nums text-text-primary">
+            {completeness != null ? `${clamp(completeness)}%` : '—'}
+          </span>
+        </div>
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted/80">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-sky-500/70 to-sky-600 transition-[width] duration-300"
+            style={{ width: completeness != null ? `${clamp(completeness)}%` : '0%' }}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Candidates() {
   const [showFilters, setShowFilters] = useState(true);
   const [q, setQ] = useState<CandidatesListQuery>(initialQuery);
@@ -141,7 +206,7 @@ export function Candidates() {
         <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
         <h1 className="mb-1">Nomzodlar</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-          <span className="mono text-xs">GET /admin/candidates</span> — filtr va sahifalash
+          <span className="mono text-xs">GET /api/admin/candidates</span> — filtr va sahifalash
         </p>
       </div>
 
@@ -353,41 +418,50 @@ export function Candidates() {
         </button>
       </div>
 
-      <div className={panelElite}>
+      <div className={`${panelElite} overflow-hidden shadow-sm ring-1 ring-border/60`}>
         <div className="overflow-x-auto">
-          <table className="w-full">
+          <table className="w-full border-separate border-spacing-0">
             <thead className={theadElite}>
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">ID</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Ism / Telefon</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Viloyat / hudud</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Nomzod
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Hudud
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Kasb</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Tajriba</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Mavjudlik</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Tajriba
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Mavjudlik
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Til</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Maosh</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Ball</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Profil</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Holat</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Amallar</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-text-muted">
+                  Amallar
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border">
+            <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-16 text-center text-sm text-text-muted">
+                  <td colSpan={10} className="px-4 py-16 text-center text-sm text-text-muted">
                     <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" aria-hidden />
                     Yuklanmoqda…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-text-muted">
+                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-text-muted">
                     Natija yo‘q
                   </td>
                 </tr>
               ) : (
                 rows.map((row, rowIndex) => {
-                  const id = pickNum(row, 'id', 'candidateId', 'candidate_id');
+                  const href = candidateDetailHref(row);
                   const name = pickStr(
                     row,
                     'full_name',
@@ -397,6 +471,7 @@ export function Candidates() {
                     'firstName',
                   );
                   const phone = pickStr(row, 'phone', 'phone_number', 'phoneNumber', 'mobile');
+                  const regionId = pickNum(row, 'region_id', 'regionId');
                   const region = pickStr(
                     row,
                     'region_name',
@@ -405,6 +480,8 @@ export function Candidates() {
                     'address_region',
                     'addressRegion',
                   );
+                  const regionLabel =
+                    region || (regionId != null ? `Hudud #${regionId}` : '—');
                   const profession = pickStr(
                     row,
                     'profession_name',
@@ -418,15 +495,36 @@ export function Candidates() {
                   const salMin = pickNum(row, 'salary_min', 'salaryMin', 'expected_salary_min');
                   const salMax = pickNum(row, 'salary_max', 'salaryMax', 'expected_salary_max');
                   const score = pickNum(row, 'score', 'profile_score', 'profileScore', 'match_score');
+                  const completeness = pickNum(
+                    row,
+                    'profile_completeness',
+                    'profileCompleteness',
+                  );
                   const pStatus = pickStr(row, 'profile_status', 'profileStatus', 'status');
+                  const userId = pickNum(row, 'user_id', 'userId');
+                  const rowKey = pickStr(row, 'id') || (userId != null ? `u-${userId}` : `i-${rowIndex}`);
                   return (
-                    <tr key={id != null ? `c-${id}` : `i-${rowIndex}`} className={rowElite}>
-                      <td className="px-4 py-3 text-sm tabular-nums text-text-muted">{id ?? '—'}</td>
+                    <tr
+                      key={rowKey}
+                      className={`${rowElite} border-b border-border/80 transition-colors hover:bg-muted/25`}
+                    >
                       <td className="px-4 py-3">
-                        <div className="text-sm font-medium text-text-primary">{name || '—'}</div>
-                        <div className="mono text-xs text-text-muted">{phone || '—'}</div>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15"
+                            aria-hidden
+                          >
+                            {initialsFromRow(name, phone)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-text-primary">
+                              {name || 'Nomzod'}
+                            </div>
+                            <div className="mono truncate text-xs text-text-muted">{phone || '—'}</div>
+                          </div>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-text-muted">{region || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-text-muted">{regionLabel}</td>
                       <td className="px-4 py-3 text-sm text-text-muted">{profession || '—'}</td>
                       <td className="px-4 py-3 text-sm text-text-muted">
                         {exp ? experienceLabels[exp] ?? exp : '—'}
@@ -449,8 +547,8 @@ export function Candidates() {
                           ? `${salMin.toLocaleString()} – ${salMax.toLocaleString()}`
                           : '—'}
                       </td>
-                      <td className="px-4 py-3 text-sm tabular-nums text-text-primary">
-                        {score != null ? `${score}%` : '—'}
+                      <td className="px-4 py-3">
+                        <ProfileMetrics score={score} completeness={completeness} />
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -459,13 +557,9 @@ export function Candidates() {
                           {pStatus || '—'}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        {id != null ? (
-                          <Link
-                            to={`/admin/candidates/${id}`}
-                            className={iconAction}
-                            title="Batafsil"
-                          >
+                      <td className="px-4 py-3 text-right">
+                        {href ? (
+                          <Link to={href} className={iconAction} title="Batafsil">
                             <Eye className="h-4 w-4" strokeWidth={2} />
                           </Link>
                         ) : null}

@@ -94,14 +94,15 @@ function unwrapSpringPage<T>(data: unknown): SpringPage<T> {
 export async function fetchCandidatesList(
   query: CandidatesListQuery,
 ): Promise<SpringPage<Record<string, unknown>>> {
+  /** Swagger: GET /api/admin/candidates — `baseURL` `/api` → `/admin/candidates` */
   const { data } = await api.get<unknown>('/admin/candidates', { params: cleanQuery(query) });
   assertApiSuccess(data);
   return unwrapSpringPage<Record<string, unknown>>(data);
 }
 
-/** Batafsil — GET /admin/candidates/{id} */
-export async function fetchCandidateById(id: number): Promise<Record<string, unknown> | null> {
-  const { data } = await api.get<unknown>(`/admin/candidates/${id}`);
+/** Batafsil — GET /api/admin/candidates/{id} (id: raqam yoki UUID) */
+export async function fetchCandidateById(id: string | number): Promise<Record<string, unknown> | null> {
+  const { data } = await api.get<unknown>(`/admin/candidates/${encodeURIComponent(String(id))}`);
   assertApiSuccess(data);
   if (!data || typeof data !== 'object') return null;
   const o = data as Record<string, unknown>;
@@ -116,16 +117,21 @@ export async function fetchCandidateById(id: number): Promise<Record<string, unk
 
 /** Profil holati — PATCH body: { profile_status } */
 export async function updateCandidateProfileStatus(
-  id: number,
+  id: string | number,
   profile_status: AdminProfileStatus | string,
 ): Promise<void> {
-  const { data } = await api.patch<unknown>(`/admin/candidates/${id}/status`, { profile_status });
+  const { data } = await api.patch<unknown>(
+    `/admin/candidates/${encodeURIComponent(String(id))}/status`,
+    { profile_status },
+  );
   assertApiSuccess(data);
 }
 
 /** Agent biriktirish */
-export async function assignCandidateAgent(candidateId: number, agent_id: number): Promise<void> {
-  const { data } = await api.post<unknown>(`/admin/candidates/${candidateId}/assign-agent`, {
+export async function assignCandidateAgent(candidateId: string | number, agent_id: number): Promise<void> {
+  const { data } = await api.post<unknown>(
+    `/admin/candidates/${encodeURIComponent(String(candidateId))}/assign-agent`,
+    {
     agent_id,
   });
   assertApiSuccess(data);
