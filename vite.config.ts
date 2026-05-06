@@ -65,6 +65,22 @@ export default defineConfig(({ mode }) => {
 
   server: {
     proxy: {
+      // Backend: `/api/v1/*` (prefiks SAQLANADI)
+      '/api/v1': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
+        // rewrite yo'q: /api/v1/* backendga xuddi shunday boradi
+      },
+      // Backend: `/api/candidate/*` (prefiks SAQLANADI)
+      '/api/candidate': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
+        // rewrite yo'q: /api/candidate/* backendga xuddi shunday boradi
+      },
       // Dev: brauzer faqat shu originga so‘raydi — CORS muammosi bo‘lmaydi
       // Backend'ning ikki xil prefixi bor:
       // - /api/admin/*  (prefiks SAQLANADI)
@@ -75,6 +91,13 @@ export default defineConfig(({ mode }) => {
         secure: false,
         configure: ngrokProxyConfigure,
         // rewrite yo'q: /api/admin/* backendga xuddi shunday boradi
+      },
+      // GET /api/users/me — prefiks saqlanadi (/api umumiy rewrite bu yo‘l uchun 404 bermasligi uchun)
+      '/api/users': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
       },
       '/api/professions': {
         target: apiProxyTarget,

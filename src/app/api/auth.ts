@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { KASB_ACCESS_TOKEN_KEY, KASB_REFRESH_TOKEN_KEY } from '../../constants/kasbAuth';
+import { saveAuthProfile } from '../../hooks/useAuth';
 import { api } from './client';
 import type { AuthUser } from '../auth/AuthContext';
 import { saveLoginSession } from '../auth/loginSession';
+import { fetchCurrentUserMe, getUserDisplayName, type SdgUserDto } from './users';
 
 function pickToken(payload: Record<string, unknown>): string | null {
   const t =
@@ -41,6 +43,24 @@ function mapUserFromPayload(
   if (typeof payload.name === 'string') displayName = payload.name;
   if (typeof payload.role === 'string') roleLabel = payload.role;
 
+  return { phone, displayName, roleLabel };
+}
+
+/** `/users/me` DTO → sidebar / kontekst uchun qisqa profil */
+export function authUserFromSdgUser(u: SdgUserDto, fallbackPhone: string): AuthUser {
+  const phone =
+    (typeof u.phoneNumber === 'string' && u.phoneNumber.trim()) ||
+    (typeof u.email === 'string' && u.email.trim()) ||
+    fallbackPhone.trim();
+  const dn = getUserDisplayName(u);
+  const displayName =
+    dn !== '—'
+      ? dn
+      : typeof u.email === 'string' && u.email
+        ? u.email
+        : 'Administrator';
+  let roleLabel = 'ADMIN';
+  if (typeof u.accountType === 'string' && u.accountType) roleLabel = u.accountType;
   return { phone, displayName, roleLabel };
 }
 
@@ -104,7 +124,16 @@ export async function loginWithApi(phone: string, password: string): Promise<Log
       }
     }
 
-    return { success: true, user };
+    let mergedUser = user;
+    try {
+      const me = await fetchCurrentUserMe();
+      if (me) mergedUser = authUserFromSdgUser(me, trimmed);
+    } catch {
+      /* login javobidagi profil yetarli */
+    }
+    saveAuthProfile(mergedUser);
+
+    return { success: true, user: mergedUser };
   };
 
   const formatAxiosError = (err: unknown): LoginResult => {

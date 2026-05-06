@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  fetchProfessionCategories,
+  fetchProfessionsFilterOptions,
+  type ProfessionCategoryDto,
+  type ProfessionFilterOption,
+} from '../api/professions';
+import { fetchStaffUsersForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
 import { Link } from 'react-router';
 import { CircleAlert, Eye, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { COUNTRIES } from '../data/mockData';
@@ -66,6 +73,45 @@ export function Vacancies() {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<ProfessionCategoryDto[]>([]);
+  const [professionOptions, setProfessionOptions] = useState<ProfessionFilterOption[]>([]);
+  const [staffOptions, setStaffOptions] = useState<SdgUserDto[]>([]);
+  const [filterMetaLoading, setFilterMetaLoading] = useState(false);
+
+  const visibleProfessions = useMemo(() => {
+    if (!q.categoryId) return professionOptions;
+    return professionOptions.filter((p) => p.categoryId === q.categoryId);
+  }, [professionOptions, q.categoryId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFilterMetaLoading(true);
+    void (async () => {
+      try {
+        const [cats, profs, staff] = await Promise.all([
+          fetchProfessionCategories(),
+          fetchProfessionsFilterOptions(),
+          fetchStaffUsersForSelect(),
+        ]);
+        if (!cancelled) {
+          setCategories(cats);
+          setProfessionOptions(profs);
+          setStaffOptions(staff);
+        }
+      } catch {
+        if (!cancelled) {
+          setCategories([]);
+          setProfessionOptions([]);
+          setStaffOptions([]);
+        }
+      } finally {
+        if (!cancelled) setFilterMetaLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -182,22 +228,41 @@ export function Vacancies() {
               </option>
             ))}
           </select>
-          <input
-            type="number"
-            className={`${ctlSelect} min-w-[9rem] max-w-full flex-1 sm:max-w-[11rem]`}
-            placeholder="categoryId"
+          <select
+            className={`${ctlSelect} min-w-[10rem] max-w-full flex-1 sm:max-w-[13rem]`}
+            disabled={filterMetaLoading}
             value={q.categoryId ?? ''}
-            onChange={(e) => setQ((p) => ({ ...p, categoryId: e.target.value ? Number(e.target.value) : undefined }))}
-          />
-          <input
-            type="number"
-            className={`${ctlSelect} min-w-[8rem] max-w-full flex-1 sm:max-w-[10rem]`}
-            placeholder="professionId"
+            onChange={(e) => {
+              const v = e.target.value ? Number(e.target.value) : undefined;
+              setQ((p) => ({ ...p, categoryId: v, professionId: undefined }));
+            }}
+          >
+            <option value="">Kategoriya — barchasi</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name_uz || c.name_ru} (ID {c.id})
+              </option>
+            ))}
+          </select>
+          <select
+            className={`${ctlSelect} min-w-[10rem] max-w-full flex-1 sm:max-w-[14rem]`}
+            disabled={filterMetaLoading}
             value={q.professionId ?? ''}
             onChange={(e) =>
               setQ((p) => ({ ...p, professionId: e.target.value ? Number(e.target.value) : undefined }))
             }
-          />
+          >
+            <option value="">Kasb — barchasi</option>
+            {q.professionId != null &&
+            !visibleProfessions.some((p) => p.id === q.professionId) ? (
+              <option value={q.professionId}>ID {q.professionId} (joriy)</option>
+            ) : null}
+            {visibleProfessions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label} (ID {p.id})
+              </option>
+            ))}
+          </select>
           <select
             className={`${ctlSelect} min-w-[10rem] max-w-full flex-1 sm:max-w-[12rem]`}
             value={q.isUrgent === '' ? '' : q.isUrgent ? 'YES' : 'NO'}
@@ -212,13 +277,26 @@ export function Vacancies() {
             <option value="YES">Ha</option>
             <option value="NO">Yo&apos;q</option>
           </select>
-          <input
-            type="number"
-            className={`${ctlSelect} min-w-[9rem] max-w-full flex-1 sm:max-w-[11rem]`}
-            placeholder="createdBy"
+          <select
+            className={`${ctlSelect} min-w-[11rem] max-w-full flex-1 sm:max-w-[15rem]`}
+            disabled={filterMetaLoading}
             value={q.createdBy ?? ''}
-            onChange={(e) => setQ((p) => ({ ...p, createdBy: e.target.value ? Number(e.target.value) : undefined }))}
-          />
+            onChange={(e) =>
+              setQ((p) => ({ ...p, createdBy: e.target.value ? Number(e.target.value) : undefined }))
+            }
+          >
+            <option value="">Yaratgan — barchasi</option>
+            {q.createdBy != null &&
+            !staffOptions.some((u) => u.id === q.createdBy) ? (
+              <option value={q.createdBy}>ID {q.createdBy} (joriy)</option>
+            ) : null}
+            {staffOptions.map((u) => (
+              <option key={u.id} value={u.id}>
+                {getUserDisplayName(u)} · {String(u.accountType ?? '')}
+                {u.phoneNumber ? ` · ${u.phoneNumber}` : ''} (ID {u.id})
+              </option>
+            ))}
+          </select>
         </div>
       </FilterPanel>
 

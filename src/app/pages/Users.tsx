@@ -19,7 +19,7 @@ import {
 import { UserFormDialog } from '../components/users/UserFormDialog';
 import { RoleBadge } from '../components/StatusBadge';
 import { FilterPanel } from '../components/FilterPanel';
-import { btnPrimary, btnSecondary, ctlSelect, pageKicker, panelElite, rowElite, theadElite } from '../components/pageChrome';
+import { btnPrimary, btnSecondary, ctlInput, ctlSelect, pageKicker, panelElite, rowElite, theadElite } from '../components/pageChrome';
 
 function roleForBadge(u: SdgUserDto): UserRole {
   const r = String(u.accountType ?? 'CANDIDATE');
@@ -42,6 +42,12 @@ export function Users() {
     role: 'ALL',
     active: 'ALL',
     verified: 'ALL',
+    neverLoggedIn: 'ALL',
+    search: '',
+    registeredFrom: '',
+    registeredTo: '',
+    lastLoginFrom: '',
+    lastLoginTo: '',
   });
   const [rows, setRows] = useState<SdgUserDto[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,6 +66,13 @@ export function Users() {
           filters.active === 'YES' ? true : filters.active === 'NO' ? false : undefined,
         is_verified:
           filters.verified === 'YES' ? true : filters.verified === 'NO' ? false : undefined,
+        never_logged_in:
+          filters.neverLoggedIn === 'YES' ? true : filters.neverLoggedIn === 'NO' ? false : undefined,
+        search: filters.search.trim() || undefined,
+        registered_from: filters.registeredFrom.trim() || undefined,
+        registered_to: filters.registeredTo.trim() || undefined,
+        last_login_from: filters.lastLoginFrom.trim() || undefined,
+        last_login_to: filters.lastLoginTo.trim() || undefined,
       });
       setRows(list);
     } catch (e) {
@@ -68,7 +81,17 @@ export function Users() {
     } finally {
       setLoading(false);
     }
-  }, [filters.role]);
+  }, [
+    filters.role,
+    filters.active,
+    filters.verified,
+    filters.neverLoggedIn,
+    filters.search,
+    filters.registeredFrom,
+    filters.registeredTo,
+    filters.lastLoginFrom,
+    filters.lastLoginTo,
+  ]);
 
   useEffect(() => {
     void load();
@@ -127,6 +150,15 @@ export function Users() {
         }
       >
         <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[14rem] flex-1 sm:max-w-[18rem]">
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Qidirish (search)</label>
+            <input
+              value={filters.search}
+              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              className={ctlInput}
+              placeholder="Telefon, email, ism..."
+            />
+          </div>
           <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
             <label className="mb-1.5 block text-xs font-medium text-text-muted">Rol</label>
             <select
@@ -164,6 +196,54 @@ export function Users() {
               <option value="YES">Ha</option>
               <option value="NO">Yo&apos;q</option>
             </select>
+          </div>
+          <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Hech qachon kirmagan (never_logged_in)</label>
+            <select
+              value={filters.neverLoggedIn}
+              onChange={(e) => setFilters({ ...filters, neverLoggedIn: e.target.value })}
+              className={ctlSelect}
+            >
+              <option value="ALL">Barchasi</option>
+              <option value="YES">Ha</option>
+              <option value="NO">Yo&apos;q</option>
+            </select>
+          </div>
+          <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Registered from</label>
+            <input
+              type="date"
+              value={filters.registeredFrom}
+              onChange={(e) => setFilters({ ...filters, registeredFrom: e.target.value })}
+              className={ctlSelect}
+            />
+          </div>
+          <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Registered to</label>
+            <input
+              type="date"
+              value={filters.registeredTo}
+              onChange={(e) => setFilters({ ...filters, registeredTo: e.target.value })}
+              className={ctlSelect}
+            />
+          </div>
+          <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Last login from</label>
+            <input
+              type="date"
+              value={filters.lastLoginFrom}
+              onChange={(e) => setFilters({ ...filters, lastLoginFrom: e.target.value })}
+              className={ctlSelect}
+            />
+          </div>
+          <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Last login to</label>
+            <input
+              type="date"
+              value={filters.lastLoginTo}
+              onChange={(e) => setFilters({ ...filters, lastLoginTo: e.target.value })}
+              className={ctlSelect}
+            />
           </div>
         </div>
       </FilterPanel>

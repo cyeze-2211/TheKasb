@@ -108,6 +108,22 @@ export type CandidateProfileCreateBody = {
   custom_profession_name?: string;
 };
 
+export type CandidateProfileUpdateBody = {
+  region_id: number;
+  marital_status: string;
+  education_level: string;
+  data_consent: boolean;
+  profession_id?: number;
+  profession_category_id?: number;
+  availability_status?: string;
+  experience_range?: string;
+  desired_salary_min?: number;
+  desired_salary_max?: number;
+  salary_currency?: string;
+  custom_profession_name?: string;
+  profile_status?: string;
+};
+
 /** 2-qadam */
 export async function candidateCreateProfile(body: CandidateProfileCreateBody): Promise<string | null> {
   const token = getCandidateToken();
@@ -126,6 +142,17 @@ export async function candidateCreateProfile(body: CandidateProfileCreateBody): 
     }
   }
   return id;
+}
+
+/** 2-qadam (edit) — Swagger: PUT /api/candidate/profile */
+export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): Promise<Record<string, unknown> | null> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Avval OTP bilan kiring');
+
+  const { data } = await authApi.put<unknown>('/candidate/profile', body, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  return unwrapRecord(data);
 }
 
 export async function candidateAddLanguage(body: {

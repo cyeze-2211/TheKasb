@@ -48,3 +48,26 @@ export async function fetchProfessionsByCategory(categoryId: number): Promise<Pr
   assertApiSuccess(data);
   return sortByOrder(extractObjectArray<ProfessionDto>(data));
 }
+
+export type ProfessionFilterOption = {
+  id: number;
+  categoryId: number;
+  label: string;
+};
+
+/** Filtr/select uchun: barcha kategoriyalar bo‘yicha kasblar (GET orqali). */
+export async function fetchProfessionsFilterOptions(): Promise<ProfessionFilterOption[]> {
+  const cats = await fetchProfessionCategories();
+  const nested = await Promise.all(
+    cats.map(async (c) => {
+      const profs = await fetchProfessionsByCategory(c.id);
+      const catLabel = c.name_uz || c.name_ru || String(c.id);
+      return profs.map((p) => ({
+        id: p.id,
+        categoryId: c.id,
+        label: `${p.name_uz || p.name_ru} (${catLabel})`,
+      }));
+    }),
+  );
+  return nested.flat().sort((a, b) => a.label.localeCompare(b.label, 'uz'));
+}

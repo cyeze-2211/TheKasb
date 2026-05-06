@@ -321,16 +321,7 @@ export default function DashboardPage() {
           <div className="mono text-sm text-gray-400">{formatHeaderTime(currentTime)}</div>
         </div>
         <div className="flex flex-1 items-center justify-end gap-4 md:gap-6">
-          {lastUpdatedAt ? (
-            <button
-              type="button"
-              onClick={() => void refetch()}
-              className="hidden rounded-lg border border-white/10 px-2 py-1 text-xs text-gray-400 hover:text-white md:block"
-              disabled={loading}
-            >
-              Yangilash
-            </button>
-          ) : null}
+ 
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75" />

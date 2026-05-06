@@ -5,7 +5,7 @@ import { fetchCandidatesList, pickNum, pickStr } from './candidates';
 import { fetchVacanciesList } from './vacancies';
 import { fetchCustomProfessionsList } from './customProfessions';
 
-const DASHBOARD_PATHS = ['/admin/dashboard/stats', '/admin/dashboard'] as const;
+const DASHBOARD_PATHS = ['/v1/admin/dashboard/stats', '/v1/admin/dashboard'] as const;
 
 const EMPTY_STATUS: DashboardData['statusDistribution'] = {
   DRAFT: 0,
@@ -250,7 +250,7 @@ async function buildDashboardFallback(): Promise<DashboardData> {
 }
 
 /**
- * Avvalo `GET /admin/dashboard/stats`, keyin `GET /admin/dashboard` (Swagger).
+ * Avvalo `GET /v1/admin/dashboard/stats`, keyin `GET /v1/admin/dashboard` (Swagger).
  * Ikkalasi ham yo‘q yoki noto‘g‘ri bo‘lsa — mavjud admin APIlar orqali yig‘iladi.
  */
 export async function fetchDashboardData(): Promise<DashboardData> {

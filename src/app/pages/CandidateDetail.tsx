@@ -24,16 +24,16 @@ import {
 } from 'lucide-react';
 import { Switch } from '../components/ui/switch';
 import { Label } from '../components/ui/label';
-import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import {
   btnPrimary,
-  ctlInput,
+  ctlSelect,
   pageKicker,
   panelElite,
   panelEliteRaised,
   theadElite,
 } from '../components/pageChrome';
+import { fetchAgentsForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
 
 const languageFlags: Record<string, string> = {
   RUSSIAN: '🇷🇺 Rus tili',
@@ -78,6 +78,8 @@ export function CandidateDetail() {
   const [statusSaving, setStatusSaving] = useState(false);
   const [agentIdInput, setAgentIdInput] = useState('');
   const [agentSaving, setAgentSaving] = useState(false);
+  const [agents, setAgents] = useState<SdgUserDto[]>([]);
+  const [agentsLoading, setAgentsLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -106,6 +108,24 @@ export function CandidateDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAgentsLoading(true);
+    void (async () => {
+      try {
+        const list = await fetchAgentsForSelect();
+        if (!cancelled) setAgents(list);
+      } catch {
+        if (!cancelled) setAgents([]);
+      } finally {
+        if (!cancelled) setAgentsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const displayName = useMemo(() => {
     if (!detail) return '';
@@ -304,13 +324,26 @@ export function CandidateDetail() {
                   Agent biriktirish
                 </Label>
                 <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    className={ctlInput}
-                    placeholder="agent_id"
+                  <select
+                    className={`${ctlSelect} min-w-0 flex-1`}
                     value={agentIdInput}
+                    disabled={agentSaving || agentsLoading}
                     onChange={(e) => setAgentIdInput(e.target.value)}
-                  />
+                  >
+                    <option value="">— Agent tanlang —</option>
+                    {agentIdInput &&
+                    !agents.some((a) => String(a.id) === agentIdInput) ? (
+                      <option value={agentIdInput}>
+                        ID {agentIdInput} (joriy / ro‘yxatda yo‘q)
+                      </option>
+                    ) : null}
+                    {agents.map((a) => (
+                      <option key={a.id} value={String(a.id)}>
+                        {getUserDisplayName(a)}
+                        {a.phoneNumber ? ` · ${a.phoneNumber}` : ''} (ID {a.id})
+                      </option>
+                    ))}
+                  </select>
                   <Button
                     type="button"
                     size="sm"

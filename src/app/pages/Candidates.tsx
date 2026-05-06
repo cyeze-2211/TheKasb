@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -7,7 +7,14 @@ import {
   RefreshCw,
   Search,
 } from 'lucide-react';
-import { COUNTRIES } from '../data/mockData';
+import { COUNTRIES, REGIONS } from '../data/mockData';
+import {
+  fetchProfessionCategories,
+  fetchProfessionsFilterOptions,
+  type ProfessionCategoryDto,
+  type ProfessionFilterOption,
+} from '../api/professions';
+import { fetchAgentsForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
 import { Link } from 'react-router';
 import { FilterPanel } from '../components/FilterPanel';
 import {
@@ -52,6 +59,13 @@ const languageFlags: Record<string, string> = {
   POLISH: '🇵🇱',
   OTHER: '🌐',
 };
+
+/** mockData `REGIONS` — "1-Toshkent..." formatidan id */
+const REGION_FILTER_OPTIONS: { id: number; label: string }[] = REGIONS.map((r) => {
+  const m = /^(\d+)\s*[-–]\s*/.exec(r.trim()) ?? /^(\d+)/.exec(r.trim());
+  const id = m ? Number(m[1]) : NaN;
+  return { id, label: r };
+}).filter((x) => Number.isFinite(x.id) && x.id > 0);
 
 const initialQuery = (): CandidatesListQuery => ({
   page: 0,
@@ -162,6 +176,45 @@ export function Candidates() {
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [categories, setCategories] = useState<ProfessionCategoryDto[]>([]);
+  const [professionOptions, setProfessionOptions] = useState<ProfessionFilterOption[]>([]);
+  const [agentOptions, setAgentOptions] = useState<SdgUserDto[]>([]);
+  const [filterMetaLoading, setFilterMetaLoading] = useState(false);
+
+  const visibleProfessions = useMemo(() => {
+    if (!q.categoryId) return professionOptions;
+    return professionOptions.filter((p) => p.categoryId === q.categoryId);
+  }, [professionOptions, q.categoryId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setFilterMetaLoading(true);
+    void (async () => {
+      try {
+        const [cats, profs, ag] = await Promise.all([
+          fetchProfessionCategories(),
+          fetchProfessionsFilterOptions(),
+          fetchAgentsForSelect(),
+        ]);
+        if (!cancelled) {
+          setCategories(cats);
+          setProfessionOptions(profs);
+          setAgentOptions(ag);
+        }
+      } catch {
+        if (!cancelled) {
+          setCategories([]);
+          setProfessionOptions([]);
+          setAgentOptions([]);
+        }
+      } finally {
+        if (!cancelled) setFilterMetaLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -240,55 +293,89 @@ export function Candidates() {
               </select>
             </div>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">regionId</span>
-              <input
-                type="number"
-                className={ctlInput}
-                placeholder="Masalan: 1"
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Hudud (regionId)</span>
+              <select
+                className={ctlSelect}
+                disabled={filterMetaLoading}
                 value={q.regionId ?? ''}
                 onChange={(e) =>
                   setField({
                     regionId: e.target.value ? Number(e.target.value) : undefined,
                   })
                 }
-              />
+              >
+                <option value="">Barchasi</option>
+                {REGION_FILTER_OPTIONS.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">categoryId</span>
-              <input
-                type="number"
-                className={ctlInput}
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Kategoriya</span>
+              <select
+                className={ctlSelect}
+                disabled={filterMetaLoading}
                 value={q.categoryId ?? ''}
-                onChange={(e) =>
-                  setField({
-                    categoryId: e.target.value ? Number(e.target.value) : undefined,
-                  })
-                }
-              />
+                onChange={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : undefined;
+                  setField({ categoryId: v, professionId: undefined });
+                }}
+              >
+                <option value="">Barchasi</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name_uz || c.name_ru} (ID {c.id})
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">professionId</span>
-              <input
-                type="number"
-                className={ctlInput}
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Kasb</span>
+              <select
+                className={ctlSelect}
+                disabled={filterMetaLoading}
                 value={q.professionId ?? ''}
                 onChange={(e) =>
                   setField({
                     professionId: e.target.value ? Number(e.target.value) : undefined,
                   })
                 }
-              />
+              >
+                <option value="">Barchasi</option>
+                {q.professionId != null &&
+                !visibleProfessions.some((p) => p.id === q.professionId) ? (
+                  <option value={q.professionId}>ID {q.professionId} (joriy filtr)</option>
+                ) : null}
+                {visibleProfessions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.label} (ID {p.id})
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">agentId</span>
-              <input
-                type="number"
-                className={ctlInput}
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Agent</span>
+              <select
+                className={ctlSelect}
+                disabled={filterMetaLoading}
                 value={q.agentId ?? ''}
                 onChange={(e) =>
                   setField({ agentId: e.target.value ? Number(e.target.value) : undefined })
                 }
-              />
+              >
+                <option value="">Barchasi</option>
+                {q.agentId != null && !agentOptions.some((a) => a.id === q.agentId) ? (
+                  <option value={q.agentId}>ID {q.agentId} (joriy filtr)</option>
+                ) : null}
+                {agentOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {getUserDisplayName(a)}
+                    {a.phoneNumber ? ` · ${a.phoneNumber}` : ''} (ID {a.id})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

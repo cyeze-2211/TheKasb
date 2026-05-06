@@ -2,12 +2,14 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from 'react';
 import type { LoginResult } from '../api/auth';
-import { loginWithApi, parseLoginResponse } from '../api/auth';
+import { authUserFromSdgUser, loginWithApi, parseLoginResponse } from '../api/auth';
+import { fetchCurrentUserMe } from '../api/users';
 import { getAccessTokenFromLoginSession, readLoginSessionRaw } from './loginSession';
 import type { AuthResponse } from '../../services/authService';
 import {
@@ -62,6 +64,34 @@ function readStoredUser(): AuthUser | null {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => readStoredUser());
+
+  useEffect(() => {
+    if (!getAccessTokenFromLoginSession()) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const me = await fetchCurrentUserMe();
+        if (cancelled || !me) return;
+        const stored = readStoredProfile();
+        let fallback = stored?.phone ?? '';
+        if (!fallback) {
+          const raw = readLoginSessionRaw();
+          if (raw) {
+            const { user: u0 } = parseLoginResponse(raw, '');
+            fallback = u0.phone;
+          }
+        }
+        const u = authUserFromSdgUser(me, fallback);
+        saveAuthProfile(u);
+        setUser(u);
+      } catch {
+        /* saqlangan profil / login javobi saqlanadi */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const login = useCallback(async (phone: string, password: string): Promise<LoginResult> => {
     const result = await loginWithApi(phone, password);

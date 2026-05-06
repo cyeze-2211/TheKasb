@@ -27,9 +27,25 @@ export type VacancyPatchRequest = {
   employer_name?: string;
   expires_at?: string;
   flight_ticket?: boolean;
+  is_urgent?: boolean;
+  language_requirements?: Array<{
+    is_mandatory: boolean;
+    language: string;
+    min_level: string;
+  }>;
   meals_provided?: boolean;
   medical_insurance?: boolean;
   places_total?: number;
+  professions?: Array<{
+    age_max: number;
+    age_min: number;
+    custom_profession_id: string | null;
+    experience_range: string;
+    gender_requirement: string;
+    places_count: number;
+    profession_category_id: number;
+    profession_id: number;
+  }>;
   salary_currency?: SalaryCurrency;
   salary_is_negotiable?: boolean;
   salary_max?: number;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import {
   type AccountType,
@@ -22,9 +22,19 @@ import { Input } from '../ui/input';
 import { Button } from '../ui/button';
 import { btnPrimaryLg, btnSecondaryLg, ctlInputLg, ctlSelectLg } from '../pageChrome';
 import { Loader2 } from 'lucide-react';
+import {
+  findGroupByViloyatName,
+  findGroupContainingTuman,
+  getUzRegionGroups,
+} from '../../lib/uzRegionsCodeSystem';
 
 const ACCOUNT_TYPES: AccountType[] = ['ADMIN', 'AGENT', 'CANDIDATE', 'SUPER_ADMIN'];
 const GENDERS: GenderType[] = ['ERKAK', 'AYOL'];
+
+/** Ro'yxatdagi kod bilan mos kelmaydigan saqlangan viloyat */
+const LEGACY_VILOYAT = '__legacy_viloyat__';
+/** Ro'yxatdagi kod bilan mos kelmaydigan saqlangan tuman */
+const LEGACY_TUMAN = '__legacy_tuman__';
 
 function creatorIdFromSession(): number | null {
   try {
@@ -108,8 +118,38 @@ function numOrNull(s: string): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function buildDto(form: FormState, mode: 'create' | 'edit', editId?: number): SdgUserDto {
+function buildDto(
+  form: FormState,
+  mode: 'create' | 'edit',
+  editId?: number,
+  initialUser?: SdgUserDto | null,
+): SdgUserDto {
+  const courseFromForm = numOrNull(form.courseId);
+  const creatorFromForm = numOrNull(form.creatorId);
+
+  const courseIdRaw =
+    courseFromForm ??
+    (mode === 'edit' && initialUser?.courseId != null ? Number(initialUser.courseId) : null);
+  const creatorIdRaw =
+    creatorFromForm ??
+    (mode === 'create'
+      ? creatorIdFromSession()
+      : initialUser?.creatorId != null
+        ? Number(initialUser.creatorId)
+        : null);
+  const courseId = courseIdRaw != null && Number.isFinite(courseIdRaw) ? courseIdRaw : null;
+  const creatorId = creatorIdRaw != null && Number.isFinite(creatorIdRaw) ? creatorIdRaw : null;
+
+  const base: SdgUserDto =
+    mode === 'edit' && initialUser
+      ? (() => {
+          const { password: _ignored, ...rest } = initialUser;
+          return { ...rest };
+        })()
+      : {};
+
   const dto: SdgUserDto = {
+    ...base,
     accountType: form.accountType,
     firstName: form.firstName.trim() || null,
     lastName: form.lastName.trim() || null,
@@ -123,12 +163,13 @@ function buildDto(form: FormState, mode: 'create' | 'edit', editId?: number): Sd
     addressMFY: form.addressMFY.trim() || null,
     school: form.school.trim() || null,
     group: form.group.trim() || null,
-    courseId: numOrNull(form.courseId),
-    creatorId: numOrNull(form.creatorId) ?? (mode === 'create' ? creatorIdFromSession() : null),
+    courseId,
+    creatorId,
   };
 
   if (mode === 'edit' && editId != null) {
     dto.id = editId;
+    delete dto.password;
     if (form.password.trim()) dto.password = form.password.trim();
   } else {
     dto.password = form.password.trim() || null;
@@ -156,6 +197,35 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
   const [form, setForm] = useState<FormState>(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const regionGroups = useMemo(() => getUzRegionGroups(), []);
+
+  const viloyatSelectValue = (() => {
+    const r = form.addressRegion.trim();
+    const d = form.addressDistrict.trim();
+    if (d) {
+      const g = findGroupContainingTuman(regionGroups, d);
+      if (g) return g.viloyatCode;
+    }
+    if (r) {
+      const g = findGroupByViloyatName(regionGroups, r);
+      if (g) return g.viloyatCode;
+      return LEGACY_VILOYAT;
+    }
+    return '';
+  })();
+
+  const currentRegionGroup =
+    viloyatSelectValue && viloyatSelectValue !== LEGACY_VILOYAT
+      ? regionGroups.find((g) => g.viloyatCode === viloyatSelectValue)
+      : undefined;
+
+  const tumanSelectValue = (() => {
+    const d = form.addressDistrict.trim();
+    if (!d) return '';
+    if (!currentRegionGroup) return LEGACY_TUMAN;
+    const hit = currentRegionGroup.tumanlar.find((t) => t.display === d);
+    return hit ? hit.code : LEGACY_TUMAN;
+  })();
 
   useEffect(() => {
     if (!open) return;
@@ -171,9 +241,13 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
       setError('Yangi foydalanuvchi uchun parol kiriting.');
       return;
     }
+    if (mode === 'edit' && form.password.trim() && form.password.trim().length < 8) {
+      setError('Yangi parol kamida 8 belgidan iborat bo‘lsin yoki parolni bo‘sh qoldiring.');
+      return;
+    }
     setSaving(true);
     try {
-      const dto = buildDto(form, mode, userId);
+      const dto = buildDto(form, mode, userId, initialUser ?? null);
       if (mode === 'create') await createUser(dto);
       else {
         if (userId == null) throw new Error('ID yo‘q');
@@ -333,23 +407,66 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
               <Label htmlFor="uf-reg" className="mb-1.5 text-xs text-text-muted">
                 Viloyat
               </Label>
-              <Input
+              <select
                 id="uf-reg"
-                className={ctlInputLg}
-                value={form.addressRegion}
-                onChange={(e) => setForm((f) => ({ ...f, addressRegion: e.target.value }))}
-              />
+                className={ctlSelectLg}
+                value={viloyatSelectValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) setForm((f) => ({ ...f, addressRegion: '', addressDistrict: '' }));
+                  else if (v === LEGACY_VILOYAT) {
+                    /* joriy qiymat */
+                  } else {
+                    const g = regionGroups.find((x) => x.viloyatCode === v);
+                    if (g) setForm((f) => ({ ...f, addressRegion: g.viloyatNameUz, addressDistrict: '' }));
+                  }
+                }}
+              >
+                <option value="">— Viloyatni tanlang —</option>
+                {viloyatSelectValue === LEGACY_VILOYAT && form.addressRegion.trim() ? (
+                  <option value={LEGACY_VILOYAT}>
+                    {form.addressRegion.trim()} (joriy, ro&apos;yxatda yo&apos;q)
+                  </option>
+                ) : null}
+                {regionGroups.map((g) => (
+                  <option key={g.viloyatCode} value={g.viloyatCode}>
+                    {g.viloyatNameUz}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <Label htmlFor="uf-dist" className="mb-1.5 text-xs text-text-muted">
-                Tuman
+                Tuman / shahar
               </Label>
-              <Input
+              <select
                 id="uf-dist"
-                className={ctlInputLg}
-                value={form.addressDistrict}
-                onChange={(e) => setForm((f) => ({ ...f, addressDistrict: e.target.value }))}
-              />
+                className={ctlSelectLg}
+                value={tumanSelectValue}
+                disabled={!currentRegionGroup && !form.addressDistrict.trim()}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!v) setForm((f) => ({ ...f, addressDistrict: '' }));
+                  else if (v === LEGACY_TUMAN) {
+                    /* joriy qiymat */
+                  } else {
+                    const t = currentRegionGroup?.tumanlar.find((x) => x.code === v);
+                    if (t) setForm((f) => ({ ...f, addressDistrict: t.display }));
+                  }
+                }}
+              >
+                <option value="">— Tumanni tanlang —</option>
+                {tumanSelectValue === LEGACY_TUMAN && form.addressDistrict.trim() ? (
+                  <option value={LEGACY_TUMAN}>
+                    {form.addressDistrict.trim()} (joriy, ro&apos;yxatda yo&apos;q)
+                  </option>
+                ) : null}
+                {currentRegionGroup?.tumanlar.map((t) => (
+                  <option key={t.code} value={t.code}>
+                    {t.display}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <Label htmlFor="uf-mfy" className="mb-1.5 text-xs text-text-muted">

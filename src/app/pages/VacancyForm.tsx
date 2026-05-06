@@ -7,7 +7,7 @@ import {
   fetchProfessionsByCategory,
   type ProfessionDto,
 } from '../api/professions';
-import { createVacancy } from '../api/vacancies';
+import { createVacancy, fetchVacancyById, patchVacancy } from '../api/vacancies';
 import {
   btnPrimaryLg,
   btnSecondaryLg,
@@ -24,6 +24,7 @@ export function VacancyForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const isEdit = !!id;
+  const vacancyId = id ?? '';
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -91,6 +92,7 @@ export function VacancyForm() {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadingVacancy, setLoadingVacancy] = useState(false);
 
   const [professionCategories, setProfessionCategories] = useState<
     Awaited<ReturnType<typeof fetchProfessionCategories>>
@@ -120,6 +122,101 @@ export function VacancyForm() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isEdit || !vacancyId) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingVacancy(true);
+      setError(null);
+      try {
+        const v = await fetchVacancyById(vacancyId);
+        if (cancelled) return;
+        if (!v) {
+          setError('Vakansiya topilmadi.');
+          return;
+        }
+        const pickStr = (...keys: string[]) => {
+          for (const k of keys) {
+            const val = v[k];
+            if (val != null && String(val).trim()) return String(val);
+          }
+          return '';
+        };
+        const pickBool = (...keys: string[]) => {
+          for (const k of keys) {
+            const val = v[k];
+            if (typeof val === 'boolean') return val;
+          }
+          return undefined;
+        };
+        const pickNum = (...keys: string[]) => {
+          for (const k of keys) {
+            const val = v[k];
+            if (typeof val === 'number' && Number.isFinite(val)) return val;
+            if (typeof val === 'string' && val.trim() !== '') {
+              const n = Number(val);
+              if (Number.isFinite(n)) return n;
+            }
+          }
+          return undefined;
+        };
+
+        setTitle(pickStr('title'));
+        setDescription(pickStr('description'));
+        setCountryCode(pickStr('country_code', 'countryCode'));
+        setCity(pickStr('city'));
+        setEmployerName(pickStr('employer_name', 'employerName'));
+        setWorkSchedule(pickStr('work_schedule', 'workSchedule') || 'FULL_TIME');
+        setIsUrgent(pickBool('is_urgent', 'isUrgent', 'urgent') ?? false);
+        setSalaryMin(pickNum('salary_min', 'salaryMin') ?? 0);
+        setSalaryMax(pickNum('salary_max', 'salaryMax') ?? 0);
+        setSalaryCurrency(pickStr('salary_currency', 'salaryCurrency') || 'EUR');
+        setSalaryNegotiable(pickBool('salary_is_negotiable', 'salaryIsNegotiable') ?? false);
+        setPlacesTotal(pickNum('places_total', 'placesTotal') ?? 0);
+        setContractMonths(pickNum('contract_duration_months', 'contractDurationMonths') ?? 0);
+        const expIso = pickStr('expires_at', 'expiresAt');
+        setExpiresAt(expIso ? expIso.slice(0, 16) : '');
+        setAccommodation(pickBool('accommodation') ?? false);
+        setMealsProvided(pickBool('meals_provided', 'mealsProvided') ?? false);
+        setMedicalInsurance(pickBool('medical_insurance', 'medicalInsurance') ?? false);
+        setFlightTicket(pickBool('flight_ticket', 'flightTicket') ?? false);
+
+        const profRaw = v.professions;
+        if (Array.isArray(profRaw) && profRaw.length) {
+          setProfessions(
+            profRaw.map((p) => ({
+              profession_category_id: Number((p as any).profession_category_id ?? (p as any).professionCategoryId ?? 0) || 0,
+              profession_id: Number((p as any).profession_id ?? (p as any).professionId ?? 0) || 0,
+              custom_profession_id: ((p as any).custom_profession_id ?? (p as any).customProfessionId ?? null) as string | null,
+              places_count: Number((p as any).places_count ?? (p as any).placesCount ?? 1) || 1,
+              gender_requirement: String((p as any).gender_requirement ?? (p as any).genderRequirement ?? 'ANY'),
+              age_min: Number((p as any).age_min ?? (p as any).ageMin ?? 0) || 0,
+              age_max: Number((p as any).age_max ?? (p as any).ageMax ?? 0) || 0,
+              experience_range: String((p as any).experience_range ?? (p as any).experienceRange ?? 'YEAR_1_3'),
+            })),
+          );
+        }
+        const langRaw = v.language_requirements;
+        if (Array.isArray(langRaw) && langRaw.length) {
+          setLanguages(
+            langRaw.map((r) => ({
+              language: String((r as any).language ?? 'ENGLISH'),
+              min_level: String((r as any).min_level ?? (r as any).minLevel ?? 'A1'),
+              is_mandatory: Boolean((r as any).is_mandatory ?? (r as any).isMandatory ?? true),
+            })),
+          );
+        }
+      } catch (e: unknown) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Vakansiyani yuklashda xato.');
+      } finally {
+        if (!cancelled) setLoadingVacancy(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isEdit, vacancyId]);
+
   function prefetchProfessionsForCategory(categoryId: number) {
     if (categoryId <= 0) return;
     void fetchProfessionsByCategory(categoryId)
@@ -131,7 +228,7 @@ export function VacancyForm() {
       });
   }
 
-  async function handleCreate(status: 'ACTIVE' | 'DRAFT') {
+  async function handleSave(status: 'ACTIVE' | 'DRAFT') {
     setError(null);
     if (!title.trim()) return setError('Sarlavha kiriting.');
     if (!countryCode) return setError('Mamlakat kodini tanlang.');
@@ -166,9 +263,13 @@ export function VacancyForm() {
         flight_ticket: flightTicket,
         professions,
         language_requirements: languages,
-        status,
       };
-      await createVacancy(req);
+      if (isEdit) {
+        if (!vacancyId) throw new Error('ID yo‘q');
+        await patchVacancy(vacancyId, req);
+      } else {
+        await createVacancy({ ...req, status });
+      }
       navigate('/admin/vacancies', { replace: true });
     } catch (e: any) {
       setError(typeof e?.message === 'string' ? e.message : 'Saqlashda xato.');
@@ -639,13 +740,13 @@ export function VacancyForm() {
         <button type="button" onClick={() => navigate('/admin/vacancies')} className={btnSecondaryLg}>
           Bekor qilish
         </button>
-        <button type="button" className={btnSecondaryLg} disabled={saving} onClick={() => void handleCreate('DRAFT')}>
+        <button type="button" className={btnSecondaryLg} disabled={saving || loadingVacancy} onClick={() => void handleSave('DRAFT')}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-          Qoralama saqla
+          {isEdit ? 'Saqlash (PATCH)' : 'Qoralama saqla'}
         </button>
-        <button type="button" className={btnPrimaryLg} disabled={saving} onClick={() => void handleCreate('ACTIVE')}>
+        <button type="button" className={btnPrimaryLg} disabled={saving || loadingVacancy} onClick={() => void handleSave('ACTIVE')}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-          Nashr qilish (ACTIVE)
+          {isEdit ? 'Saqlash (PATCH)' : 'Nashr qilish (ACTIVE)'}
         </button>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}
