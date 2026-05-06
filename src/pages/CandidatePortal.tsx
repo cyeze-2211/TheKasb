@@ -12,7 +12,12 @@ import {
   Star,
   User,
 } from 'lucide-react';
-import { sanitizeNationalDigits, toApiPhone } from '../app/lib/uzPhone';
+import {
+  formatNationalDisplay,
+  sanitizeNationalDigits,
+  toApiPhone,
+  UZ_PHONE_PREFIX,
+} from '../app/lib/uzPhone';
 import {
   candidateAddLanguage,
   candidateAddTargetCountry,
@@ -89,6 +94,13 @@ const AVAILABILITY = [
 const LANGUAGES = ['Rus tili', 'Ingliz tili', 'Nemis tili', 'Koreys tili', 'Polyak tili', 'Til bilmayman'];
 
 const TOTAL_SCREENS = 7;
+/** Backend SMS kodi uzunligi */
+const OTP_SLOT_COUNT = 5;
+
+function emptyOtpSlots(): string[] {
+  return Array.from({ length: OTP_SLOT_COUNT }, () => '');
+}
+
 const PROGRESS_BY_SCREEN: Record<number, number> = {
   2: 16,
   3: 32,
@@ -392,23 +404,26 @@ function Screen2({
         <p className="mb-6" style={{ fontSize: 14, color: C.muted }}>
           SMS orqali tasdiqlash kodi yuboramiz
         </p>
-        <div className="mb-2 flex gap-2">
+        <div className="mb-2 flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-stretch">
           <div
-            className="flex shrink-0 items-center justify-center rounded-[14px] px-4"
-            style={{ border: `1.5px solid ${C.border}`, backgroundColor: C.card, height: 56 }}
+            className="flex shrink-0 items-center justify-center rounded-[14px] px-3 sm:px-4"
+            style={{ border: `1.5px solid ${C.border}`, backgroundColor: C.card, minHeight: 56 }}
           >
-            <span className="font-semibold" style={{ fontSize: 15, color: C.text }}>
-              +998
+            <span className="font-semibold tabular-nums" style={{ fontSize: 15, color: C.text }}>
+              {UZ_PHONE_PREFIX}
             </span>
           </div>
           <input
             type="tel"
+            inputMode="numeric"
+            autoComplete="tel-national"
             placeholder="90 123 45 67"
-            value={form.phoneNational}
-            onChange={(e) => setForm((f) => ({ ...f, phoneNational: e.target.value }))}
-            className="flex-1 rounded-[14px] px-4 outline-none transition-colors"
+            value={formatNationalDisplay(form.phoneNational)}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, phoneNational: sanitizeNationalDigits(e.target.value) }))
+            }
+            className="min-h-[56px] min-w-0 flex-1 rounded-[14px] px-3 outline-none transition-colors sm:px-4"
             style={{
-              height: 56,
               border: `1.5px solid ${C.border}`,
               backgroundColor: C.card,
               color: C.text,
@@ -468,7 +483,18 @@ function Screen3({
   }, [timer]);
 
   const handleOtp = (val: string, idx: number) => {
-    const digit = val.replace(/\D/g, '').slice(-1);
+    const raw = val.replace(/\D/g, '');
+    if (raw.length > 1) {
+      const next = [...form.otp];
+      for (let j = 0; j < raw.length && idx + j < next.length; j++) {
+        next[idx + j] = raw[j] ?? '';
+      }
+      setForm((f) => ({ ...f, otp: next }));
+      const focusIdx = Math.min(idx + raw.length, next.length - 1);
+      inputRefs.current[focusIdx]?.focus();
+      return;
+    }
+    const digit = raw.slice(-1);
     const next = [...form.otp];
     next[idx] = digit;
     setForm((f) => ({ ...f, otp: next }));
@@ -499,10 +525,17 @@ function Screen3({
         >
           SMS kodni kiriting
         </h2>
-        <p className="mb-8" style={{ fontSize: 14, color: C.muted }}>
-          +998 {sanitizeNationalDigits(form.phoneNational)} raqamiga yuborilgan kodni kiriting
+        <p
+          className="mb-6 max-w-full break-words sm:mb-8"
+          style={{ fontSize: 14, color: C.muted, lineHeight: 1.45 }}
+        >
+          <span className="inline sm:inline">{UZ_PHONE_PREFIX} </span>
+          <span className="inline-block break-all tabular-nums">
+            {sanitizeNationalDigits(form.phoneNational) || '—'}
+          </span>{' '}
+          raqamiga yuborilgan 5 raqamli kodni kiriting
         </p>
-        <div className="mb-5 flex justify-center gap-2.5">
+        <div className="mb-5 mx-auto grid w-full max-w-[min(100%,320px)] grid-cols-5 gap-1.5 sm:max-w-[380px] sm:gap-2.5">
           {form.otp.map((d, i) => (
             <input
               key={i}
@@ -511,21 +544,19 @@ function Screen3({
               }}
               type="tel"
               inputMode="numeric"
+              autoComplete={i === 0 ? 'one-time-code' : 'off'}
               maxLength={1}
               value={d || ''}
               onChange={(e) => handleOtp(e.target.value, i)}
               onKeyDown={(e) => handleKeyDown(e, i)}
-              className="rounded-[14px] text-center font-semibold outline-none transition-colors"
+              className="h-11 w-full rounded-[12px] text-center text-lg font-semibold outline-none transition-colors sm:h-[60px] sm:rounded-[14px] sm:text-[22px]"
               style={{
-                width: 56,
-                height: 60,
-                fontSize: 22,
-                flexShrink: 0,
                 border: `1.5px solid ${d ? C.blue : C.border}`,
                 backgroundColor: d ? C.blueSelected : C.card,
                 color: C.text,
                 fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
               }}
+              aria-label={`OTP raqam ${i + 1} / ${OTP_SLOT_COUNT}`}
             />
           ))}
         </div>
@@ -1088,7 +1119,7 @@ export default function CandidatePortal() {
 
   const [form, setForm] = useState<FormState>({
     phoneNational: '',
-    otp: ['', '', '', ''],
+    otp: emptyOtpSlots(),
     profession: null,
     customProfessionName: '',
     countries: [],
@@ -1110,6 +1141,7 @@ export default function CandidatePortal() {
     setBusy(true);
     try {
       await candidateSendOtp(phoneE164);
+      setForm((f) => ({ ...f, otp: emptyOtpSlots() }));
       toast.success('SMS kod yuborildi.');
       goNext();
     } catch (e) {

@@ -27,6 +27,12 @@ import {
   findGroupContainingTuman,
   getUzRegionGroups,
 } from '../../lib/uzRegionsCodeSystem';
+import {
+  formatNationalDisplay,
+  sanitizeNationalDigits,
+  toApiPhone,
+  UZ_PHONE_PREFIX,
+} from '../../lib/uzPhone';
 
 const ACCOUNT_TYPES: AccountType[] = ['ADMIN', 'AGENT', 'CANDIDATE', 'SUPER_ADMIN'];
 const GENDERS: GenderType[] = ['ERKAK', 'AYOL'];
@@ -55,7 +61,8 @@ type FormState = {
   firstName: string;
   lastName: string;
   email: string;
-  phoneNumber: string;
+  /** Milliy 9 raqamgacha (+998siz), kirish maydoni uchun */
+  phoneNational: string;
   genderType: GenderType;
   dateBirth: string;
   password: string;
@@ -75,7 +82,7 @@ function emptyForm(): FormState {
     firstName: '',
     lastName: '',
     email: '',
-    phoneNumber: '',
+    phoneNational: '',
     genderType: 'ERKAK',
     dateBirth: '',
     password: '',
@@ -96,7 +103,7 @@ function fromUser(u: SdgUserDto): FormState {
     firstName: (u.firstName as string) ?? '',
     lastName: (u.lastName as string) ?? '',
     email: (u.email as string) ?? '',
-    phoneNumber: (u.phoneNumber as string) ?? '',
+    phoneNational: sanitizeNationalDigits((u.phoneNumber as string) ?? ''),
     genderType: (u.genderType as GenderType) || 'ERKAK',
     dateBirth: (u.dateBirth as string) ?? '',
     password: '',
@@ -154,7 +161,7 @@ function buildDto(
     firstName: form.firstName.trim() || null,
     lastName: form.lastName.trim() || null,
     email: form.email.trim() || null,
-    phoneNumber: form.phoneNumber.trim() || null,
+    phoneNumber: toApiPhone(form.phoneNational),
     genderType: form.genderType,
     dateBirth: form.dateBirth.trim() || null,
     address: form.address.trim() || null,
@@ -237,6 +244,11 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const phoneNat = sanitizeNationalDigits(form.phoneNational);
+    if (phoneNat.length > 0 && phoneNat.length < 9) {
+      setError('Telefon raqamini to‘liq kiriting (9 raqam, +998 dan keyin).');
+      return;
+    }
     if (mode === 'create' && !form.password.trim()) {
       setError('Yangi foydalanuvchi uchun parol kiriting.');
       return;
@@ -338,17 +350,33 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
                 autoComplete="email"
               />
             </div>
-            <div>
+            <div className="sm:col-span-2">
               <Label htmlFor="uf-phone" className="mb-1.5 text-xs text-text-muted">
                 Telefon
               </Label>
-              <Input
-                id="uf-phone"
-                className={`${ctlInputLg} mono`}
-                value={form.phoneNumber}
-                onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
-                placeholder="+998901234567"
-              />
+              <div
+                className={`${ctlInputLg} flex min-h-0 min-w-0 max-w-full items-center gap-1 !py-0 sm:gap-2`}
+              >
+                <span
+                  className="shrink-0 select-none text-sm font-medium tracking-tight text-text-primary"
+                  aria-hidden
+                >
+                  {UZ_PHONE_PREFIX}
+                </span>
+                <input
+                  id="uf-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel-national"
+                  value={formatNationalDisplay(form.phoneNational)}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, phoneNational: sanitizeNationalDigits(e.target.value) }))
+                  }
+                  placeholder="90 123 45 67"
+                  className="min-w-0 flex-1 border-0 bg-transparent py-2.5 text-sm text-text-primary outline-none placeholder:text-text-muted/60"
+                  disabled={saving}
+                />
+              </div>
             </div>
             <div>
               <Label htmlFor="uf-gender" className="mb-1.5 text-xs text-text-muted">
