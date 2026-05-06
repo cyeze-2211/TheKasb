@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import {
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Loader2,
   RefreshCw,
@@ -11,9 +12,10 @@ import {
 import type { UserRole } from '../data/mockData';
 import {
   axiosErrorMessage,
-  fetchUsers,
+  fetchUsersWithMeta,
   getUserDisplayName,
   type AccountType,
+  type AdminUsersPageMeta,
   type SdgUserDto,
 } from '../api/users';
 import { UserFormDialog } from '../components/users/UserFormDialog';
@@ -36,6 +38,31 @@ function fmtLastLogin(s: string | null | undefined): string {
   }
 }
 
+/** 0-based joriy sahifa va jami sahifalar — bosiladigan raqamlar (+ … chetlar) */
+type PageNavItem = number | 'ellipsis';
+
+function adminUsersPaginationItems(currentZeroBased: number, totalPages: number): PageNavItem[] {
+  const total = Math.max(1, totalPages);
+  const cur = Math.min(Math.max(0, currentZeroBased), total - 1);
+  if (total <= 9) {
+    return Array.from({ length: total }, (_, i) => i);
+  }
+  const s = new Set<number>();
+  s.add(0);
+  s.add(total - 1);
+  for (let d = -2; d <= 2; d++) {
+    const p = cur + d;
+    if (p >= 0 && p < total) s.add(p);
+  }
+  const nums = Array.from(s).sort((a, b) => a - b);
+  const out: PageNavItem[] = [];
+  for (let i = 0; i < nums.length; i++) {
+    if (i > 0 && nums[i] - nums[i - 1] > 1) out.push('ellipsis');
+    out.push(nums[i]);
+  }
+  return out;
+}
+
 export function Users() {
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [filters, setFilters] = useState({
@@ -50,18 +77,28 @@ export function Users() {
     lastLoginTo: '',
   });
   const [rows, setRows] = useState<SdgUserDto[]>([]);
+  const [pageMeta, setPageMeta] = useState<AdminUsersPageMeta | null>(null);
+  const [page, setPage] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const fetchSeq = useRef(0);
+
+  const patchFilters = useCallback((patch: Partial<typeof filters>) => {
+    setFilters((prev) => ({ ...prev, ...patch }));
+    setPage(0);
+  }, []);
 
   const load = useCallback(async () => {
+    const seq = ++fetchSeq.current;
     setLoading(true);
     setError(null);
     try {
-      const list = await fetchUsers({
+      const { users, meta } = await fetchUsersWithMeta({
         accountType: filters.role === 'ALL' ? 'ALL' : (filters.role as AccountType),
-        page: 0,
-        size: 200,
+        page,
+        size: pageSize,
         is_active:
           filters.active === 'YES' ? true : filters.active === 'NO' ? false : undefined,
         is_verified:
@@ -74,12 +111,17 @@ export function Users() {
         last_login_from: filters.lastLoginFrom.trim() || undefined,
         last_login_to: filters.lastLoginTo.trim() || undefined,
       });
-      setRows(list);
+      if (seq !== fetchSeq.current) return;
+      setRows(users);
+      setPageMeta(meta);
+      if (meta != null) setPage(meta.pageNumber);
     } catch (e) {
+      if (seq !== fetchSeq.current) return;
       setError(axiosErrorMessage(e, 'Ro‘yxatni yuklashda xato.'));
       setRows([]);
+      setPageMeta(null);
     } finally {
-      setLoading(false);
+      if (seq === fetchSeq.current) setLoading(false);
     }
   }, [
     filters.role,
@@ -91,22 +133,24 @@ export function Users() {
     filters.registeredTo,
     filters.lastLoginFrom,
     filters.lastLoginTo,
+    page,
+    pageSize,
   ]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const filtered = useMemo(() => {
-    return rows.filter((u) => {
-      if (filters.role !== 'ALL' && String(u.accountType) !== filters.role) return false;
-      if (filters.active === 'YES' && u.isActive !== true) return false;
-      if (filters.active === 'NO' && u.isActive !== false) return false;
-      if (filters.verified === 'YES' && u.isVerified !== true) return false;
-      if (filters.verified === 'NO' && u.isVerified !== false) return false;
-      return true;
-    });
-  }, [rows, filters]);
+  const totalElements = pageMeta?.totalElements ?? rows.length;
+  const totalPages = Math.max(1, pageMeta?.totalPages ?? 1);
+  const displayPageOneBased = pageMeta ? pageMeta.pageNumber + 1 : page + 1;
+  const canPrev = page > 0;
+  const canNext = pageMeta ? page < totalPages - 1 : rows.length >= pageSize && rows.length > 0;
+
+  const paginationItems = useMemo(
+    () => adminUsersPaginationItems(page, totalPages),
+    [page, totalPages],
+  );
 
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
@@ -154,7 +198,7 @@ export function Users() {
             <label className="mb-1.5 block text-xs font-medium text-text-muted">Qidirish (search)</label>
             <input
               value={filters.search}
-              onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+              onChange={(e) => patchFilters({ search: e.target.value })}
               className={ctlInput}
               placeholder="Telefon, email, ism..."
             />
@@ -163,7 +207,7 @@ export function Users() {
             <label className="mb-1.5 block text-xs font-medium text-text-muted">Rol</label>
             <select
               value={filters.role}
-              onChange={(e) => setFilters({ ...filters, role: e.target.value })}
+              onChange={(e) => patchFilters({ role: e.target.value })}
               className={ctlSelect}
             >
               <option value="ALL">Barchasi</option>
@@ -177,7 +221,7 @@ export function Users() {
             <label className="mb-1.5 block text-xs font-medium text-text-muted">Aktiv</label>
             <select
               value={filters.active}
-              onChange={(e) => setFilters({ ...filters, active: e.target.value })}
+              onChange={(e) => patchFilters({ active: e.target.value })}
               className={ctlSelect}
             >
               <option value="ALL">Barchasi</option>
@@ -189,7 +233,7 @@ export function Users() {
             <label className="mb-1.5 block text-xs font-medium text-text-muted">Tasdiqlangan</label>
             <select
               value={filters.verified}
-              onChange={(e) => setFilters({ ...filters, verified: e.target.value })}
+              onChange={(e) => patchFilters({ verified: e.target.value })}
               className={ctlSelect}
             >
               <option value="ALL">Barchasi</option>
@@ -201,7 +245,7 @@ export function Users() {
             <label className="mb-1.5 block text-xs font-medium text-text-muted">Hech qachon kirmagan (never_logged_in)</label>
             <select
               value={filters.neverLoggedIn}
-              onChange={(e) => setFilters({ ...filters, neverLoggedIn: e.target.value })}
+              onChange={(e) => patchFilters({ neverLoggedIn: e.target.value })}
               className={ctlSelect}
             >
               <option value="ALL">Barchasi</option>
@@ -214,7 +258,7 @@ export function Users() {
             <input
               type="date"
               value={filters.registeredFrom}
-              onChange={(e) => setFilters({ ...filters, registeredFrom: e.target.value })}
+              onChange={(e) => patchFilters({ registeredFrom: e.target.value })}
               className={ctlSelect}
             />
           </div>
@@ -223,7 +267,7 @@ export function Users() {
             <input
               type="date"
               value={filters.registeredTo}
-              onChange={(e) => setFilters({ ...filters, registeredTo: e.target.value })}
+              onChange={(e) => patchFilters({ registeredTo: e.target.value })}
               className={ctlSelect}
             />
           </div>
@@ -232,7 +276,7 @@ export function Users() {
             <input
               type="date"
               value={filters.lastLoginFrom}
-              onChange={(e) => setFilters({ ...filters, lastLoginFrom: e.target.value })}
+              onChange={(e) => patchFilters({ lastLoginFrom: e.target.value })}
               className={ctlSelect}
             />
           </div>
@@ -241,7 +285,7 @@ export function Users() {
             <input
               type="date"
               value={filters.lastLoginTo}
-              onChange={(e) => setFilters({ ...filters, lastLoginTo: e.target.value })}
+              onChange={(e) => patchFilters({ lastLoginTo: e.target.value })}
               className={ctlSelect}
             />
           </div>
@@ -257,7 +301,7 @@ export function Users() {
           <div className="flex flex-wrap items-center gap-3">
             <h2 className="m-0">Foydalanuvchilar</h2>
             <span className="rounded-full border border-border/60 bg-surface px-2.5 py-0.5 text-xs font-semibold tabular-nums text-text-muted shadow-[var(--elite-shadow-xs)]">
-              {loading ? '…' : filtered.length.toLocaleString('ru-RU')} ta
+              {loading ? '…' : totalElements.toLocaleString('ru-RU')} ta
             </span>
           </div>
         </div>
@@ -283,16 +327,16 @@ export function Users() {
                     Yuklanmoqda…
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-sm text-text-muted">
                     Ma’lumot yo‘q yoki filtrga mos kelmaydi.
                   </td>
                 </tr>
               ) : (
-                filtered.map((user, index) => (
+                rows.map((user, index) => (
                   <tr key={user.id} className={rowElite}>
-                    <td className="px-6 py-3 text-sm text-text-muted">{index + 1}</td>
+                    <td className="px-6 py-3 text-sm text-text-muted">{page * pageSize + index + 1}</td>
                     <td className="mono px-6 py-3 text-sm text-text-primary">{user.phoneNumber ?? '—'}</td>
                     <td className="px-6 py-3 text-sm text-text-primary">{getUserDisplayName(user)}</td>
                     <td className="px-6 py-3">
@@ -346,9 +390,85 @@ export function Users() {
           </table>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-4 text-sm text-text-muted">
-          <span>
-            Jami yuklangan: {rows.length.toLocaleString('ru-RU')} · Filtrdan keyin: {filtered.length.toLocaleString('ru-RU')}
-          </span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span>
+              Sahifa: <span className="tabular-nums text-text-primary">{displayPageOneBased}</span> /{' '}
+              <span className="tabular-nums text-text-primary">{totalPages}</span>
+              {pageMeta ? (
+                <>
+                  {' '}
+                  · Sahifada <span className="tabular-nums">{rows.length}</span> /{' '}
+                  <span className="tabular-nums">{pageMeta.pageSize}</span>
+                </>
+              ) : null}
+            </span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2">
+              <span className="text-xs">Sahifada</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(0);
+                }}
+                className={`${ctlSelect} h-9 min-w-[5.5rem] py-0 text-xs`}
+              >
+                {[20, 50, 100, 200].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                className={`${btnSecondary} inline-flex h-9 items-center gap-1 px-2.5 text-xs`}
+                disabled={!canPrev || loading}
+                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                aria-label="Oldingi sahifa"
+              >
+                <ChevronLeft className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </button>
+              {paginationItems.map((item, idx) =>
+                item === 'ellipsis' ? (
+                  <span
+                    key={`e-${idx}`}
+                    className="inline-flex min-w-[1.75rem] select-none items-center justify-center px-0.5 text-xs text-text-muted"
+                    aria-hidden
+                  >
+                    …
+                  </span>
+                ) : (
+                  <button
+                    key={item}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => setPage(item)}
+                    aria-label={`${item + 1}-sahifa`}
+                    aria-current={item === page ? 'page' : undefined}
+                    className={
+                      item === page
+                        ? `inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg border border-primary bg-primary/15 px-2 text-xs font-semibold tabular-nums text-primary`
+                        : `inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg border border-border/80 bg-surface px-2 text-xs font-medium tabular-nums text-text-primary transition-colors hover:border-border hover:bg-muted/30 disabled:opacity-50`
+                    }
+                  >
+                    {item + 1}
+                  </button>
+                ),
+              )}
+              <button
+                type="button"
+                className={`${btnSecondary} inline-flex h-9 items-center gap-1 px-2.5 text-xs`}
+                disabled={!canNext || loading}
+                onClick={() => setPage((p) => p + 1)}
+                aria-label="Keyingi sahifa"
+              >
+                <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -117,11 +117,21 @@ function initialsFromRow(name: string, phone: string): string {
   return d || '?';
 }
 
+/** GET /api/admin/candidates/{id} — `id` nomzod/profil ID (user_id emas) */
 function candidateDetailHref(row: Record<string, unknown>): string | null {
-  const uuid = pickStr(row, 'id');
-  if (uuid) return `/admin/candidates/${encodeURIComponent(uuid)}`;
-  const uid = pickNum(row, 'user_id', 'userId');
-  if (uid != null) return `/admin/candidates/${encodeURIComponent(String(uid))}`;
+  const cid = pickNum(row, 'candidate_id', 'candidateId');
+  if (cid != null) return `/admin/candidates/${encodeURIComponent(String(cid))}`;
+  const pid = pickNum(row, 'profile_id', 'profileId');
+  if (pid != null) return `/admin/candidates/${encodeURIComponent(String(pid))}`;
+  const idStr = pickStr(
+    row,
+    'id',
+    'candidate_profile_id',
+    'candidateProfileId',
+    'profile_uuid',
+    'profileUuid',
+  );
+  if (idStr) return `/admin/candidates/${encodeURIComponent(idStr)}`;
   return null;
 }
 
@@ -588,8 +598,7 @@ export function Candidates() {
                     'profileCompleteness',
                   );
                   const pStatus = pickStr(row, 'profile_status', 'profileStatus', 'status');
-                  const userId = pickNum(row, 'user_id', 'userId');
-                  const rowKey = pickStr(row, 'id') || (userId != null ? `u-${userId}` : `i-${rowIndex}`);
+                  const rowKey = candidateDetailHref(row)?.split('/').pop() ?? `i-${rowIndex}`;
                   return (
                     <tr
                       key={rowKey}

@@ -1,8 +1,13 @@
 import axios from 'axios';
 
-/** Dev: Vite `/kasb-backend` → `http://localhost:7080/api` */
+/**
+ * Nomzod / auth so‘rovlari.
+ *
+ * Dev: `baseURL` `/api` — brauzerda masalan `POST /api/candidate/profile` (Swagger bilan bir xil yo‘l).
+ * Vite: `/api/auth`, `/api/candidate`, `/api/vacancies` alohida proxy; umumiy `/api` catch-all emas.
+ */
 function authApiBase(): string {
-  if (import.meta.env.DEV) return '/kasb-backend';
+  if (import.meta.env.DEV) return '/api';
   const root = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:7080';
   return `${root.replace(/\/$/, '')}/api`;
 }

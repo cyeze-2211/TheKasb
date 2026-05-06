@@ -103,6 +103,7 @@ function humanizeProviderMessage(raw: string): string {
 
 export function candidatePortalError(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
+    const status = err.response?.status;
     const body = err.response?.data;
     if (body && typeof body === 'object') {
       const rec = body as Record<string, unknown>;
@@ -112,8 +113,18 @@ export function candidatePortalError(err: unknown, fallback: string): string {
         const inner = parseSpringEmbeddedErrorList(stripped);
         return humanizeProviderMessage(inner ?? stripped);
       }
+      if (status === 403) {
+        const detail = rec.detail ?? rec.error;
+        if (typeof detail === 'string' && detail.trim()) return humanizeProviderMessage(detail.trim());
+      }
     }
     if (typeof body === 'string' && body) return humanizeProviderMessage(body);
+    if (status === 403) {
+      return 'Ruxsat yo‘q (403). OTP dan keyingi nomzod JWT yuborilayotganini va backendda CANDIDATE huquqini tekshiring (admin token yoki o‘chirilgan akkaunt bo‘lishi mumkin).';
+    }
+    if (status === 401) {
+      return 'Sessiya yaroqsiz (401). Qayta OTP bilan kiring.';
+    }
   }
   if (err instanceof Error && err.message) return humanizeProviderMessage(err.message);
   return fallback;
@@ -177,7 +188,7 @@ export async function candidateVerifyOtp(params: {
 }
 
 export type CandidateProfileCreateBody = {
-  region_id: number;
+  region_id: number | null;
   marital_status: string;
   education_level: string;
   data_consent: boolean;
@@ -245,9 +256,10 @@ export async function candidateAddLanguage(body: {
 }): Promise<void> {
   const token = getCandidateToken();
   if (!token) throw new Error('Token yo‘q');
-  await authApi.post('/candidate/profile/languages', body, {
+  const { data } = await authApi.post<unknown>('/candidate/profile/languages', body, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  unwrapRecord(data);
 }
 
 export async function candidateAddEducation(body: {
@@ -277,7 +289,7 @@ export async function candidateAddTargetCountry(body: {
 
 function candidateMultipartUrl(path: string): string {
   const base = import.meta.env.DEV
-    ? '/kasb-backend'
+    ? '/api'
     : `${String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:7080').replace(/\/$/, '')}/api`;
   const p = path.startsWith('/') ? path : `/${path}`;
   return `${base.replace(/\/$/, '')}${p}`;
@@ -307,16 +319,17 @@ export async function candidateUploadDocument(file: File, documentType: string):
   }
 }
 
-/** 4-qadam */
+/** Profilni yakuniy yuborish — `POST /api/candidate/profile/submit` */
 export async function candidateSubmitProfile(): Promise<void> {
   const token = getCandidateToken();
   const profileId = getCandidateProfileId();
   if (!token || !profileId) throw new Error('Profil ID yo‘q');
-  await authApi.post(
-    '/candidate/submit',
+  const { data } = await authApi.post<unknown>(
+    '/candidate/profile/submit',
     { profile_id: profileId },
     { headers: { Authorization: `Bearer ${token}` } },
   );
+  unwrapRecord(data);
 }
 
 export async function candidateFetchProfileMe(): Promise<Record<string, unknown> | null> {

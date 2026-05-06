@@ -201,6 +201,73 @@ function unwrapAdminUsersPage(data: unknown): unknown[] {
   return [];
 }
 
+/** Spring `Page` ildizi — `content` massivli obyekt (meta uchun) */
+function adminUsersPageRoot(data: unknown): Record<string, unknown> | null {
+  if (Array.isArray(data)) return null;
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const pick = (x: Record<string, unknown>): Record<string, unknown> | null =>
+    Array.isArray(x.content) ? x : null;
+  const a = pick(d);
+  if (a) return a;
+  const inner = d.object ?? d.data;
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+    const b = pick(inner as Record<string, unknown>);
+    if (b) return b;
+  }
+  return null;
+}
+
+function numField(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Spring Data `Page` — `pageable.pageNumber`, `pageable.pageSize`, `totalElements`, … */
+export type AdminUsersPageMeta = {
+  pageNumber: number;
+  pageSize: number;
+  totalElements: number;
+  totalPages: number;
+};
+
+function extractAdminUsersPageMeta(root: Record<string, unknown>, contentLen: number): AdminUsersPageMeta | null {
+  if (!Array.isArray(root.content)) return null;
+  const pageable =
+    root.pageable && typeof root.pageable === 'object' && !Array.isArray(root.pageable)
+      ? (root.pageable as Record<string, unknown>)
+      : null;
+  const pageSize = numField(
+    root.size ?? root.pageSize ?? pageable?.pageSize ?? pageable?.page_size,
+    contentLen > 0 ? contentLen : 20,
+  );
+  const pageNumber = numField(
+    root.number ?? root.pageNumber ?? pageable?.pageNumber ?? pageable?.page_number,
+    0,
+  );
+  let totalElements = numField(root.totalElements ?? root.total_elements, NaN);
+  if (!Number.isFinite(totalElements)) totalElements = contentLen;
+  let totalPages = numField(root.totalPages ?? root.total_pages, NaN);
+  if (!Number.isFinite(totalPages) && pageSize > 0) {
+    totalPages = Math.max(1, Math.ceil(totalElements / pageSize));
+  } else if (!Number.isFinite(totalPages)) {
+    totalPages = 1;
+  }
+  return { pageNumber, pageSize, totalElements, totalPages };
+}
+
+function parseAdminUsersListResponse(data: unknown): { users: SdgUserDto[]; meta: AdminUsersPageMeta | null } {
+  const merged = new Map<number, SdgUserDto>();
+  for (const raw of unwrapAdminUsersPage(data)) {
+    const u = normalizeAdminUserRow(raw);
+    if (u && typeof u.id === 'number') merged.set(u.id, u);
+  }
+  const users = Array.from(merged.values());
+  const root = adminUsersPageRoot(data);
+  const meta = root ? extractAdminUsersPageMeta(root, users.length) : null;
+  return { users, meta };
+}
+
 function normalizeAdminUserRow(raw: unknown): SdgUserDto | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -286,15 +353,18 @@ function buildAdminUsersParams(query: FetchUsersQuery): Record<string, string | 
   return p;
 }
 
-export async function fetchUsers(query: FetchUsersQuery = {}): Promise<SdgUserDto[]> {
+/** Sahifalangan ro‘yxat + Spring `Page` metasi (mavjud bo‘lsa). */
+export async function fetchUsersWithMeta(
+  query: FetchUsersQuery = {},
+): Promise<{ users: SdgUserDto[]; meta: AdminUsersPageMeta | null }> {
   const { data } = await api.get<unknown>('/admin/users', { params: buildAdminUsersParams(query) });
   assertApiSuccess(data);
-  const merged = new Map<number, SdgUserDto>();
-  for (const raw of unwrapAdminUsersPage(data)) {
-    const u = normalizeAdminUserRow(raw);
-    if (u && typeof u.id === 'number') merged.set(u.id, u);
-  }
-  return Array.from(merged.values());
+  return parseAdminUsersListResponse(data);
+}
+
+export async function fetchUsers(query: FetchUsersQuery = {}): Promise<SdgUserDto[]> {
+  const { users } = await fetchUsersWithMeta(query);
+  return users;
 }
 
 /** Nomzodga biriktirish / agent filtri — faqat AGENT. */

@@ -2,10 +2,16 @@
 
 export const UZ_PHONE_PREFIX = '+998';
 
-/** Faqat milliy 9 raqam (998 yoki +998 qo‘shimchasini olib tashlaydi) */
+/**
+ * Faqat milliy 9 raqam.
+ * Agar foydalanuvchi maydonga `998…` bilan boshlangan to‘g‘ri milliy raqam kiritgan bo‘lsa — saqlanadi.
+ * Agar `998` qo‘shimcha bo‘lsa (masalan `998901234567` yoki 9 tadan ortiq raqam) — bitta `998` prefiksi kesiladi.
+ */
 export function sanitizeNationalDigits(raw: string): string {
   let d = raw.replace(/\D/g, '');
-  if (d.startsWith('998')) d = d.slice(3);
+  if (d.length > 9 && d.startsWith('998')) {
+    d = d.slice(3);
+  }
   return d.slice(0, 9);
 }
 

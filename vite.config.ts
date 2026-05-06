@@ -81,6 +81,18 @@ export default defineConfig(({ mode }) => {
         configure: ngrokProxyConfigure,
         // rewrite yo'q: /api/candidate/* backendga xuddi shunday boradi
       },
+      '/api/auth': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
+      },
+      '/api/vacancies': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
+      },
       // Dev: brauzer faqat shu originga so‘raydi — CORS muammosi bo‘lmaydi
       // Backend'ning ikki xil prefixi bor:
       // - /api/admin/*  (prefiks SAQLANADI)

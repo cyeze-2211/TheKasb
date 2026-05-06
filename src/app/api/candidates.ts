@@ -100,7 +100,7 @@ export async function fetchCandidatesList(
   return unwrapSpringPage<Record<string, unknown>>(data);
 }
 
-/** Batafsil — GET /api/admin/candidates/{id} (id: raqam yoki UUID) */
+/** Batafsil — GET /api/admin/candidates/{id} (`candidate_id` / `profile_id`, `user_id` emas) */
 export async function fetchCandidateById(id: string | number): Promise<Record<string, unknown> | null> {
   const { data } = await api.get<unknown>(`/admin/candidates/${encodeURIComponent(String(id))}`);
   assertApiSuccess(data);
