@@ -74,6 +74,8 @@ type FormState = {
   group: string;
   courseId: string;
   creatorId: string;
+  /** Telegram chat id (ixtiyoriy, butun son) */
+  chatId: string;
 };
 
 function emptyForm(): FormState {
@@ -94,6 +96,7 @@ function emptyForm(): FormState {
     group: '',
     courseId: '',
     creatorId: '',
+    chatId: '',
   };
 }
 
@@ -115,6 +118,7 @@ function fromUser(u: SdgUserDto): FormState {
     group: (u.group as string) ?? '',
     courseId: u.courseId != null ? String(u.courseId) : '',
     creatorId: u.creatorId != null ? String(u.creatorId) : '',
+    chatId: u.chatId != null && Number.isFinite(Number(u.chatId)) ? String(u.chatId) : '',
   };
 }
 
@@ -172,6 +176,7 @@ function buildDto(
     group: form.group.trim() || null,
     courseId,
     creatorId,
+    chatId: numOrNull(form.chatId),
   };
 
   if (mode === 'edit' && editId != null) {
@@ -552,6 +557,25 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
                 value={form.creatorId}
                 onChange={(e) => setForm((f) => ({ ...f, creatorId: e.target.value }))}
                 placeholder={mode === 'create' ? 'Bo‘sh — joriy admin' : ''}
+              />
+            </div>
+            <div>
+              <Label htmlFor="uf-chatid" className="mb-1.5 text-xs text-text-muted">
+                Telegram chatId
+              </Label>
+              <Input
+                id="uf-chatid"
+                inputMode="numeric"
+                className={ctlInputLg}
+                value={form.chatId}
+                onChange={(e) => {
+                  const raw = e.target.value.replace(/[^\d-]/g, '');
+                  const next = raw.startsWith('-')
+                    ? `-${raw.slice(1).replace(/\D/g, '')}`
+                    : raw.replace(/\D/g, '');
+                  setForm((f) => ({ ...f, chatId: next }));
+                }}
+                placeholder="Masalan: 123456789"
               />
             </div>
           </div>

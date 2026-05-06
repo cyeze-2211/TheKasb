@@ -28,6 +28,8 @@ export type SdgUserDto = {
   lastLoginAt?: string | null;
   deleted?: boolean | null;
   usernote?: string | null;
+  /** Telegram chat id (backend: `chatId` / `chat_id`) */
+  chatId?: number | null;
   [key: string]: unknown;
 };
 
@@ -207,6 +209,13 @@ function normalizeAdminUserRow(raw: unknown): SdgUserDto | null {
   if (!Number.isFinite(id)) return null;
   const role = o.role ?? o.accountType ?? o.account_type;
   const accountType = typeof role === 'string' ? role : undefined;
+  const chatRaw = o.chatId ?? o.chat_id;
+  let chatId: number | undefined;
+  if (typeof chatRaw === 'number' && Number.isFinite(chatRaw)) chatId = chatRaw;
+  else if (typeof chatRaw === 'string' && chatRaw.trim() && Number.isFinite(Number(chatRaw))) {
+    chatId = Number(chatRaw);
+  }
+
   return {
     ...o,
     id,
@@ -218,6 +227,7 @@ function normalizeAdminUserRow(raw: unknown): SdgUserDto | null {
     isActive: (o.isActive ?? o.is_active) as boolean | null | undefined,
     isVerified: (o.isVerified ?? o.is_verified) as boolean | null | undefined,
     lastLoginAt: (o.lastLoginAt ?? o.last_login_at) as string | null | undefined,
+    ...(chatId !== undefined ? { chatId } : {}),
   };
 }
 
@@ -339,6 +349,12 @@ function buildUserCreateBody(dto: SdgUserDto): Record<string, unknown> {
     phoneNumber: dto.phoneNumber ?? null,
     school: dto.school ?? null,
   };
+  const chatRaw = dto.chatId;
+  if (typeof chatRaw === 'number' && Number.isFinite(chatRaw)) {
+    body.chatId = chatRaw;
+  } else if (typeof chatRaw === 'string' && chatRaw.trim() && Number.isFinite(Number(chatRaw))) {
+    body.chatId = Number(chatRaw);
+  }
   const pw = typeof dto.password === 'string' ? dto.password.trim() : '';
   if (pw) body.password = pw;
   return body;

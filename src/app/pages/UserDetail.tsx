@@ -240,6 +240,10 @@ export function UserDetail() {
             <DetailRow label="Guruh" value={String(user.group ?? '')} />
             <DetailRow label="courseId" value={user.courseId != null ? String(user.courseId) : ''} />
             <DetailRow label="creatorId" value={user.creatorId != null ? String(user.creatorId) : ''} />
+            <DetailRow
+              label="Telegram chatId"
+              value={user.chatId != null && Number.isFinite(Number(user.chatId)) ? String(user.chatId) : ''}
+            />
             {typeof user.usernote === 'string' && user.usernote ? (
               <DetailRow label="Izoh" value={user.usernote} />
             ) : null}

@@ -36,9 +36,22 @@ function pickToken(root: Record<string, unknown>): string | null {
 }
 
 function pickProfileId(root: Record<string, unknown>): string | null {
-  const id = root.id ?? root.profileId ?? root.profile_id;
+  const id =
+    root.profileId ??
+    root.profile_id ??
+    root.candidateProfileId ??
+    root.candidate_profile_id ??
+    root.candidateProfile?.id;
   if (typeof id === 'string' && id) return id;
   if (typeof id === 'number' && Number.isFinite(id)) return String(id);
+  const cp = root.candidate_profile ?? root.candidateProfile;
+  if (cp && typeof cp === 'object' && !Array.isArray(cp)) {
+    const nested = pickProfileId(cp as Record<string, unknown>);
+    if (nested) return nested;
+  }
+  const uid = root.id;
+  if (typeof uid === 'string' && uid) return uid;
+  if (typeof uid === 'number' && Number.isFinite(uid)) return String(uid);
   const inner = root.object ?? root.data ?? root.candidate_profile;
   if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
     return pickProfileId(inner as Record<string, unknown>);
@@ -46,16 +59,63 @@ function pickProfileId(root: Record<string, unknown>): string | null {
   return null;
 }
 
+/** Spring: `400 Bad Request: [{"message":"SMSC not found",...}]` kabi ichki JSON */
+function parseSpringEmbeddedErrorList(message: string): string | null {
+  const idx = message.indexOf('[');
+  if (idx === -1) return null;
+  try {
+    const arr = JSON.parse(message.slice(idx)) as unknown;
+    if (!Array.isArray(arr)) return null;
+    const parts: string[] = [];
+    for (const item of arr) {
+      if (item && typeof item === 'object' && 'message' in item) {
+        const m = (item as { message?: unknown }).message;
+        if (typeof m === 'string' && m.trim()) parts.push(m.trim());
+      }
+    }
+    return parts.length ? parts.join('. ') : null;
+  } catch {
+    return null;
+  }
+}
+
+function humanizeProviderMessage(raw: string): string {
+  const t = raw.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+  if (/SMSC not found/i.test(t)) {
+    return 'SMS yuborish xizmati serverda yo‘q yoki sozlanmagan (SMSC). Administrator SMS provayderini ulaguncha kod kelmaydi.';
+  }
+  if (/rate limit|too many requests/i.test(t)) {
+    return 'Juda ko‘p so‘rov yuborildi. Bir necha daqiqadan keyin qayta urinib ko‘ring.';
+  }
+  const tl = t.toLowerCase();
+  if (
+    (/\botp\b/.test(tl) && /noto|invalid|wrong|incorrect|xato/.test(tl)) ||
+    /\bkod\b.*noto|noto.*\bkod\b/.test(tl) ||
+    (/\bkod\b/.test(tl) && /xato|wrong|invalid/.test(tl) && /sms|verify|tasdiq/.test(tl)) ||
+    /invalid\s*(otp|code)/i.test(t) ||
+    /wrong\s*(otp|code)/i.test(t) ||
+    /incorrect\s*(otp|code)/i.test(t)
+  ) {
+    return 'Kod xato';
+  }
+  return t;
+}
+
 export function candidatePortalError(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
     const body = err.response?.data;
     if (body && typeof body === 'object') {
-      const m = (body as Record<string, unknown>).message;
-      if (typeof m === 'string' && m) return m.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+      const rec = body as Record<string, unknown>;
+      const m = rec.message;
+      if (typeof m === 'string' && m) {
+        const stripped = m.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '');
+        const inner = parseSpringEmbeddedErrorList(stripped);
+        return humanizeProviderMessage(inner ?? stripped);
+      }
     }
-    if (typeof body === 'string' && body) return body;
+    if (typeof body === 'string' && body) return humanizeProviderMessage(body);
   }
-  if (err instanceof Error && err.message) return err.message;
+  if (err instanceof Error && err.message) return humanizeProviderMessage(err.message);
   return fallback;
 }
 
@@ -68,6 +128,29 @@ export async function candidateSendOtp(phoneE164: string): Promise<void> {
 }
 
 /** 1-qadam — JWT va ixtiyoriy profile id */
+/**
+ * Telegram deep link: `GET /api/admin/users/by-tg/{chatId}`.
+ * Hisob bo‘lsa javobda JWT (verify-otp kabi) bo‘lishi kerak — sessiya saqlanadi.
+ */
+export async function candidateTrySessionFromTelegramChatId(chatId: string | number): Promise<boolean> {
+  const id = String(chatId).trim();
+  if (!id || !/^-?\d+$/.test(id)) return false;
+  try {
+    const { data } = await authApi.get<unknown>(`/admin/users/by-tg/${encodeURIComponent(id)}`);
+    const flat = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+    const inner = unwrapRecord(data);
+    const root = inner ?? flat;
+    if (!root) return false;
+    const token = pickToken(root) ?? (flat ? pickToken(flat) : null);
+    if (!token) return false;
+    const profileId = pickProfileId(root) ?? (flat ? pickProfileId(flat) : null);
+    setCandidateSession(token, profileId ?? undefined);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function candidateVerifyOtp(params: {
   phoneE164: string;
   code: string;

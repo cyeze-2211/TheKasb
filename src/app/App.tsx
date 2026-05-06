@@ -7,7 +7,8 @@ export default function App() {
   return (
     <AuthProvider>
       <Toaster
-        position="top-right"
+        position="bottom-center"
+        containerStyle={{ bottom: 'max(1rem, env(safe-area-inset-bottom))' }}
         toastOptions={{
           duration: 4500,
           style: { background: '#1F2937', color: '#fff', border: '1px solid #374151' },
