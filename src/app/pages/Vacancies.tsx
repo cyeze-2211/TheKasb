@@ -165,7 +165,6 @@ export function Vacancies() {
           <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
           <h1 className="mb-1">Vakansiyalar</h1>
           <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-            <span className="mono text-xs">GET /api/admin/vacancies</span> — filtr va sahifalash
           </p>
         </div>
         <Link to="/admin/vacancies/create" className={`${btnPrimary} h-10 min-h-10`}>

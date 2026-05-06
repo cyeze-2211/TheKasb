@@ -158,11 +158,7 @@ export function Users() {
         <div>
           <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
           <h1 className="mb-1">Foydalanuvchilar</h1>
-          <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-            <span className="mono text-xs">GET /api/admin/users</span> —{' '}
-            <span className="mono text-xs">role</span>, <span className="mono text-xs">is_active</span>,{' '}
-            <span className="mono text-xs">is_verified</span>, sahifalash.
-          </p>
+    
         </div>
         <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)}>
           <UserPlus className="h-4 w-4" strokeWidth={2} aria-hidden />

@@ -269,7 +269,6 @@ export function Candidates() {
         <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
         <h1 className="mb-1">Nomzodlar</h1>
         <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-          <span className="mono text-xs">GET /api/admin/candidates</span> — filtr va sahifalash
         </p>
       </div>
 

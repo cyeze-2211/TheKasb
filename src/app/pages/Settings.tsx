@@ -233,7 +233,6 @@ export function Settings() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
             <h2 className="m-0 text-base font-semibold">Fayllar ro‘yxati</h2>
-            <p className="mt-1 text-xs text-text-muted">GET /sdg/uz/get/all</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button

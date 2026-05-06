@@ -68,9 +68,7 @@ export function Professions() {
       <div>
         <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
         <h1 className="mb-1">Kasblar</h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-          Rasmiy kasblar ro&apos;yxati va kategoriyalar (API)
-        </p>
+     
       </div>
 
       {error ? (
