@@ -4,9 +4,50 @@ import {
   clearCandidateSession,
   getCandidateProfileId,
   getCandidateToken,
+  getCandidateUserId,
   KASB_CANDIDATE_PROFILE_ID_KEY,
   setCandidateSession,
+  setCandidateUserId,
 } from '../candidate/candidateSession';
+import type { ProfessionCategoryDto, ProfessionDto } from './professions';
+import { assertApiSuccess } from './users';
+
+function extractObjectArray<T>(data: unknown): T[] {
+  if (!data || typeof data !== 'object') return [];
+  const o = data as Record<string, unknown>;
+  const obj = o.object;
+  if (Array.isArray(obj)) return obj as T[];
+  if (Array.isArray(o.data)) return o.data as T[];
+  return [];
+}
+
+function sortProfList<T extends { sort_order?: number; id: number }>(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    const ao = a.sort_order ?? 0;
+    const bo = b.sort_order ?? 0;
+    if (ao !== bo) return ao - bo;
+    return a.id - b.id;
+  });
+}
+
+/** Nomzod JWT bilan — `/api/professions/categories` */
+export async function candidateFetchProfessionCategories(): Promise<ProfessionCategoryDto[]> {
+  const token = getCandidateToken();
+  const { data } = await authApi.get<unknown>('/professions/categories', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  assertApiSuccess(data);
+  return sortProfList(extractObjectArray<ProfessionCategoryDto>(data));
+}
+
+export async function candidateFetchProfessionsByCategory(categoryId: number): Promise<ProfessionDto[]> {
+  const token = getCandidateToken();
+  const { data } = await authApi.get<unknown>(`/professions/categories/${categoryId}/professions`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  assertApiSuccess(data);
+  return sortProfList(extractObjectArray<ProfessionDto>(data));
+}
 
 function unwrapRecord(data: unknown): Record<string, unknown> | null {
   if (!data || typeof data !== 'object') return null;
@@ -32,6 +73,23 @@ function pickToken(root: Record<string, unknown>): string | null {
   if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
     return pickToken(inner as Record<string, unknown>);
   }
+  return null;
+}
+
+function pickUserIdFromRoot(root: Record<string, unknown>): number | null {
+  const u = root.user;
+  if (u && typeof u === 'object' && !Array.isArray(u)) {
+    const ur = u as Record<string, unknown>;
+    const nid = ur.id ?? ur.userId;
+    if (typeof nid === 'number' && Number.isFinite(nid)) return nid;
+    if (typeof nid === 'string' && /^\d+$/.test(nid.trim())) return Number(nid.trim());
+  }
+  const uid = root.userId ?? root.user_id;
+  if (typeof uid === 'number' && Number.isFinite(uid)) return uid;
+  if (typeof uid === 'string' && /^\d+$/.test(uid.trim())) return Number(uid.trim());
+  const idRaw = root.id;
+  if (typeof idRaw === 'number' && Number.isFinite(idRaw)) return idRaw;
+  if (typeof idRaw === 'string' && /^\d+$/.test(idRaw.trim())) return Number(idRaw.trim());
   return null;
 }
 
@@ -134,7 +192,7 @@ export function candidatePortalError(err: unknown, fallback: string): string {
 export async function candidateSendOtp(phoneE164: string): Promise<void> {
   await authApi.post('/auth/send-otp', {
     phone_number: phoneE164,
-    purpose: 'LOGIN',
+    purpose: 'REGISTER',
   });
 }
 
@@ -155,7 +213,9 @@ export async function candidateTrySessionFromTelegramChatId(chatId: string | num
     const token = pickToken(root) ?? (flat ? pickToken(flat) : null);
     if (!token) return false;
     const profileId = pickProfileId(root) ?? (flat ? pickProfileId(flat) : null);
+    const userId = pickUserIdFromRoot(root) ?? (flat ? pickUserIdFromRoot(flat) : null);
     setCandidateSession(token, profileId ?? undefined);
+    if (userId != null) setCandidateUserId(userId);
     return true;
   } catch {
     return false;
@@ -171,7 +231,7 @@ export async function candidateVerifyOtp(params: {
   const body: Record<string, unknown> = {
     phone_number: params.phoneE164,
     code: params.code.trim(),
-    purpose: 'LOGIN',
+    purpose: 'REGISTER',
   };
   if (params.firstName?.trim()) body.first_name = params.firstName.trim();
   if (params.lastName?.trim()) body.last_name = params.lastName.trim();
@@ -184,7 +244,72 @@ export async function candidateVerifyOtp(params: {
   const token = pickToken(root) ?? (flat ? pickToken(flat) : null);
   if (!token) throw new Error('Token qaytmadi');
   const profileId = pickProfileId(root) ?? (flat ? pickProfileId(flat) : null);
+  const userId = pickUserIdFromRoot(root) ?? (flat ? pickUserIdFromRoot(flat) : null);
   setCandidateSession(token, profileId ?? undefined);
+  if (userId != null) setCandidateUserId(userId);
+}
+
+async function fetchMeUserId(headers: { Authorization: string }): Promise<number | null> {
+  try {
+    const { data } = await authApi.get<unknown>('/users/me', { headers });
+    const flat = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+    const inner = unwrapRecord(data);
+    const r = inner ?? flat;
+    if (!r) return null;
+    return pickUserIdFromRoot(r) ?? (flat ? pickUserIdFromRoot(flat) : null);
+  } catch {
+    return null;
+  }
+}
+
+/** JWT + `PATCH /admin/users/edit` — bodyda to‘g‘ridan-to‘g‘ri user obyekti (`{ dto }` emas). */
+export type CandidateMyUserUpdateBody = {
+  firstName: string;
+  lastName: string;
+  genderType: 'ERKAK' | 'AYOL';
+  dateBirth: string;
+  /** OTP qadami bilan bir xil E.164, masalan `+998901234567` */
+  phoneNumber: string;
+  telegramChatId?: number | null;
+};
+
+export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Promise<void> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Avval OTP bilan kiring');
+
+  const headers = { Authorization: `Bearer ${token}` };
+
+  let id = getCandidateUserId();
+  if (id == null) {
+    id = await fetchMeUserId(headers);
+    if (id != null) setCandidateUserId(id);
+  }
+  if (id == null) {
+    throw new Error('Foydalanuvchi ID topilmadi. Qayta OTP bilan kiring.');
+  }
+
+  const dto: Record<string, unknown> = {
+    id,
+    firstName: body.firstName.trim(),
+    lastName: body.lastName.trim(),
+    genderType: body.genderType,
+    dateBirth: body.dateBirth,
+    phoneNumber: body.phoneNumber.trim(),
+  };
+  const tg = body.telegramChatId;
+  if (tg != null && Number.isFinite(Number(tg))) {
+    dto.telegramChatId = Number(tg);
+  }
+
+  try {
+    const { data } = await authApi.patch<unknown>('/admin/users/edit', dto, { headers });
+    assertApiSuccess(data);
+    return;
+  } catch (e) {
+    if (!axios.isAxiosError(e) || e.response?.status !== 404) throw e;
+  }
+  const { data } = await authApi.patch<unknown>('/sdg/uz/edit', dto, { headers });
+  assertApiSuccess(data);
 }
 
 export type CandidateProfileCreateBody = {
@@ -257,6 +382,27 @@ export async function candidateAddLanguage(body: {
   const token = getCandidateToken();
   if (!token) throw new Error('Token yo‘q');
   const { data } = await authApi.post<unknown>('/candidate/profile/languages', body, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  unwrapRecord(data);
+}
+
+/** Swagger: POST /api/candidate/profile/work-experiences — JSON massiv (har bir element `CandidateWorkExperienceBody`) */
+export type CandidateWorkExperienceBody = {
+  profession_id: number;
+  profession_category_id: number;
+  duration_years: number;
+  duration_months: number;
+  description?: string;
+  custom_profession_name?: string;
+};
+
+/** Swagger: POST /api/candidate/profile/work-experiences — body: massiv */
+export async function candidateAddWorkExperience(items: CandidateWorkExperienceBody[]): Promise<void> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Token yo‘q');
+  if (!items.length) throw new Error('Hech bo‘lmaganda bitta ish tajribasi kerak');
+  const { data } = await authApi.post<unknown>('/candidate/profile/work-experiences', items, {
     headers: { Authorization: `Bearer ${token}` },
   });
   unwrapRecord(data);
