@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { handleAxios401 } from '../app/auth/handleUnauthorized';
 
 /**
  * Nomzod / auth so‘rovlari.
@@ -17,3 +18,13 @@ export const authApi = axios.create({
   timeout: 30_000,
   headers: { 'Content-Type': 'application/json' },
 });
+
+authApi.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      handleAxios401(error);
+    }
+    return Promise.reject(error);
+  },
+);

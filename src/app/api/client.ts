@@ -1,4 +1,5 @@
 import axios, { type InternalAxiosRequestConfig } from 'axios';
+import { handleAxios401 } from '../auth/handleUnauthorized';
 import { getAccessTokenFromLoginSession } from '../auth/loginSession';
 
 const DEFAULT_API_PUBLIC = 'http://localhost:7080';
@@ -46,3 +47,13 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (response) => response,
+  (error: unknown) => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      handleAxios401(error);
+    }
+    return Promise.reject(error);
+  },
+);
