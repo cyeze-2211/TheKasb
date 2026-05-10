@@ -10,6 +10,7 @@ import {
   setCandidateUserId,
 } from '../candidate/candidateSession';
 import type { ProfessionCategoryDto, ProfessionDto } from './professions';
+import { API_BASE_URL } from './client';
 import { assertApiSuccess } from './users';
 
 function extractObjectArray<T>(data: unknown): T[] {
@@ -434,11 +435,9 @@ export async function candidateAddTargetCountry(body: {
 }
 
 function candidateMultipartUrl(path: string): string {
-  const base = import.meta.env.DEV
-    ? '/api'
-    : `${String(import.meta.env.VITE_API_BASE_URL || 'http://localhost:7080').replace(/\/$/, '')}/api`;
+  const base = API_BASE_URL.replace(/\/$/, '');
   const p = path.startsWith('/') ? path : `/${path}`;
-  return `${base.replace(/\/$/, '')}${p}`;
+  return `${base}${p}`;
 }
 
 /** Multipart — axios default JSON Content-Type buzmasligi uchun fetch */

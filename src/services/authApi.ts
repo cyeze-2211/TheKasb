@@ -1,16 +1,12 @@
 import axios from 'axios';
+import { API_BASE_URL } from '../app/api/client';
 import { handleAxios401 } from '../app/auth/handleUnauthorized';
 
 /**
- * Nomzod / auth so‘rovlari.
- *
- * Dev: `baseURL` `/api` — brauzerda masalan `POST /api/candidate/profile` (Swagger bilan bir xil yo‘l).
- * Vite: `/api/auth`, `/api/candidate`, `/api/vacancies` alohida proxy; umumiy `/api` catch-all emas.
+ * Nomzod / auth so‘rovlari — asosiy `API_BASE_URL` bilan bir xil (`/api` prefiksi).
  */
 function authApiBase(): string {
-  if (import.meta.env.DEV) return '/api';
-  const root = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:7080';
-  return `${root.replace(/\/$/, '')}/api`;
+  return API_BASE_URL;
 }
 
 export const authApi = axios.create({

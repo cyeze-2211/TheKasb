@@ -2,21 +2,36 @@ import axios, { type InternalAxiosRequestConfig } from 'axios';
 import { handleAxios401 } from '../auth/handleUnauthorized';
 import { getAccessTokenFromLoginSession } from '../auth/loginSession';
 
-const DEFAULT_API_PUBLIC = 'http://localhost:7080';
+/**
+ * Netlify’da `VITE_API_BASE_URL` berilmasa ishlatiladi.
+ * Faqat host (path yo‘q): `https://api.the-kasb.uz`
+ */
+const DEFAULT_API_ORIGIN = 'https://api.the-kasb.uz';
 
 function trimApiBase(raw: string | undefined): string {
   if (!raw || !String(raw).trim()) return '';
   return String(raw).replace(/\/+$/, '');
 }
 
-const envApiBase = trimApiBase(import.meta.env.VITE_API_BASE_URL);
+const envApiRaw = trimApiBase(import.meta.env.VITE_API_BASE_URL);
 
 /**
- * Dev: doim `/api` — Vite proxy server orqali backendga (CORS yo‘q).
- * Proxy maqsadi: `.env.local` dagi `VITE_API_BASE_URL` (masalan ngrok).
- * Prod: `VITE_API_BASE_URL` yoki `DEFAULT_API_PUBLIC`.
+ * Backend ildizi — oxirida `/api` bo‘lmasin (keyin qo‘shamiz).
+ * Env `https://.../api` ko‘rinishida bo‘lsa, oxiridagi `/api` olib tashlanadi.
  */
-export const API_BASE_URL = import.meta.env.DEV ? '/api' : envApiBase || DEFAULT_API_PUBLIC;
+function apiPublicOrigin(): string {
+  let o = envApiRaw || DEFAULT_API_ORIGIN;
+  o = o.replace(/\/api\/?$/, '');
+  return o || DEFAULT_API_ORIGIN;
+}
+
+/**
+ * Dev: Vite proxy — `http://localhost:5173/api/...`.
+ * Prod (Netlify): doim mutlaq URL `https://…/api` — keyin `/admin/...`, `/v1/...` Swagger bilan mos.
+ *
+ * Eslatma: prod’da faqat `https://domen` ( `/api` siz ) berilsa ham, kod avtomatik `/api` qo‘shadi.
+ */
+export const API_BASE_URL = import.meta.env.DEV ? '/api' : `${apiPublicOrigin()}/api`;
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
