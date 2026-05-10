@@ -29,12 +29,14 @@ import {
   type VacancyStatus,
   type VacanciesListQuery,
 } from '../api/vacancies';
+import { accountTypeUz, uzOrCode, vacancyStatusUz } from '../lib/adminUiUz';
+import { countryFlagEmoji, countryNameUz } from '../lib/regionFlags';
 
 const badgeShell =
   'inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-surface px-2.5 py-1 text-xs font-semibold shadow-[var(--elite-shadow-xs)]';
 
 function statusPill(status: string) {
-  const s = status || '—';
+  const s = (status || '').trim();
   const map: Record<string, string> = {
     ACTIVE: 'bg-emerald-100 text-emerald-800 border-emerald-200',
     DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -42,7 +44,8 @@ function statusPill(status: string) {
     CLOSED: 'bg-rose-100 text-rose-800 border-rose-200',
     FILLED: 'bg-sky-100 text-sky-800 border-sky-200',
   };
-  return <span className={`${badgeShell} ${map[s] ?? ''}`}>{s}</span>;
+  const label = s ? uzOrCode(vacancyStatusUz, s) : '—';
+  return <span className={`${badgeShell} ${map[s] ?? ''}`}>{label}</span>;
 }
 
 function fmtDate(iso?: string) {
@@ -208,12 +211,12 @@ export function Vacancies() {
             value={q.status ?? ''}
             onChange={(e) => setQ((p) => ({ ...p, status: e.target.value as VacancyStatus | '' }))}
           >
-            <option value="">Status — barchasi</option>
-            <option value="DRAFT">DRAFT</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="CLOSED">CLOSED</option>
-            <option value="FILLED">FILLED</option>
-            <option value="PAUSED">PAUSED</option>
+            <option value="">Holat — barchasi</option>
+            {(Object.keys(vacancyStatusUz) as (keyof typeof vacancyStatusUz)[]).map((k) => (
+              <option key={k} value={k}>
+                {vacancyStatusUz[k]}
+              </option>
+            ))}
           </select>
           <select
             className={`${ctlSelect} min-w-[10rem] max-w-full flex-1 sm:max-w-[13rem]`}
@@ -291,7 +294,7 @@ export function Vacancies() {
             ) : null}
             {staffOptions.map((u) => (
               <option key={u.id} value={u.id}>
-                {getUserDisplayName(u)} · {String(u.accountType ?? '')}
+                {getUserDisplayName(u)} · {uzOrCode(accountTypeUz, String(u.accountType ?? ''))}
                 {u.phoneNumber ? ` · ${u.phoneNumber}` : ''} (ID {u.id})
               </option>
             ))}
@@ -326,7 +329,7 @@ export function Vacancies() {
                 <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
                   Shoshilinch
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Status</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Holat</th>
                 <th className="px-6 py-3 text-right text-xs font-semibold uppercase text-text-muted">Amallar</th>
               </tr>
             </thead>
@@ -359,7 +362,7 @@ export function Vacancies() {
                   const placesTotal = pickNum(vacancy, 'places_total', 'placesTotal') ?? 0;
                   const placesFilled = pickNum(vacancy, 'places_filled', 'placesFilled') ?? 0;
                   const expiresAt = pickStr(vacancy, 'expires_at', 'expiresAt');
-                  const country = COUNTRIES.find((c) => c.code === countryCode);
+                  const countryLabel = countryNameUz(countryCode) ?? countryCode;
                 return (
                   <tr key={id || `i-${idx}`} className={rowElite}>
                     <td className="px-6 py-3">
@@ -368,8 +371,10 @@ export function Vacancies() {
                     </td>
                     <td className="px-6 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="text-lg leading-none">{country?.flag}</span>
-                        <span className="text-sm text-text-muted">{countryCode || '—'}</span>
+                        <span className="text-xl leading-none" title={countryCode || undefined}>
+                          {countryCode ? countryFlagEmoji(countryCode) : '—'}
+                        </span>
+                        <span className="text-sm text-text-primary">{countryLabel || '—'}</span>
                       </div>
                     </td>
                     <td className="px-6 py-3">
@@ -395,7 +400,7 @@ export function Vacancies() {
                       {urgent ? (
                         <span className="inline-flex items-center gap-1.5 text-sm font-medium text-danger">
                           <CircleAlert className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
-                          HA
+                          Ha
                         </span>
                       ) : (
                         <span className="text-sm text-text-muted">—</span>

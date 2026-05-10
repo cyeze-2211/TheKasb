@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -9,6 +9,11 @@ import {
   Briefcase,
   Building2,
   ChevronRight,
+  CircleDollarSign,
+  Clock,
+  FileCheck2,
+  Globe2,
+  Languages,
   Dumbbell,
   Factory,
   FileText,
@@ -57,6 +62,17 @@ import {
   type PublicVacancyRow,
 } from '../app/api/candidatePortal';
 import type { ProfessionCategoryDto, ProfessionDto } from '../app/api/professions';
+import {
+  adminLanguageUz,
+  candidateProfileStatusUz,
+  cefrLevelUz,
+  documentTypeUz,
+  educationLevelUz,
+  experienceRangeUz,
+  maritalStatusUz,
+  uzOrCode,
+} from '../app/lib/adminUiUz';
+import { countryFlagEmoji, countryNameUz } from '../app/lib/regionFlags';
 import { getCandidateProfileId, getCandidateToken } from '../app/candidate/candidateSession';
 import {
   initTelegramMiniApp,
@@ -1175,7 +1191,7 @@ function Screen5({
                   selected={false}
                   onClick={() => selectCategory(c.id)}
                   left={<ProfessionCategoryIcon icon={c.icon} />}
-                  title={c.name_uz || c.name_ru || `Kategoriya ${c.id}`}
+                  title={c.name_uz || c.name_ru || 'Kategoriya'}
                   desc={c.name_ru && c.name_uz !== c.name_ru ? c.name_ru : 'Tanlash'}
                 />
               ))}
@@ -1204,7 +1220,7 @@ function Screen5({
                       💼
                     </div>
                   }
-                  title={p.name_uz || p.name_ru || `Kasb ${p.id}`}
+                  title={p.name_uz || p.name_ru || 'Kasb'}
                   desc={p.name_ru && p.name_uz !== p.name_ru ? p.name_ru : 'Tanlash'}
                 />
               ))}
@@ -1914,17 +1930,32 @@ function Screen8({
 
 // ─── Home Screen (after apply) ────────────────────────────────────────────────
 
-const CC_FLAG: Record<string, string> = {
-  DE: '🇩🇪',
-  PL: '🇵🇱',
-  IL: '🇮🇱',
-  KR: '🇰🇷',
-  CZ: '🇨🇿',
-  UZ: '🇺🇿',
-  US: '🇺🇸',
-  AE: '🇦🇪',
-  TR: '🇹🇷',
+const AVAILABILITY_STATUS_UZ: Record<string, string> = {
+  READY_NOW: 'Hozir tayyor',
+  WITHIN_1_MONTH: '1 oy ichida',
+  WITHIN_3_MONTHS: '3 oy ichida',
 };
+
+function formatPortalDateTime(raw: string): string {
+  if (!raw || !raw.trim()) return '—';
+  const t = raw.trim();
+  try {
+    const d = new Date(t);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleString('uz-UZ', { dateStyle: 'medium', timeStyle: 'short' });
+    }
+  } catch {
+    /* ignore */
+  }
+  return t;
+}
+
+function phoneTelHref(phone: string): string | null {
+  const digits = phone.replace(/[^\d+]/g, '');
+  const core = digits.startsWith('+') ? digits.slice(1) : digits;
+  if (core.replace(/\D/g, '').length < 9) return null;
+  return `tel:${digits.startsWith('+') ? digits : `+${core}`}`;
+}
 
 function pickStr(obj: Record<string, unknown> | null | undefined, ...keys: string[]): string {
   if (!obj) return '';
@@ -1952,19 +1983,161 @@ function pickNum(obj: Record<string, unknown> | null | undefined, ...keys: strin
 function countryChip(code: string): string {
   const u = code.trim().toUpperCase();
   if (!u) return '—';
-  const flag = CC_FLAG[u] ?? '🌍';
-  return `${flag} ${u}`;
+  const flag = countryFlagEmoji(u);
+  const name = countryNameUz(u);
+  return name ? `${flag} ${name}` : flag;
 }
 
 function profileStatusLabelUz(raw: string): string {
-  const s = raw.toUpperCase();
+  const s = (raw || '').trim();
   if (!s) return '—';
-  if (s.includes('DRAFT')) return 'Qoralama';
-  if (s.includes('SUBMIT')) return 'Yuborilgan';
-  if (s.includes('REVIEW') || s.includes('PENDING')) return 'Ko‘rib chiqilmoqda';
-  if (s.includes('APPROV')) return 'Tasdiqlangan';
-  if (s.includes('REJECT')) return 'Rad etilgan';
-  return raw;
+  const u = s.toUpperCase();
+  const mapped = candidateProfileStatusUz[u];
+  if (mapped) return mapped;
+  if (u.includes('DRAFT')) return 'Qoralama';
+  if (u.includes('SUBMIT')) return 'Yuborilgan';
+  if (u.includes('REVIEW') || u.includes('PENDING')) return 'Ko‘rib chiqilmoqda';
+  if (u.includes('APPROV')) return 'Tasdiqlangan';
+  if (u.includes('REJECT')) return 'Rad etilgan';
+  return s;
+}
+
+type ProfileCompletionSection = {
+  key: string;
+  labelUz: string;
+  max: number;
+  earned: number;
+  color: string;
+  isBonus?: boolean;
+  icon: LucideIcon;
+};
+
+function personalInfoEarned(profile: Record<string, unknown> | null): number {
+  if (!profile) return 0;
+  let n = 0;
+  if (displayNameFromProfile(profile) !== 'Nomzod') n += 1;
+  if (pickStr(profile, 'phone_number', 'phoneNumber', 'phone', 'mobile')) n += 1;
+  if (pickStr(profile, 'date_birth', 'dateBirth', 'birth_date', 'birthDate')) n += 1;
+  if (pickStr(profile, 'education_level', 'educationLevel')) n += 1;
+  return Math.min(20, n * 5);
+}
+
+function documentBonusEarned(profile: Record<string, unknown> | null): number {
+  if (!profile) return 0;
+  const docs = profile.documents;
+  if (!Array.isArray(docs) || docs.length === 0) return 0;
+  let verified = 0;
+  for (const d of docs) {
+    if (d && typeof d === 'object') {
+      const o = d as Record<string, unknown>;
+      if (o.verified === true || o.is_verified === true) verified += 1;
+      else if (pickStr(o, 'status', 'verification_status', 'verificationStatus').toUpperCase() === 'VERIFIED') {
+        verified += 1;
+      }
+    }
+  }
+  if (verified > 0) return 20;
+  return 10;
+}
+
+function summarizeProfileCompletion(profile: Record<string, unknown> | null): {
+  sections: ProfileCompletionSection[];
+  totalRounded: number;
+} {
+  if (!profile) return { sections: [], totalRounded: 0 };
+
+  const hasProfession =
+    !!pickStr(
+      profile,
+      'custom_profession_name',
+      'customProfessionName',
+      'profession_name',
+      'professionName',
+    ) || (pickNum(profile, 'profession_id', 'professionId') ?? 0) > 0;
+  const professionEarned = hasProfession ? 20 : 0;
+
+  const langs = profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages;
+  const langEarned = Array.isArray(langs) && langs.length > 0 ? 15 : 0;
+
+  const tc = profile.target_countries ?? profile.targetCountries;
+  const countryEarned =
+    (Array.isArray(tc) && tc.length > 0) ||
+    !!pickStr(profile, 'target_country_code', 'targetCountryCode', 'primary_target_country')
+      ? 15
+      : 0;
+
+  const expEarned = pickStr(profile, 'experience_range', 'experienceRange', 'experience') ? 10 : 0;
+  const availEarned = pickStr(profile, 'availability_status', 'availabilityStatus', 'availability')
+    ? 10
+    : 0;
+
+  const salMin = pickNum(profile, 'desired_salary_min', 'desiredSalaryMin', 'salary_min', 'salaryMin');
+  const salMax = pickNum(profile, 'desired_salary_max', 'desiredSalaryMax', 'salary_max', 'salaryMax');
+  const salaryEarned =
+    salMin != null && salMax != null ? 10 : salMin != null || salMax != null ? 5 : 0;
+
+  const personalEarned = personalInfoEarned(profile);
+  const docBonus = documentBonusEarned(profile);
+
+  const sections: ProfileCompletionSection[] = [
+    { key: 'profession', labelUz: 'Kasb', max: 20, earned: professionEarned, color: C.blue, icon: Briefcase },
+    {
+      key: 'personal',
+      labelUz: 'Shaxsiy ma’lumot',
+      max: 20,
+      earned: personalEarned,
+      color: '#2980B9',
+      icon: User,
+    },
+    { key: 'languages', labelUz: 'Tillar', max: 15, earned: langEarned, color: C.green, icon: Languages },
+    {
+      key: 'countries',
+      labelUz: 'Maqsad mamlakatlar',
+      max: 15,
+      earned: countryEarned,
+      color: '#2ecc71',
+      icon: Globe2,
+    },
+    {
+      key: 'experience',
+      labelUz: 'Ish tajribasi',
+      max: 10,
+      earned: expEarned,
+      color: C.gold,
+      icon: Building2,
+    },
+    {
+      key: 'availability',
+      labelUz: 'Ishga tayyorgarlik',
+      max: 10,
+      earned: availEarned,
+      color: '#e67e22',
+      icon: Clock,
+    },
+    {
+      key: 'salary',
+      labelUz: 'Maosh diapazoni',
+      max: 10,
+      earned: salaryEarned,
+      color: '#e67e22',
+      icon: CircleDollarSign,
+    },
+    {
+      key: 'documents',
+      labelUz: 'Tasdiqlangan hujjatlar',
+      max: 20,
+      earned: docBonus,
+      color: '#9b59b6',
+      isBonus: true,
+      icon: FileCheck2,
+    },
+  ];
+
+  const baseEarned = sections.filter((s) => !s.isBonus).reduce((a, s) => a + s.earned, 0);
+  const bonusEarned = docBonus;
+  const totalRounded = Math.min(100, Math.round(baseEarned + bonusEarned));
+
+  return { sections, totalRounded };
 }
 
 function profileCompletionPct(profile: Record<string, unknown> | null): number {
@@ -1978,21 +2151,7 @@ function profileCompletionPct(profile: Record<string, unknown> | null): number {
     'completeness',
   );
   if (direct != null && direct >= 0 && direct <= 100) return Math.min(100, Math.round(direct));
-  let n = 0;
-  const checks = [
-    pickStr(profile, 'phone_number', 'phoneNumber', 'phone', 'mobile'),
-    pickStr(profile, 'custom_profession_name', 'customProfessionName', 'profession_name', 'professionName'),
-    pickStr(profile, 'education_level', 'educationLevel'),
-    profile.target_countries ?? profile.targetCountries,
-    profile.languages,
-    pickStr(profile, 'availability_status', 'availabilityStatus'),
-  ];
-  for (const c of checks) {
-    if (c == null || c === '') continue;
-    if (Array.isArray(c) && c.length === 0) continue;
-    n++;
-  }
-  return Math.min(100, Math.round((n / 6) * 100));
+  return summarizeProfileCompletion(profile).totalRounded;
 }
 
 function displayNameFromProfile(profile: Record<string, unknown> | null): string {
@@ -2034,16 +2193,36 @@ function targetCountriesSummary(profile: Record<string, unknown> | null): string
   if (!profile) return '—';
   const tc = profile.target_countries ?? profile.targetCountries;
   if (Array.isArray(tc) && tc.length) {
-    const parts = tc.map((item) => {
-      if (item && typeof item === 'object') {
+    type Row = { code: string; pr: number };
+    const rows: Row[] = [];
+    for (const item of tc) {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
         const o = item as Record<string, unknown>;
-        return pickStr(o, 'country_code', 'countryCode', 'code', 'name');
+        const code = pickStr(o, 'country_code', 'countryCode', 'code').toUpperCase();
+        if (!code) continue;
+        const pr = pickNum(o, 'priority') ?? 999;
+        rows.push({ code, pr });
+      } else if (item != null) {
+        const code = String(item).trim().toUpperCase();
+        if (code) rows.push({ code, pr: 999 });
       }
-      return String(item ?? '');
+    }
+    rows.sort((a, b) => a.pr - b.pr);
+    const parts = rows.map((r) => {
+      const name = countryNameUz(r.code);
+      const flag = countryFlagEmoji(r.code);
+      return name ? `${flag} ${name}` : flag;
     });
-    return parts.filter(Boolean).join(', ') || '—';
+    return parts.join(', ') || '—';
   }
-  return pickStr(profile, 'target_country_code', 'targetCountryCode') || '—';
+  const single = pickStr(profile, 'target_country_code', 'targetCountryCode', 'primary_target_country');
+  if (single) {
+    const u = single.toUpperCase();
+    const name = countryNameUz(u);
+    const flag = countryFlagEmoji(u);
+    return name ? `${flag} ${name}` : flag;
+  }
+  return '—';
 }
 
 function languagesSummary(profile: Record<string, unknown> | null): string {
@@ -2051,15 +2230,35 @@ function languagesSummary(profile: Record<string, unknown> | null): string {
   const langs = profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages;
   if (Array.isArray(langs) && langs.length) {
     const parts = langs.map((item) => {
-      if (item && typeof item === 'object') {
+      if (item && typeof item === 'object' && !Array.isArray(item)) {
         const o = item as Record<string, unknown>;
-        return pickStr(o, 'language', 'language_code', 'languageCode', 'name');
+        const code = pickStr(o, 'language', 'language_code', 'languageCode', 'name');
+        const level = pickStr(o, 'level', 'language_level', 'languageLevel');
+        const label = code ? uzOrCode(adminLanguageUz, code.toUpperCase()) || code : '';
+        if (!label) return '';
+        if (level) return `${label} — ${uzOrCode(cefrLevelUz, level)}`;
+        return label;
       }
-      return String(item ?? '');
+      const s = String(item ?? '').trim();
+      return s ? uzOrCode(adminLanguageUz, s.toUpperCase()) || s : '';
     });
-    return parts.filter(Boolean).join(', ') || '—';
+    return parts.filter(Boolean).join(' · ') || '—';
+  }
+  const flat = pickStr(profile, 'languages');
+  if (flat.includes(',')) {
+    const parts = flat
+      .split(',')
+      .map((x) => uzOrCode(adminLanguageUz, x.trim().toUpperCase()))
+      .filter(Boolean);
+    return parts.length ? parts.join(' · ') : '—';
   }
   return '—';
+}
+
+function vacancyRowKey(v: PublicVacancyRow, idx: number): string {
+  const id = v['id'] ?? v['uuid'] ?? v['vacancyId'] ?? v['vacancy_id'];
+  if (id != null && String(id).length > 0) return String(id);
+  return `vac-${idx}`;
 }
 
 function ProfileInfoRow({ label, value }: { label: string; value: string }) {
@@ -2100,6 +2299,111 @@ function CircleProgress({ pct, size = 56 }: { pct: number; size?: number }) {
         style={{ transition: 'stroke-dasharray 0.6s ease' }}
       />
     </svg>
+  );
+}
+
+function ProfileCompletenessPanel({ profile }: { profile: Record<string, unknown> | null }) {
+  const { sections, totalRounded } = useMemo(() => summarizeProfileCompletion(profile), [profile]);
+  const direct = profile
+    ? pickNum(
+        profile,
+        'profile_completion_percent',
+        'completion_percent',
+        'profileStrength',
+        'profile_strength',
+        'completeness',
+      )
+    : null;
+  const headline =
+    direct != null && direct >= 0 && direct <= 100 ? Math.min(100, Math.round(direct)) : totalRounded;
+
+  return (
+    <div
+      className="mt-5 rounded-[20px] border p-4 sm:p-5"
+      style={{ backgroundColor: C.card2, borderColor: C.border }}
+    >
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              color: C.muted,
+              letterSpacing: '0.6px',
+              textTransform: 'uppercase',
+            }}
+          >
+            Profil to‘ldirilganligi
+          </p>
+          <p
+            className="mt-1"
+            style={{
+              fontSize: 'clamp(1.75rem, 6vw, 2.25rem)',
+              fontWeight: 900,
+              color: C.text,
+              letterSpacing: '-0.5px',
+              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+            }}
+          >
+            {headline}%
+          </p>
+        </div>
+        <p className="max-w-[220px] text-right text-[12px] leading-snug" style={{ color: C.muted }}>
+          Bo‘limlarni to‘ldirib, vakansiya va agent e’tiborini oshiring.
+        </p>
+      </div>
+
+      <div
+        className="mb-3 flex justify-between px-1 text-[10px] font-medium"
+        style={{ color: C.muted }}
+        aria-hidden
+      >
+        <span>0%</span>
+        <span>50%</span>
+        <span>100%</span>
+      </div>
+
+      <div className="flex flex-col gap-3.5">
+        {sections.map((s) => {
+          const Icon = s.icon;
+          const fillPct = s.max > 0 ? Math.min(100, Math.round((s.earned / s.max) * 100)) : 0;
+          const sub: ReactNode = s.isBonus ? (
+            <span style={{ fontSize: 10, color: '#9b59b6' }}>+ bonus</span>
+          ) : null;
+          return (
+            <div key={s.key} className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <div
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                style={{ backgroundColor: `${s.color}22`, border: `1px solid ${s.color}44` }}
+              >
+                <Icon size={18} color={s.color} strokeWidth={2} aria-hidden />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="mb-1 flex flex-wrap items-baseline justify-between gap-1">
+                  <span className="text-[13px] font-semibold leading-tight" style={{ color: C.text }}>
+                    {s.labelUz}
+                  </span>
+                  <span className="shrink-0 tabular-nums text-[12px] font-bold" style={{ color: s.color }}>
+                    {s.earned}/{s.max}
+                    {sub ? <span className="ml-1 font-normal">{sub}</span> : null}
+                  </span>
+                </div>
+                <div className="h-2.5 overflow-hidden rounded-full" style={{ backgroundColor: `${C.border}88` }}>
+                  <div
+                    className="h-full rounded-full transition-all duration-500 ease-out"
+                    style={{
+                      width: `${fillPct}%`,
+                      backgroundColor: s.color,
+                      boxShadow: fillPct > 0 ? `0 0 10px ${s.color}55` : undefined,
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2180,7 +2484,19 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const edu = pickStr(profile, 'education_level', 'educationLevel');
   const created = pickStr(profile, 'created_at', 'createdAt', 'created');
   const updated = pickStr(profile, 'updated_at', 'updatedAt', 'updated');
-  const profileId = pickStr(profile, 'id', 'profile_id', 'profileId');
+  const createdFmt = formatPortalDateTime(created);
+  const updatedFmt = formatPortalDateTime(updated);
+  const region = pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region');
+  const marital = pickStr(profile, 'marital_status', 'maritalStatus');
+  const maritalUz = marital ? uzOrCode(maritalStatusUz, marital) : '';
+  const consentRaw = profile?.data_consent ?? profile?.dataConsent;
+  const consentTxt =
+    typeof consentRaw === 'boolean' ? (consentRaw ? 'Berilgan' : 'Berilmagan') : '—';
+  const experienceUz = experience ? uzOrCode(experienceRangeUz, experience) || experience : '';
+  const availabilityUz = availability
+    ? AVAILABILITY_STATUS_UZ[availability] ?? availability
+    : '';
+  const eduUz = edu ? uzOrCode(educationLevelUz, edu) || edu : '';
 
   const agentRaw = profile?.assigned_agent ?? profile?.agent ?? profile?.assignedAgent;
   let agentName = '';
@@ -2191,6 +2507,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
     agentPhone = pickStr(ag, 'phone_number', 'phoneNumber', 'phone', 'mobile');
   }
   if (!agentName) agentName = pickStr(profile, 'agent_name', 'agentName', 'assigned_agent_name', 'assignedAgentName');
+  const agentCallHref = agentPhone ? phoneTelHref(agentPhone) : null;
 
   const hasCountries = countries !== '—' && countries.length > 0;
   const hasLangs = langs !== '—' && langs.length > 0;
@@ -2237,16 +2554,6 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
                 {statusUz}
               </span>
             </div>
-            {profileId ? (
-              <div
-                className="flex items-center rounded-full px-3 py-1.5"
-                style={{ backgroundColor: C.card, border: `1px solid ${C.border}` }}
-              >
-                <span className="mono truncate text-[11px]" style={{ color: C.muted }}>
-                  ID {profileId}
-                </span>
-              </div>
-            ) : null}
           </div>
           {softWarn ? (
             <p className="mt-3 rounded-xl px-3 py-2 text-[13px] leading-snug" style={{ backgroundColor: `${C.gold}18`, color: C.muted }}>
@@ -2401,14 +2708,27 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
                 </p>
               ) : null}
             </div>
-            <button
-              type="button"
-              className="flex shrink-0 items-center justify-center gap-1.5 self-stretch rounded-[10px] px-3.5 py-2.5 transition-all active:scale-95 min-[400px]:self-auto"
-              style={{ border: `1px solid ${C.blue}`, fontSize: 12, fontWeight: 600, color: C.blue, backgroundColor: 'transparent' }}
-            >
-              <MessageCircle size={14} color={C.blue} />
-              Yozish
-            </button>
+            {agentCallHref ? (
+              <a
+                href={agentCallHref}
+                className="flex shrink-0 items-center justify-center gap-1.5 self-stretch rounded-[10px] px-3.5 py-2.5 transition-all active:scale-95 min-[400px]:self-auto"
+                style={{ border: `1px solid ${C.blue}`, fontSize: 12, fontWeight: 600, color: C.blue, backgroundColor: 'transparent' }}
+              >
+                <MessageCircle size={14} color={C.blue} />
+                Qo‘ng‘iroq
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="Agent telefoni ko‘rinmayapti"
+                className="flex shrink-0 cursor-not-allowed items-center justify-center gap-1.5 self-stretch rounded-[10px] px-3.5 py-2.5 opacity-50 min-[400px]:self-auto"
+                style={{ border: `1px solid ${C.border}`, fontSize: 12, fontWeight: 600, color: C.muted, backgroundColor: 'transparent' }}
+              >
+                <MessageCircle size={14} color={C.muted} />
+                Qo‘ng‘iroq
+              </button>
+            )}
           </div>
         ) : null}
 
@@ -2473,8 +2793,10 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
               </button>
               <button
                 type="button"
+                onClick={() => toast('Tanlanganlar tez orada mavjud bo‘ladi.', { duration: 2200 })}
                 className="flex h-11 w-full shrink-0 items-center justify-center rounded-[12px] transition-all active:scale-95 sm:w-11"
                 style={{ border: `1px solid ${C.border}`, backgroundColor: 'transparent' }}
+                aria-label="Keyinroq saqlash"
               >
                 <Bookmark size={18} color={C.muted} strokeWidth={1.6} />
               </button>
@@ -2513,7 +2835,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
             vacancies.map((v, idx) => {
               const cc = vacancyCountryCode(v);
               return (
-                <div key={idx} className="rounded-2xl border p-4" style={{ backgroundColor: C.card, borderColor: C.border }}>
+                <div key={vacancyRowKey(v, idx)} className="rounded-2xl border p-4" style={{ backgroundColor: C.card, borderColor: C.border }}>
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[11px] font-semibold" style={{ color: C.green }}>
                       {countryChip(cc)}
@@ -2548,11 +2870,13 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
         </h2>
         <div className="rounded-[18px] border p-4" style={{ backgroundColor: C.card, borderColor: C.border }}>
           <ProfileInfoRow label="Holat" value={statusUz} />
-          <ProfileInfoRow label="Profil ID" value={profileId} />
-          <ProfileInfoRow label="Yaratilgan" value={created} />
-          <ProfileInfoRow label="Yangilangan" value={updated} />
+          <ProfileInfoRow label="Telefon" value={phone} />
           <ProfileInfoRow label="Kasb" value={profession} />
+          <ProfileInfoRow label="Tillar" value={langs} />
+          <ProfileInfoRow label="Maqsad maosh" value={salaryTxt} />
           <ProfileInfoRow label="Maqsad davlatlar" value={countries} />
+          <ProfileInfoRow label="Yaratilgan" value={createdFmt} />
+          <ProfileInfoRow label="Yangilangan" value={updatedFmt} />
         </div>
       </div>
     );
@@ -2573,14 +2897,171 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
         <div className="rounded-[18px] border p-4" style={{ backgroundColor: C.card, borderColor: C.border }}>
           <ProfileInfoRow label="To‘liq ism" value={displayName} />
           <ProfileInfoRow label="Telefon" value={phone} />
+          {region ? <ProfileInfoRow label="Hudud" value={region} /> : null}
+          {maritalUz ? <ProfileInfoRow label="Oilaviy holat" value={maritalUz} /> : null}
           <ProfileInfoRow label="Kasb" value={profession} />
-          <ProfileInfoRow label="Ta’lim" value={edu} />
-          <ProfileInfoRow label="Tajriba" value={experience} />
-          <ProfileInfoRow label="Bandlik tayyorgarligi" value={availability} />
+          <ProfileInfoRow label="Ta’lim darajasi" value={eduUz} />
+          <ProfileInfoRow label="Ish tajribasi" value={experienceUz} />
+          <ProfileInfoRow label="Ishga tayyorgarlik" value={availabilityUz} />
           <ProfileInfoRow label="Maqsad maosh" value={salaryTxt} />
           <ProfileInfoRow label="Maqsad davlatlar" value={countries} />
           <ProfileInfoRow label="Tillar" value={langs} />
+          <ProfileInfoRow label="Ma’lumotlardan foydalanish roziligi" value={consentTxt} />
+          <ProfileInfoRow label="So‘nggi yangilanish" value={updatedFmt} />
         </div>
+        {profile && Array.isArray(profile.educations) && (profile.educations as unknown[]).length > 0 ? (
+          <div
+            className="mt-4 rounded-[18px] border p-4"
+            style={{ backgroundColor: C.card, borderColor: C.border }}
+          >
+            <p
+              className="mb-3"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: C.muted,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Ta’lim
+            </p>
+            <div className="flex flex-col gap-3">
+              {(profile.educations as unknown[]).map((ed, i) => {
+                const E = ed as Record<string, unknown>;
+                const spec = pickStr(E, 'specialty');
+                const inst = pickStr(E, 'institution_name', 'institutionName');
+                const yr = pickNum(E, 'graduation_year', 'graduationYear');
+                const lv = pickStr(E, 'level');
+                const ctry = pickStr(E, 'country');
+                const title = spec || inst || 'Ta’lim';
+                const bits: string[] = [];
+                if (inst && inst !== spec) bits.push(inst);
+                if (lv) bits.push(uzOrCode(educationLevelUz, lv));
+                if (yr != null) bits.push(String(yr));
+                if (ctry) {
+                  const fl = countryFlagEmoji(ctry);
+                  const nm = countryNameUz(ctry) ?? '';
+                  bits.push(nm ? `${fl} ${nm}` : fl);
+                }
+                const sub = bits.join(' · ');
+                return (
+                  <div
+                    key={`ed-${i}`}
+                    className="rounded-xl border px-3 py-2.5"
+                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
+                  >
+                    <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{title}</p>
+                    {sub ? (
+                      <p className="mt-1 text-[13px] leading-snug" style={{ color: C.muted }}>
+                        {sub}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        {profile && Array.isArray(profile.documents) && (profile.documents as unknown[]).length > 0 ? (
+          <div
+            className="mt-4 rounded-[18px] border p-4"
+            style={{ backgroundColor: C.card, borderColor: C.border }}
+          >
+            <p
+              className="mb-3"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: C.muted,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Hujjatlar
+            </p>
+            <div className="flex flex-col gap-2">
+              {(profile.documents as unknown[]).map((doc, i) => {
+                const D = doc as Record<string, unknown>;
+                const dtype = pickStr(D, 'document_type', 'documentType');
+                const fname = pickStr(D, 'file_name', 'fileName');
+                const url = pickStr(D, 'file_url', 'fileUrl');
+                const verified =
+                  D.is_verified === true ||
+                  D.verified === true ||
+                  pickStr(D, 'status').toUpperCase() === 'VERIFIED';
+                const typeUz = dtype ? uzOrCode(documentTypeUz, dtype) : '';
+                const line = typeUz || fname || 'Hujjat';
+                return (
+                  <div
+                    key={`doc-${i}`}
+                    className="flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
+                  >
+                    <div className="min-w-0">
+                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{line}</p>
+                      {fname && typeUz ? (
+                        <p className="truncate text-[12px]" style={{ color: C.muted }}>
+                          {fname}
+                        </p>
+                      ) : null}
+                      <p className="text-[11px]" style={{ color: verified ? C.green : C.muted }}>
+                        {verified ? 'Tasdiqlangan' : 'Tekshiruvda / tasdiqlanmagan'}
+                      </p>
+                    </div>
+                    {url ? (
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="shrink-0 rounded-lg px-3 py-1.5 text-center text-[12px] font-semibold"
+                        style={{ border: `1px solid ${C.blue}`, color: C.blue }}
+                      >
+                        Ochish
+                      </a>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        {profile && Array.isArray(profile.skills) && (profile.skills as unknown[]).length > 0 ? (
+          <div
+            className="mt-4 rounded-[18px] border p-4"
+            style={{ backgroundColor: C.card, borderColor: C.border }}
+          >
+            <p
+              className="mb-3"
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: C.muted,
+                letterSpacing: '0.06em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Ko‘nikmalar
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(profile.skills as unknown[]).map((sk, i) => {
+                const S = sk as Record<string, unknown>;
+                const nm = pickStr(S, 'skill_name', 'skillName', 'name');
+                if (!nm) return null;
+                return (
+                  <span
+                    key={`sk-${i}`}
+                    className="rounded-full px-3 py-1 text-[12px] font-medium"
+                    style={{ backgroundColor: C.blueGlow, border: `1px solid ${C.border}`, color: C.text }}
+                  >
+                    {nm}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+        <ProfileCompletenessPanel profile={profile} />
       </div>
     );
   }
@@ -2923,7 +3404,7 @@ export default function CandidatePortal() {
         salary_currency: 'EUR',
       });
       if (!createdProfileId && !getCandidateProfileId()) {
-        throw new Error('Profil yaratilmadi — ID qaytmadi.');
+        throw new Error('Profil yaratilmadi. Internet aloqasini tekshirib, qayta urinib ko‘ring.');
       }
 
       await candidateAddWorkExperience(entries);
@@ -2952,7 +3433,7 @@ export default function CandidatePortal() {
         const mapped = vac.slice(0, 3).map((v, idx) => {
           const title = String(v.title ?? v.employer_name ?? v.employerName ?? 'Vakansiya');
           const cc = String(v.country_code ?? v.countryCode ?? firstCode ?? '');
-          const countryLabel = cc ? `${cc}` : 'Vakansiya';
+          const countryLabel = cc ? countryChip(cc) : 'Vakansiya';
           const salaryMin = v.salary_min ?? v.salaryMin;
           const salaryMax = v.salary_max ?? v.salaryMax;
           const cur = String(v.salary_currency ?? v.salaryCurrency ?? 'EUR');

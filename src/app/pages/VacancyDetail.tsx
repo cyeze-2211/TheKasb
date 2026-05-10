@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
-import { Calendar, CircleAlert, ClipboardList, Loader2, MapPin, Pencil, ShieldCheck, Ticket, Trash2, UtensilsCrossed } from 'lucide-react';
+import {
+  Calendar,
+  CircleAlert,
+  ClipboardList,
+  Languages,
+  Loader2,
+  MapPin,
+  Pencil,
+  ShieldCheck,
+  Ticket,
+  Trash2,
+  UtensilsCrossed,
+} from 'lucide-react';
 import {
   axiosErrorMessage,
   deleteVacancy,
@@ -33,6 +45,18 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Button } from '../components/ui/button';
 import { btnPrimaryLg, btnSecondary, btnSecondaryLg, ctlInputLg, ctlSelectLg, pageKicker, panelElite, panelEliteRaised, theadElite } from '../components/pageChrome';
+import {
+  adminLanguageUz,
+  cefrLevelUz,
+  experienceRangeUz,
+  genderRequirementUz,
+  uzOrCode,
+  vacancyStatusUz,
+  workScheduleUz,
+} from '../lib/adminUiUz';
+import { LanguageIcon } from '../components/LanguageIcon';
+import { languageLabelUz } from '../lib/languageUi';
+import { countryFlagEmoji, countryNameUz } from '../lib/regionFlags';
 
 type FormState = Required<
   Pick<
@@ -194,6 +218,7 @@ export function VacancyDetail() {
     'inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-surface px-2.5 py-1 text-xs font-semibold shadow-[var(--elite-shadow-xs)]';
 
   const statusPill = (s: string) => {
+    const code = (s || '').trim();
     const map: Record<string, string> = {
       ACTIVE: 'bg-emerald-100 text-emerald-800 border-emerald-200',
       DRAFT: 'bg-slate-100 text-slate-700 border-slate-200',
@@ -201,7 +226,8 @@ export function VacancyDetail() {
       CLOSED: 'bg-rose-100 text-rose-800 border-rose-200',
       FILLED: 'bg-sky-100 text-sky-800 border-sky-200',
     };
-    return <span className={`${badgeShell} ${map[s] ?? ''}`}>{s || '—'}</span>;
+    const label = code ? uzOrCode(vacancyStatusUz, code) : '—';
+    return <span className={`${badgeShell} ${map[code] ?? ''}`}>{label}</span>;
   };
 
   const fmtDate = (iso?: string) => {
@@ -298,14 +324,25 @@ export function VacancyDetail() {
             ) : null}
             <span className={`${badgeShell} text-text-muted`}>
               <MapPin className="h-3.5 w-3.5" aria-hidden />
-              {countryCode || '—'} · {city || '—'}
+              {countryCode ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="text-base leading-none" title={countryCode}>
+                    {countryFlagEmoji(countryCode)}
+                  </span>
+                  <span>{countryNameUz(countryCode) ?? countryCode}</span>
+                </span>
+              ) : (
+                '—'
+              )}
+              <span className="text-text-muted"> · </span>
+              {city || '—'}
             </span>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className={btnSecondary} onClick={() => setEditOpen(true)}>
             <Pencil className="h-4 w-4" aria-hidden />
-            Edit (PATCH)
+            Tahrirlash
           </button>
           <button
             type="button"
@@ -316,7 +353,7 @@ export function VacancyDetail() {
             }}
           >
             <Trash2 className="h-4 w-4" aria-hidden />
-            Delete
+            O‘chirish
           </button>
         </div>
       </div>
@@ -402,7 +439,7 @@ export function VacancyDetail() {
           <div className="flex items-center justify-between gap-3 border-b border-border/80 bg-gradient-to-r from-muted/35 to-transparent px-6 py-4">
             <h2 className="m-0 flex items-center gap-2 text-base font-semibold">
               <ClipboardList className="h-4 w-4 text-primary" aria-hidden />
-              Kasblar (professions)
+              Kasblar
             </h2>
             <span className="text-xs font-semibold text-text-muted">{professions.length} ta</span>
           </div>
@@ -434,17 +471,19 @@ export function VacancyDetail() {
                     const gender = pickStr(o, 'gender_requirement', 'genderRequirement') || 'ANY';
                     const ageMin = pickNum(o, 'age_min', 'ageMin');
                     const ageMax = pickNum(o, 'age_max', 'ageMax');
-                    const exp = pickStr(o, 'experience_range', 'experienceRange') || '—';
+                    const exp = pickStr(o, 'experience_range', 'experienceRange') || '';
                     return (
                       <tr key={`p-${i}`} className="hover:bg-primary/[0.035]">
                         <td className="px-6 py-3 text-sm text-text-muted tabular-nums">{catId ?? '—'}</td>
                         <td className="px-6 py-3 text-sm text-text-muted tabular-nums">{profId ?? '—'}</td>
                         <td className="px-6 py-3 text-sm font-medium text-text-primary tabular-nums">{places}</td>
-                        <td className="px-6 py-3 text-sm text-text-muted">{gender}</td>
+                        <td className="px-6 py-3 text-sm text-text-muted">{uzOrCode(genderRequirementUz, gender)}</td>
                         <td className="px-6 py-3 text-sm text-text-muted tabular-nums">
                           {ageMin != null || ageMax != null ? `${ageMin ?? '—'}–${ageMax ?? '—'}` : '—'}
                         </td>
-                        <td className="px-6 py-3 text-sm text-text-muted">{exp}</td>
+                        <td className="px-6 py-3 text-sm text-text-muted">
+                          {exp ? uzOrCode(experienceRangeUz, exp) : '—'}
+                        </td>
                       </tr>
                     );
                   })
@@ -456,7 +495,10 @@ export function VacancyDetail() {
 
         <div className={panelElite}>
           <div className="flex items-center justify-between gap-3 border-b border-border/80 bg-gradient-to-r from-muted/35 to-transparent px-6 py-4">
-            <h2 className="m-0 text-base font-semibold">Til talablari (language_requirements)</h2>
+            <h2 className="m-0 flex items-center gap-2 text-base font-semibold">
+              <Languages className="h-4 w-4 text-primary" strokeWidth={2} aria-hidden />
+              Til talablari
+            </h2>
             <span className="text-xs font-semibold text-text-muted">{languageReqs.length} ta</span>
           </div>
           <div className="overflow-x-auto">
@@ -483,8 +525,13 @@ export function VacancyDetail() {
                     const mandatory = pickBool(o, 'is_mandatory', 'isMandatory');
                     return (
                       <tr key={`l-${i}`} className="hover:bg-primary/[0.035]">
-                        <td className="px-6 py-3 text-sm text-text-primary">{language}</td>
-                        <td className="px-6 py-3 text-sm text-text-muted">{level}</td>
+                        <td className="px-6 py-3 text-sm text-text-primary">
+                          <span className="inline-flex items-center gap-2">
+                            <LanguageIcon code={language} size={20} className="text-primary" />
+                            <span>{languageLabelUz(language)}</span>
+                          </span>
+                        </td>
+                        <td className="px-6 py-3 text-sm text-text-muted">{uzOrCode(cefrLevelUz, level)}</td>
                         <td className="px-6 py-3 text-sm text-text-muted">{mandatory === true ? 'Ha' : mandatory === false ? 'Yo‘q' : '—'}</td>
                       </tr>
                     );
@@ -503,7 +550,9 @@ export function VacancyDetail() {
         <div className="grid gap-3 px-6 py-5 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-[var(--elite-shadow-xs)]">
             <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Ish grafigi</p>
-            <p className="mt-1 text-sm font-semibold text-text-primary">{workSchedule || '—'}</p>
+            <p className="mt-1 text-sm font-semibold text-text-primary">
+              {workSchedule ? uzOrCode(workScheduleUz, workSchedule) : '—'}
+            </p>
           </div>
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-[var(--elite-shadow-xs)]">
             <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Kontrakt</p>
@@ -524,10 +573,10 @@ export function VacancyDetail() {
             <p className="mt-1 text-sm font-semibold text-text-primary tabular-nums">{updatedBy != null ? String(updatedBy) : '—'}</p>
           </div>
           <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 shadow-[var(--elite-shadow-xs)]">
-            <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Vaqtlar</p>
-            <p className="mt-1 text-xs text-text-muted">created_at</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-text-muted">Vaqt belgilari</p>
+            <p className="mt-1 text-xs text-text-muted">Yaratilgan sana</p>
             <p className="text-sm font-semibold text-text-primary">{fmtDate(createdAt)}</p>
-            <p className="mt-2 text-xs text-text-muted">updated_at</p>
+            <p className="mt-2 text-xs text-text-muted">Yangilangan sana</p>
             <p className="text-sm font-semibold text-text-primary">{fmtDate(updatedAt)}</p>
           </div>
         </div>
@@ -566,7 +615,7 @@ export function VacancyDetail() {
           <DialogHeader className="border-b border-border/70 bg-gradient-to-r from-muted/40 to-transparent px-6 py-4 text-left">
             <DialogTitle className="text-xl font-semibold tracking-tight">Vakansiyani tahrirlash</DialogTitle>
             <DialogDescription className="text-sm text-muted-foreground">
-              <span className="mono text-xs">PATCH /api/admin/vacancies/{`{id}`}</span>
+              Asosiy maydonlarni yangilang va saqlang.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => void submitPatch(e)}>
@@ -580,59 +629,61 @@ export function VacancyDetail() {
                 <Input className={ctlInputLg} value={form.description} onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">country_code</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Mamlakat kodi</Label>
                 <Input className={ctlInputLg} value={form.country_code} onChange={(e) => setForm((p) => ({ ...p, country_code: e.target.value }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">city</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Shahar</Label>
                 <Input className={ctlInputLg} value={form.city} onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))} />
               </div>
               <div className="sm:col-span-2">
-                <Label className="mb-1.5 text-xs text-text-muted">employer_name</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Ish beruvchi</Label>
                 <Input className={ctlInputLg} value={form.employer_name} onChange={(e) => setForm((p) => ({ ...p, employer_name: e.target.value }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">salary_currency</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Maosh valyutasi</Label>
                 <Input className={ctlInputLg} value={form.salary_currency} onChange={(e) => setForm((p) => ({ ...p, salary_currency: e.target.value }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">work_schedule</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Ish grafigi</Label>
                 <select className={ctlSelectLg} value={form.work_schedule} onChange={(e) => setForm((p) => ({ ...p, work_schedule: e.target.value }))}>
-                  <option value="FULL_TIME">FULL_TIME</option>
-                  <option value="PART_TIME">PART_TIME</option>
-                  <option value="SHIFT">SHIFT</option>
+                  {(Object.keys(workScheduleUz) as (keyof typeof workScheduleUz)[]).map((wk) => (
+                    <option key={wk} value={wk}>
+                      {workScheduleUz[wk]}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">salary_min</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Minimal maosh</Label>
                 <Input className={ctlInputLg} type="number" value={form.salary_min} onChange={(e) => setForm((p) => ({ ...p, salary_min: num(e.target.value) }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">salary_max</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Maksimal maosh</Label>
                 <Input className={ctlInputLg} type="number" value={form.salary_max} onChange={(e) => setForm((p) => ({ ...p, salary_max: num(e.target.value) }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">places_total</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Joylar soni (jami)</Label>
                 <Input className={ctlInputLg} type="number" value={form.places_total} onChange={(e) => setForm((p) => ({ ...p, places_total: num(e.target.value) }))} />
               </div>
               <div>
-                <Label className="mb-1.5 text-xs text-text-muted">contract_duration_months</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Kontrakt davri (oy)</Label>
                 <Input className={ctlInputLg} type="number" value={form.contract_duration_months} onChange={(e) => setForm((p) => ({ ...p, contract_duration_months: num(e.target.value) }))} />
               </div>
               <div className="sm:col-span-2">
-                <Label className="mb-1.5 text-xs text-text-muted">expires_at (ISO)</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Muddati tugash vaqti (ISO)</Label>
                 <Input className={ctlInputLg} value={form.expires_at} onChange={(e) => setForm((p) => ({ ...p, expires_at: e.target.value }))} />
               </div>
               <div className="sm:col-span-2">
-                <Label className="mb-1.5 text-xs text-text-muted">Options</Label>
+                <Label className="mb-1.5 text-xs text-text-muted">Qoʻshimcha shartlar</Label>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {(
                     [
-                      ['salary_is_negotiable', 'salary_is_negotiable'],
-                      ['accommodation', 'accommodation'],
-                      ['flight_ticket', 'flight_ticket'],
-                      ['meals_provided', 'meals_provided'],
-                      ['medical_insurance', 'medical_insurance'],
+                      ['salary_is_negotiable', 'Maosh muzokaraga ochiq'],
+                      ['accommodation', 'Yotoqxona'],
+                      ['flight_ticket', 'Parvoz chiptasi'],
+                      ['meals_provided', 'Ovqat beriladi'],
+                      ['medical_insurance', 'Tibbiy sug‘urta'],
                     ] as const
                   ).map(([k, label]) => (
                     <label key={k} className="flex items-center justify-between rounded-xl border border-border/80 bg-background/80 px-3 py-2 text-sm shadow-[var(--elite-shadow-xs)]">

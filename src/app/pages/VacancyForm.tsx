@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { Loader2, Plus, X } from 'lucide-react';
+import { Languages, Loader2, Plus, X } from 'lucide-react';
 import { COUNTRIES } from '../data/mockData';
 import {
   fetchProfessionCategories,
@@ -8,6 +8,14 @@ import {
   type ProfessionDto,
 } from '../api/professions';
 import { createVacancy, fetchVacancyById, patchVacancy } from '../api/vacancies';
+import {
+  adminLanguageUz,
+  cefrLevelUz,
+  experienceRangeUz,
+  genderRequirementUz,
+  workScheduleUz,
+} from '../lib/adminUiUz';
+import { LanguageIcon } from '../components/LanguageIcon';
 import {
   btnPrimaryLg,
   btnSecondaryLg,
@@ -232,8 +240,8 @@ export function VacancyForm() {
     setError(null);
     if (!title.trim()) return setError('Sarlavha kiriting.');
     if (!countryCode) return setError('Mamlakat kodini tanlang.');
-    if (!expiresAt) return setError('Muddat (expires_at) kiriting.');
-    if ((placesTotal === '' ? 0 : placesTotal) <= 0) return setError('Joylar soni (places_total) kiriting.');
+    if (!expiresAt) return setError('Muddati tugash vaqtini kiriting.');
+    if ((placesTotal === '' ? 0 : placesTotal) <= 0) return setError('Joylar sonini kiriting.');
     for (let i = 0; i < professions.length; i++) {
       const p = professions[i];
       if (!p.profession_category_id || !p.profession_id) {
@@ -336,34 +344,25 @@ export function VacancyForm() {
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1">Ish grafigi</label>
                 <select className={ctlSelectLg} value={workSchedule} onChange={(e) => setWorkSchedule(e.target.value)}>
-                  <option value="FULL_TIME">FULL_TIME</option>
-                  <option value="PART_TIME">PART_TIME</option>
-                  <option value="SHIFT">SHIFT</option>
+                  {(Object.keys(workScheduleUz) as (keyof typeof workScheduleUz)[]).map((k) => (
+                    <option key={k} value={k}>
+                      {workScheduleUz[k]}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Tajriba talab</label>
-                <select className={ctlSelectLg}>
-                  <option>1-3 YIL</option>
-                  <option>3-5 YIL</option>
-                  <option>5+ YIL</option>
-                </select>
-              </div>
-
-              <div className="flex items-end">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded border-border text-primary"
-                    checked={isUrgent}
-                    onChange={(e) => setIsUrgent(e.target.checked)}
-                  />
-                  <span className="text-sm text-text-primary">Ha, bu vakansiya shoshilinch</span>
-                </label>
-              </div>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <label className="flex cursor-pointer items-center gap-2">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-border text-primary"
+                  checked={isUrgent}
+                  onChange={(e) => setIsUrgent(e.target.checked)}
+                />
+                <span className="text-sm text-text-primary">Shoshilinch vakansiya</span>
+              </label>
             </div>
           </div>
 
@@ -373,7 +372,7 @@ export function VacancyForm() {
 
             <div className="flex items-center gap-3">
               <div className="flex-1">
-                <label className="block text-sm font-medium text-text-primary mb-1">Min</label>
+                <label className="block text-sm font-medium text-text-primary mb-1">Minimal</label>
                 <input
                   type="number"
                   placeholder="800"
@@ -384,7 +383,7 @@ export function VacancyForm() {
               </div>
               <span className="text-text-muted mt-6">—</span>
               <div className="flex-1">
-                <label className="block text-sm font-medium text-text-primary mb-1">Max</label>
+                <label className="block text-sm font-medium text-text-primary mb-1">Maksimal</label>
                 <input
                   type="number"
                   placeholder="1200"
@@ -414,48 +413,19 @@ export function VacancyForm() {
             </label>
           </div>
 
-          {/* Additional Info */}
+          {/* Qo'shimcha: yosh/jins/tajriba faqat «Kasblar» blokida */}
           <div className={`${panelElite} space-y-4 p-6`}>
-            <h2>Qo'shimcha</h2>
+            <h2>Qoʻshimcha shartlar</h2>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Minimal yosh</label>
-                <input
-                  type="number"
-                  placeholder="18"
-                  className={ctlInputLg}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Maksimal yosh</label>
-                <input
-                  type="number"
-                  placeholder="45"
-                  className={ctlInputLg}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Jins talabi</label>
-                <select className={ctlSelectLg}>
-                  <option>Farq qilmaydi</option>
-                  <option>Erkak</option>
-                  <option>Ayol</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">Joylar soni</label>
-                <input
-                  type="number"
-                  placeholder="5"
-                  className={ctlInputLg}
-                  value={placesTotal}
-                  onChange={(e) => setPlacesTotal(e.target.value ? Number(e.target.value) : '')}
-                />
-              </div>
+            <div className="max-w-md">
+              <label className="mb-1 block text-sm font-medium text-text-primary">Joylar soni (jami)</label>
+              <input
+                type="number"
+                placeholder="5"
+                className={ctlInputLg}
+                value={placesTotal}
+                onChange={(e) => setPlacesTotal(e.target.value ? Number(e.target.value) : '')}
+              />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -469,8 +439,8 @@ export function VacancyForm() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">
-                  Muddat (expires_at) <span className="text-danger">*</span>
+                <label className="mb-1 block text-sm font-medium text-text-primary">
+                  Muddati tugash vaqti <span className="text-danger">*</span>
                 </label>
                 <input
                   type="datetime-local"
@@ -592,7 +562,7 @@ export function VacancyForm() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-text-muted mb-1">age_min</label>
+                    <label className="mb-1 block text-xs font-medium text-text-muted">Minimal yosh</label>
                     <input
                       type="number"
                       value={prof.age_min}
@@ -605,7 +575,7 @@ export function VacancyForm() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-text-muted mb-1">age_max</label>
+                    <label className="mb-1 block text-xs font-medium text-text-muted">Maksimal yosh</label>
                     <input
                       type="number"
                       value={prof.age_max}
@@ -620,7 +590,7 @@ export function VacancyForm() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs font-medium text-text-muted mb-1">gender_requirement</label>
+                    <label className="mb-1 block text-xs font-medium text-text-muted">Jins talabi</label>
                     <select
                       className={`${ctlSelect} text-xs`}
                       value={prof.gender_requirement}
@@ -630,13 +600,15 @@ export function VacancyForm() {
                         setProfessions(next);
                       }}
                     >
-                      <option value="ANY">ANY</option>
-                      <option value="MALE">MALE</option>
-                      <option value="FEMALE">FEMALE</option>
+                      {(Object.keys(genderRequirementUz) as (keyof typeof genderRequirementUz)[]).map((k) => (
+                        <option key={k} value={k}>
+                          {genderRequirementUz[k]}
+                        </option>
+                      ))}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-text-muted mb-1">experience_range</label>
+                    <label className="mb-1 block text-xs font-medium text-text-muted">Tajriba talabi</label>
                     <select
                       className={`${ctlSelect} text-xs`}
                       value={prof.experience_range}
@@ -646,9 +618,11 @@ export function VacancyForm() {
                         setProfessions(next);
                       }}
                     >
-                      <option value="YEAR_1_3">YEAR_1_3</option>
-                      <option value="YEAR_3_5">YEAR_3_5</option>
-                      <option value="YEAR_5_PLUS">YEAR_5_PLUS</option>
+                      {(Object.keys(experienceRangeUz) as (keyof typeof experienceRangeUz)[]).map((k) => (
+                        <option key={k} value={k}>
+                          {experienceRangeUz[k]}
+                        </option>
+                      ))}
                     </select>
                   </div>
                 </div>
@@ -659,7 +633,10 @@ export function VacancyForm() {
           {/* Languages Section */}
           <div className={`${panelElite} space-y-4 p-6`}>
             <div className="flex items-center justify-between">
-              <h3 className="font-medium">Til talablari</h3>
+              <h3 className="flex items-center gap-2 font-medium">
+                <Languages className="h-4 w-4 text-primary" strokeWidth={2} aria-hidden />
+                Til talablari
+              </h3>
               <button
                 type="button"
                 onClick={addLanguage}
@@ -672,6 +649,7 @@ export function VacancyForm() {
 
             {languages.map((lang, index) => (
               <div key={index} className="flex items-center gap-2">
+                <LanguageIcon code={lang.language} size={20} className="flex-shrink-0 text-primary" />
                 <select
                   className={`${ctlSelect} min-w-0 flex-1 text-xs`}
                   value={lang.language}
@@ -681,13 +659,11 @@ export function VacancyForm() {
                     setLanguages(next);
                   }}
                 >
-                  <option value="ENGLISH">ENGLISH</option>
-                  <option value="GERMAN">GERMAN</option>
-                  <option value="KOREAN">KOREAN</option>
-                  <option value="POLISH">POLISH</option>
-                  <option value="RUSSIAN">RUSSIAN</option>
-                  <option value="TURKISH">TURKISH</option>
-                  <option value="OTHER">OTHER</option>
+                  {(Object.keys(adminLanguageUz) as (keyof typeof adminLanguageUz)[]).map((k) => (
+                    <option key={k} value={k}>
+                      {adminLanguageUz[k]}
+                    </option>
+                  ))}
                 </select>
                 <select
                   className={`${ctlSelect} w-24 flex-shrink-0 text-xs`}
@@ -698,13 +674,11 @@ export function VacancyForm() {
                     setLanguages(next);
                   }}
                 >
-                  <option value="NONE">NONE</option>
-                  <option value="A1">A1</option>
-                  <option value="A2">A2</option>
-                  <option value="B1">B1</option>
-                  <option value="B2">B2</option>
-                  <option value="C1">C1</option>
-                  <option value="C2">C2</option>
+                  {(Object.keys(cefrLevelUz) as (keyof typeof cefrLevelUz)[]).map((k) => (
+                    <option key={k} value={k}>
+                      {cefrLevelUz[k]}
+                    </option>
+                  ))}
                 </select>
                 <label className="flex items-center gap-2 text-xs text-text-muted">
                   <input
@@ -717,7 +691,7 @@ export function VacancyForm() {
                       setLanguages(next);
                     }}
                   />
-                  majburiy
+                  Majburiy
                 </label>
                 {languages.length > 1 && (
                   <button
@@ -742,11 +716,11 @@ export function VacancyForm() {
         </button>
         <button type="button" className={btnSecondaryLg} disabled={saving || loadingVacancy} onClick={() => void handleSave('DRAFT')}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-          {isEdit ? 'Saqlash (PATCH)' : 'Qoralama saqla'}
+          {isEdit ? 'O‘zgarishlarni saqlash' : 'Qoralama sifatida saqlash'}
         </button>
         <button type="button" className={btnPrimaryLg} disabled={saving || loadingVacancy} onClick={() => void handleSave('ACTIVE')}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-          {isEdit ? 'Saqlash (PATCH)' : 'Nashr qilish (ACTIVE)'}
+          {isEdit ? 'Saqlash va faollashtirish' : 'Nashr qilish (faol)'}
         </button>
       </div>
       {error ? <p className="text-sm text-danger">{error}</p> : null}

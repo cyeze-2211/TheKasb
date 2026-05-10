@@ -137,6 +137,12 @@ export async function assignCandidateAgent(candidateId: string | number, agent_i
   assertApiSuccess(data);
 }
 
+/** Nomzod profilini o‘chirish — DELETE /api/admin/candidates/{id} */
+export async function deleteCandidate(id: string | number): Promise<void> {
+  const { data } = await api.delete<unknown>(`/admin/candidates/${encodeURIComponent(String(id))}`);
+  assertApiSuccess(data);
+}
+
 export function pickCandidateField(obj: unknown, ...keys: string[]): unknown {
   if (!obj || typeof obj !== 'object') return undefined;
   const o = obj as Record<string, unknown>;
@@ -160,6 +166,54 @@ export function pickNum(obj: unknown, ...keys: string[]): number | undefined {
     if (Number.isFinite(n)) return n;
   }
   return undefined;
+}
+
+/**
+ * Admin ro‘yxati (GET /admin/candidates) qatoridan GET/PATCH/DELETE uchun `{id}`.
+ * Ichki `candidate_profile` / `candidateProfile` obyektlarini ham tekshiradi.
+ */
+export function adminCandidateIdFromListRow(row: unknown, depth = 0): string | null {
+  if (depth > 4 || !row || typeof row !== 'object' || Array.isArray(row)) return null;
+  const o = row as Record<string, unknown>;
+
+  /** Ro‘yxatda ko‘pincha UUID qator (`candidate_id`) — `pickNum` buni o‘tkazib yuborardi. */
+  const candidateKey = pickStr(o, 'candidate_id', 'candidateId').trim();
+  if (candidateKey) return candidateKey;
+
+  const n = pickNum(o, 'profile_id', 'profileId', 'nomzod_id', 'nomzodId');
+  if (n != null && n > 0) return String(n);
+
+  const idStr = pickStr(
+    o,
+    'candidate_profile_id',
+    'candidateProfileId',
+    'profile_uuid',
+    'profileUuid',
+    'uuid',
+    'public_id',
+    'publicId',
+  ).trim();
+  if (idStr) return idStr;
+
+  for (const k of ['candidate_profile', 'candidateProfile', 'profile'] as const) {
+    const inner = o[k];
+    if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+      const sub = adminCandidateIdFromListRow(inner, depth + 1);
+      if (sub) return sub;
+    }
+  }
+
+  const fallbackN = pickNum(o, 'id');
+  if (fallbackN != null && fallbackN > 0) return String(fallbackN);
+
+  const fallbackS = pickStr(o, 'id').trim();
+  if (fallbackS) return fallbackS;
+
+  /** Ba’zi ro‘yxatlarda faqat foydalanuvchi ID bo‘lishi mumkin (backend `{id}` ni qabul qilsa). */
+  const userN = pickNum(o, 'user_id', 'userId');
+  if (userN != null && userN > 0) return String(userN);
+
+  return null;
 }
 
 export function axiosErrorMessage(err: unknown, fallback: string): string {

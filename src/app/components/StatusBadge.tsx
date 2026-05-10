@@ -12,6 +12,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { ProfileStatus, VacancyStatus, UserRole } from '../data/mockData';
+import { accountTypeUz } from '../lib/adminUiUz';
 
 const iconSm = 'h-3.5 w-3.5 flex-shrink-0';
 
@@ -96,22 +97,22 @@ interface RoleBadgeProps {
 export function RoleBadge({ role }: RoleBadgeProps) {
   const config = {
     CANDIDATE: {
-      label: 'CANDIDATE',
+      label: accountTypeUz.CANDIDATE,
       color: 'bg-blue-100 text-blue-700 border-blue-200',
       Icon: User,
     },
     ADMIN: {
-      label: 'ADMIN',
+      label: accountTypeUz.ADMIN,
       color: 'bg-purple-100 text-purple-700 border-purple-200',
       Icon: Shield,
     },
     SUPER_ADMIN: {
-      label: 'SUPER ADMIN',
+      label: accountTypeUz.SUPER_ADMIN,
       color: 'bg-amber-100 text-amber-700 border-amber-200',
       Icon: Star,
     },
     AGENT: {
-      label: 'AGENT',
+      label: accountTypeUz.AGENT,
       color: 'bg-teal-100 text-teal-700 border-teal-200',
       Icon: Briefcase,
     },

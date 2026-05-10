@@ -22,6 +22,7 @@ import { UserFormDialog } from '../components/users/UserFormDialog';
 import { RoleBadge } from '../components/StatusBadge';
 import { FilterPanel } from '../components/FilterPanel';
 import { btnPrimary, btnSecondary, ctlInput, ctlSelect, pageKicker, panelElite, rowElite, theadElite } from '../components/pageChrome';
+import { accountTypeUz } from '../lib/adminUiUz';
 
 function roleForBadge(u: SdgUserDto): UserRole {
   const r = String(u.accountType ?? 'CANDIDATE');
@@ -191,7 +192,7 @@ export function Users() {
       >
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[14rem] flex-1 sm:max-w-[18rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Qidirish (search)</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Qidirish</label>
             <input
               value={filters.search}
               onChange={(e) => patchFilters({ search: e.target.value })}
@@ -207,10 +208,10 @@ export function Users() {
               className={ctlSelect}
             >
               <option value="ALL">Barchasi</option>
-              <option value="CANDIDATE">CANDIDATE</option>
-              <option value="ADMIN">ADMIN</option>
-              <option value="SUPER_ADMIN">SUPER_ADMIN</option>
-              <option value="AGENT">AGENT</option>
+              <option value="CANDIDATE">{accountTypeUz.CANDIDATE}</option>
+              <option value="ADMIN">{accountTypeUz.ADMIN}</option>
+              <option value="SUPER_ADMIN">{accountTypeUz.SUPER_ADMIN}</option>
+              <option value="AGENT">{accountTypeUz.AGENT}</option>
             </select>
           </div>
           <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
@@ -238,7 +239,7 @@ export function Users() {
             </select>
           </div>
           <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Hech qachon kirmagan (never_logged_in)</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Hech qachon tizimga kirmagan</label>
             <select
               value={filters.neverLoggedIn}
               onChange={(e) => patchFilters({ neverLoggedIn: e.target.value })}
@@ -250,7 +251,7 @@ export function Users() {
             </select>
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Registered from</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Ro‘yxatdan — boshlanish</label>
             <input
               type="date"
               value={filters.registeredFrom}
@@ -259,7 +260,7 @@ export function Users() {
             />
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Registered to</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Ro‘yxatdan — tugash</label>
             <input
               type="date"
               value={filters.registeredTo}
@@ -268,7 +269,7 @@ export function Users() {
             />
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Last login from</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Oxirgi kirish — boshlanish</label>
             <input
               type="date"
               value={filters.lastLoginFrom}
@@ -277,7 +278,7 @@ export function Users() {
             />
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Last login to</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">Oxirgi kirish — tugash</label>
             <input
               type="date"
               value={filters.lastLoginTo}

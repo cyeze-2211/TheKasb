@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Search, ChevronDown, X, Download, Eye, Edit, MoreVertical, Settings } from 'lucide-react';
 import { mockCandidates, REGIONS, COUNTRIES } from '../data/mockData';
 import { Link } from 'react-router';
+import { LanguageIcon } from '../components/LanguageIcon';
 
 const getInitials = (name: string) => {
   const parts = name.split(' ');
@@ -21,15 +22,6 @@ const getScoreColor = (score: number) => {
   if (score >= 80) return 'text-green-400 from-green-600 to-green-400';
   if (score >= 50) return 'text-amber-400 from-amber-600 to-amber-400';
   return 'text-red-400 from-red-600 to-red-400';
-};
-
-const languageFlags: any = {
-  RUSSIAN: '🇷🇺',
-  ENGLISH: '🇬🇧',
-  GERMAN: '🇩🇪',
-  KOREAN: '🇰🇷',
-  TURKISH: '🇹🇷',
-  POLISH: '🇵🇱'
 };
 
 const getLevelColor = (level: string) => {
@@ -321,8 +313,12 @@ export function CandidatesPremium() {
                     <td className="px-4 py-4">
                       <div className="flex gap-1">
                         {candidate.languages.slice(0, 3).map((lang, i) => (
-                          <span key={i} className={`px-1.5 py-0.5 rounded text-xs border ${getLevelColor(lang.level)}`}>
-                            {languageFlags[lang.lang]} {lang.level}
+                          <span
+                            key={i}
+                            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs border ${getLevelColor(lang.level)}`}
+                          >
+                            <LanguageIcon code={lang.lang} size={14} className="text-gray-200" />
+                            {lang.level}
                           </span>
                         ))}
                       </div>
@@ -410,7 +406,10 @@ export function CandidatesPremium() {
                     </div>
                     <div className="flex items-center gap-1 flex-wrap">
                       {candidate.languages.map((lang, i) => (
-                        <span key={i} className="text-xs">{languageFlags[lang.lang]}{lang.level}</span>
+                        <span key={i} className="inline-flex items-center gap-0.5 text-xs text-gray-300">
+                          <LanguageIcon code={lang.lang} size={13} className="text-gray-400" />
+                          {lang.level}
+                        </span>
                       ))}
                       <span className="mx-1">→</span>
                       {candidate.targetCountries.map(code => {

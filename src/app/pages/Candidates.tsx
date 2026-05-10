@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
-  Eye,
+  ExternalLink,
   Loader2,
   RefreshCw,
   Search,
+  UserRound,
 } from 'lucide-react';
 import { COUNTRIES, REGIONS } from '../data/mockData';
 import {
@@ -17,19 +18,20 @@ import {
 import { fetchAgentsForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
 import { Link } from 'react-router';
 import { FilterPanel } from '../components/FilterPanel';
+import { LanguageIcon } from '../components/LanguageIcon';
 import {
   btnPrimary,
   btnSecondary,
   ctlInput,
   ctlSelect,
   filterFieldGrid,
-  iconAction,
   pageKicker,
   panelElite,
   rowElite,
   theadElite,
 } from '../components/pageChrome';
 import {
+  adminCandidateIdFromListRow,
   axiosErrorMessage,
   fetchCandidatesList,
   pickNum,
@@ -37,6 +39,8 @@ import {
   type AdminProfileStatus,
   type CandidatesListQuery,
 } from '../api/candidates';
+import { adminLanguageUz, candidateProfileStatusUz, cefrLevelUz, uzOrCode } from '../lib/adminUiUz';
+import { languageLabelUz, parseLanguageCodesFromCell } from '../lib/languageUi';
 
 const experienceLabels: Record<string, string> = {
   YEAR_1_3: '1-3 yil',
@@ -48,16 +52,6 @@ const availabilityLabels: Record<string, string> = {
   READY_NOW: 'Hozir tayyor',
   WITHIN_1_MONTH: '1 oy ichida',
   WITHIN_3_MONTHS: '3 oy ichida',
-};
-
-const languageFlags: Record<string, string> = {
-  RUSSIAN: '🇷🇺',
-  ENGLISH: '🇬🇧',
-  GERMAN: '🇩🇪',
-  KOREAN: '🇰🇷',
-  TURKISH: '🇹🇷',
-  POLISH: '🇵🇱',
-  OTHER: '🌐',
 };
 
 /** mockData `REGIONS` — "1-Toshkent..." formatidan id */
@@ -117,22 +111,10 @@ function initialsFromRow(name: string, phone: string): string {
   return d || '?';
 }
 
-/** GET /api/admin/candidates/{id} — `id` nomzod/profil ID (user_id emas) */
 function candidateDetailHref(row: Record<string, unknown>): string | null {
-  const cid = pickNum(row, 'candidate_id', 'candidateId');
-  if (cid != null) return `/admin/candidates/${encodeURIComponent(String(cid))}`;
-  const pid = pickNum(row, 'profile_id', 'profileId');
-  if (pid != null) return `/admin/candidates/${encodeURIComponent(String(pid))}`;
-  const idStr = pickStr(
-    row,
-    'id',
-    'candidate_profile_id',
-    'candidateProfileId',
-    'profile_uuid',
-    'profileUuid',
-  );
-  if (idStr) return `/admin/candidates/${encodeURIComponent(idStr)}`;
-  return null;
+  const id = adminCandidateIdFromListRow(row);
+  if (!id) return null;
+  return `/admin/candidates/${encodeURIComponent(id)}`;
 }
 
 function ProfileMetrics({
@@ -285,7 +267,7 @@ export function Candidates() {
         <div className="space-y-4">
           <div className={filterFieldGrid}>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">Holat (profileStatus)</span>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Profil holati</span>
               <select
                 className={ctlSelect}
                 value={q.profileStatus ?? ''}
@@ -294,15 +276,15 @@ export function Candidates() {
                 }
               >
                 <option value="">Barchasi</option>
-                <option value="ACTIVE">ACTIVE</option>
-                <option value="DRAFT">DRAFT</option>
-                <option value="PENDING">PENDING</option>
-                <option value="PLACED">PLACED</option>
-                <option value="SUSPENDED">SUSPENDED</option>
+                {(Object.keys(candidateProfileStatusUz) as (keyof typeof candidateProfileStatusUz)[]).map((k) => (
+                  <option key={k} value={k}>
+                    {candidateProfileStatusUz[k]}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">Hudud (regionId)</span>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Hudud</span>
               <select
                 className={ctlSelect}
                 disabled={filterMetaLoading}
@@ -423,33 +405,32 @@ export function Candidates() {
                 </option>
               ))}
             </select>
-            <select
-              className={ctlSelect}
-              value={q.language ?? ''}
-              onChange={(e) => setField({ language: e.target.value as CandidatesListQuery['language'] })}
-            >
-              <option value="">Til</option>
-              <option value="RUSSIAN">RUSSIAN</option>
-              <option value="ENGLISH">ENGLISH</option>
-              <option value="GERMAN">GERMAN</option>
-              <option value="KOREAN">KOREAN</option>
-              <option value="TURKISH">TURKISH</option>
-              <option value="POLISH">POLISH</option>
-              <option value="OTHER">OTHER</option>
-            </select>
+            <div>
+           
+              <select
+                className={ctlSelect}
+                value={q.language ?? ''}
+                onChange={(e) => setField({ language: e.target.value as CandidatesListQuery['language'] })}
+              >
+                <option value="">Barchasi</option>
+                {(Object.keys(adminLanguageUz) as (keyof typeof adminLanguageUz)[]).map((k) => (
+                  <option key={k} value={k}>
+                    {adminLanguageUz[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
             <select
               className={ctlSelect}
               value={q.languageLevel ?? ''}
               onChange={(e) => setField({ languageLevel: e.target.value as CandidatesListQuery['languageLevel'] })}
             >
               <option value="">Til darajasi</option>
-              <option value="NONE">NONE</option>
-              <option value="A1">A1</option>
-              <option value="A2">A2</option>
-              <option value="B1">B1</option>
-              <option value="B2">B2</option>
-              <option value="C1">C1</option>
-              <option value="C2">C2</option>
+              {(Object.keys(cefrLevelUz) as (keyof typeof cefrLevelUz)[]).map((k) => (
+                <option key={k} value={k}>
+                  {cefrLevelUz[k]}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -459,7 +440,7 @@ export function Candidates() {
               <div className="flex flex-wrap items-center gap-2">
                 <input
                   type="number"
-                  placeholder="Min"
+                  placeholder="Minimal"
                   className={`${ctlInput} w-28 sm:w-32`}
                   value={q.salaryMin ?? ''}
                   onChange={(e) =>
@@ -469,7 +450,7 @@ export function Candidates() {
                 <span className="text-text-muted">—</span>
                 <input
                   type="number"
-                  placeholder="Max"
+                  placeholder="Maksimal"
                   className={`${ctlInput} w-28 sm:w-32`}
                   value={q.salaryMax ?? ''}
                   onChange={(e) =>
@@ -479,7 +460,7 @@ export function Candidates() {
               </div>
             </div>
             <div className="min-w-[8rem] flex-1 sm:max-w-xs">
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">sort</span>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Saralash</span>
               <input
                 type="text"
                 className={ctlInput}
@@ -587,9 +568,29 @@ export function Candidates() {
                   );
                   const exp = pickStr(row, 'experience_range', 'experienceRange', 'experience');
                   const avail = pickStr(row, 'availability_status', 'availabilityStatus', 'availability');
-                  const lang = pickStr(row, 'primary_language', 'primaryLanguage', 'language');
-                  const salMin = pickNum(row, 'salary_min', 'salaryMin', 'expected_salary_min');
-                  const salMax = pickNum(row, 'salary_max', 'salaryMax', 'expected_salary_max');
+                  const langRaw = pickStr(
+                    row,
+                    'languages',
+                    'primary_language',
+                    'primaryLanguage',
+                    'language',
+                  );
+                  const salMin = pickNum(
+                    row,
+                    'salary_min',
+                    'salaryMin',
+                    'expected_salary_min',
+                    'desired_salary_min',
+                    'desiredSalaryMin',
+                  );
+                  const salMax = pickNum(
+                    row,
+                    'salary_max',
+                    'salaryMax',
+                    'expected_salary_max',
+                    'desired_salary_max',
+                    'desiredSalaryMax',
+                  );
                   const score = pickNum(row, 'score', 'profile_score', 'profileScore', 'match_score');
                   const completeness = pickNum(
                     row,
@@ -597,27 +598,56 @@ export function Candidates() {
                     'profileCompleteness',
                   );
                   const pStatus = pickStr(row, 'profile_status', 'profileStatus', 'status');
-                  const rowKey = candidateDetailHref(row)?.split('/').pop() ?? `i-${rowIndex}`;
+                  const rowKey = adminCandidateIdFromListRow(row) ?? `i-${rowIndex}`;
                   return (
                     <tr
                       key={rowKey}
                       className={`${rowElite} border-b border-border/80 transition-colors hover:bg-muted/25`}
                     >
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15"
-                            aria-hidden
+                        {href ? (
+                          <Link
+                            to={href}
+                            state={{ candidateListRow: row }}
+                            className="group flex items-center gap-3 rounded-xl py-0.5 pr-1 text-left outline-none ring-primary/25 transition-colors hover:bg-primary/[0.06] focus-visible:ring-2"
+                            title="Batafsil profil"
                           >
-                            {initialsFromRow(name, phone)}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-semibold text-text-primary">
-                              {name || 'Nomzod'}
+                            <div
+                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15 group-hover:ring-primary/30"
+                              aria-hidden
+                            >
+                              {initialsFromRow(name, phone)}
                             </div>
-                            <div className="mono truncate text-xs text-text-muted">{phone || '—'}</div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="truncate text-sm font-semibold text-primary group-hover:underline">
+                                  {name || 'Nomzod'}
+                                </span>
+                                <ExternalLink
+                                  className="h-3.5 w-3.5 shrink-0 text-primary/70 opacity-0 transition-opacity group-hover:opacity-100"
+                                  strokeWidth={2}
+                                  aria-hidden
+                                />
+                              </div>
+                              <div className="mono truncate text-xs text-text-muted">{phone || '—'}</div>
+                            </div>
+                          </Link>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15"
+                              aria-hidden
+                            >
+                              {initialsFromRow(name, phone)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-text-primary">
+                                {name || 'Nomzod'}
+                              </div>
+                              <div className="mono truncate text-xs text-text-muted">{phone || '—'}</div>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted">{regionLabel}</td>
                       <td className="px-4 py-3 text-sm text-text-muted">{profession || '—'}</td>
@@ -628,11 +658,19 @@ export function Candidates() {
                         {avail ? availabilityLabels[avail] ?? avail : '—'}
                       </td>
                       <td className="px-4 py-3 text-sm text-text-muted">
-                        {lang ? (
-                          <span>
-                            {languageFlags[lang] ? `${languageFlags[lang]} ` : ''}
-                            {lang}
-                          </span>
+                        {langRaw.trim() ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {parseLanguageCodesFromCell(langRaw).map((code) => (
+                              <span
+                                key={code}
+                                className="inline-flex items-center gap-1.5 rounded-full border border-border/90 bg-muted/40 px-2 py-0.5 text-xs font-medium text-text-primary shadow-[var(--elite-shadow-xs)]"
+                                title={languageLabelUz(code)}
+                              >
+                                <LanguageIcon code={code} size={15} className="text-primary" />
+                                <span>{languageLabelUz(code)}</span>
+                              </span>
+                            ))}
+                          </div>
                         ) : (
                           '—'
                         )}
@@ -649,15 +687,28 @@ export function Candidates() {
                         <span
                           className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${statusColor(pStatus)}`}
                         >
-                          {pStatus || '—'}
+                          {pStatus ? uzOrCode(candidateProfileStatusUz, pStatus) : '—'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
-                        {href ? (
-                          <Link to={href} className={iconAction} title="Batafsil">
-                            <Eye className="h-4 w-4" strokeWidth={2} />
-                          </Link>
-                        ) : null}
+                      <td className="px-4 py-3 text-right align-middle">
+                        <div className="flex flex-nowrap items-center justify-end gap-1.5 sm:flex-wrap">
+                          {href ? (
+                            <Link
+                              to={href}
+                              state={{ candidateListRow: row }}
+                              className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-primary/40 bg-primary/[0.08] px-2.5 py-1.5 text-xs font-semibold text-primary shadow-[var(--elite-shadow-xs)] transition-all hover:border-primary/55 hover:bg-primary/[0.12]"
+                              title="Batafsil profil"
+                            >
+                              <UserRound className="h-3.5 w-3.5 shrink-0" strokeWidth={2} aria-hidden />
+                              <span>Batafsil</span>
+                              <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-70" strokeWidth={2} aria-hidden />
+                            </Link>
+                          ) : (
+                            <span className="text-[11px] text-text-muted" title="candidate_id topilmadi">
+                              —
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

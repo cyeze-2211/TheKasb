@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, Link } from 'react-router';
+import { useParams, Link, useLocation, useNavigate } from 'react-router';
 import { COUNTRIES } from '../data/mockData';
 import {
+  adminCandidateIdFromListRow,
   assignCandidateAgent,
   axiosErrorMessage,
+  deleteCandidate,
   fetchCandidateById,
   pickCandidateField,
   pickNum,
@@ -12,38 +14,54 @@ import {
   type AdminProfileStatus,
 } from '../api/candidates';
 import {
+  Award,
+  Briefcase,
   Calendar,
   CheckCircle2,
   Clock,
   FileText,
   GraduationCap,
+  Link2,
   Loader2,
   MapPin,
+  Pencil,
+  Trash2,
   UserCog,
+  UserRound,
   XCircle,
 } from 'lucide-react';
 import { Switch } from '../components/ui/switch';
 import { Label } from '../components/ui/label';
 import { Button } from '../components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../components/ui/alert-dialog';
+import {
   btnPrimary,
+  btnSecondary,
   ctlSelect,
   pageKicker,
   panelElite,
   panelEliteRaised,
-  theadElite,
 } from '../components/pageChrome';
 import { fetchAgentsForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
-
-const languageFlags: Record<string, string> = {
-  RUSSIAN: '🇷🇺 Rus tili',
-  ENGLISH: '🇬🇧 Ingliz tili',
-  GERMAN: '🇩🇪 Nemis tili',
-  KOREAN: '🇰🇷 Koreys tili',
-  TURKISH: '🇹🇷 Turk tili',
-  POLISH: '🇵🇱 Polyak tili',
-  OTHER: '🌐 Boshqa',
-};
+import {
+  candidateProfileStatusUz,
+  cefrLevelUz,
+  documentTypeUz,
+  educationLevelUz,
+  maritalStatusUz,
+  uzOrCode,
+} from '../lib/adminUiUz';
+import { LanguageIcon } from '../components/LanguageIcon';
+import { languageLabelUz } from '../lib/languageUi';
+import { countryFlagEmoji, countryNameUz } from '../lib/regionFlags';
 
 const experienceLabels: Record<string, string> = {
   YEAR_1_3: '1-3 yil',
@@ -70,6 +88,8 @@ function initialsFromName(name: string): string {
 export function CandidateDetail() {
   const { id: idParam } = useParams();
   const candidateRouteId = (idParam ?? '').trim();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const [detail, setDetail] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,6 +101,21 @@ export function CandidateDetail() {
   const [agents, setAgents] = useState<SdgUserDto[]>([]);
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [listFallbackNotice, setListFallbackNotice] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
+
+  const listRowSnapshot = useMemo((): Record<string, unknown> | null => {
+    const st = location.state as { candidateListRow?: Record<string, unknown> } | null;
+    const r = st?.candidateListRow;
+    if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+    if (Object.keys(r).length === 0) return null;
+    const rowId = adminCandidateIdFromListRow(r);
+    if (!candidateRouteId || !rowId) return null;
+    if (String(rowId) !== String(candidateRouteId)) return null;
+    return r;
+  }, [location.state, candidateRouteId]);
 
   const load = useCallback(async () => {
     if (!candidateRouteId) {
@@ -91,23 +126,59 @@ export function CandidateDetail() {
     setLoading(true);
     setErr(null);
     setActionMsg(null);
+    setListFallbackNotice(null);
     try {
       const d = await fetchCandidateById(candidateRouteId);
-      setDetail(d);
-      if (!d) setErr('Ma’lumot topilmadi.');
-      const ag = pickNum(d, 'agent_id', 'agentId', 'assigned_agent_id');
-      if (ag != null) setAgentIdInput(String(ag));
+      if (d && Object.keys(d).length > 0) {
+        setDetail(d);
+        setListFallbackNotice(null);
+        const ag = pickNum(d, 'agent_id', 'agentId', 'assigned_agent_id');
+        if (ag != null) setAgentIdInput(String(ag));
+      } else if (listRowSnapshot) {
+        setDetail(listRowSnapshot);
+        setErr(null);
+        setListFallbackNotice(
+          'To‘liq profil API dan kelmadi — ro‘yxatdagi ma’lumot ko‘rsatiladi. Sahifani yangilab ko‘ring.',
+        );
+        const ag = pickNum(listRowSnapshot, 'agent_id', 'agentId', 'assigned_agent_id');
+        if (ag != null) setAgentIdInput(String(ag));
+      } else {
+        setDetail(null);
+        setErr('Ma’lumot topilmadi.');
+      }
     } catch (e) {
-      setErr(axiosErrorMessage(e, 'Yuklashda xato.'));
-      setDetail(null);
+      if (listRowSnapshot) {
+        setDetail(listRowSnapshot);
+        setErr(null);
+        setListFallbackNotice(
+          axiosErrorMessage(e, 'Profilni yuklashda xato — ro‘yxatdagi ma’lumot ko‘rsatiladi.'),
+        );
+        const ag = pickNum(listRowSnapshot, 'agent_id', 'agentId', 'assigned_agent_id');
+        if (ag != null) setAgentIdInput(String(ag));
+      } else {
+        setErr(axiosErrorMessage(e, 'Yuklashda xato.'));
+        setDetail(null);
+      }
     } finally {
       setLoading(false);
     }
-  }, [candidateRouteId]);
+  }, [candidateRouteId, listRowSnapshot]);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const st = location.state as { candidateFocus?: string } | null;
+    if (st?.candidateFocus === 'actions') {
+      requestAnimationFrame(() => {
+        document.getElementById('candidate-admin-actions')?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        });
+      });
+    }
+  }, [location.state]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,11 +215,18 @@ export function CandidateDetail() {
     [detail],
   );
 
+  const linkedUserId = useMemo(
+    () => (detail ? pickNum(detail, 'user_id', 'userId') : undefined),
+    [detail],
+  );
+
   const region = useMemo(
     () =>
       detail
         ? pickStr(
             detail,
+            'region_name_uz',
+            'regionNameUz',
             'region_name',
             'regionName',
             'region',
@@ -177,7 +255,7 @@ export function CandidateDetail() {
     try {
       await updateCandidateProfileStatus(candidateRouteId, next);
       await load();
-      setActionMsg(checked ? 'Profil faollashtirildi.' : 'Profil to‘xtatildi (SUSPENDED).');
+      setActionMsg(checked ? 'Profil faollashtirildi.' : 'Profil to‘xtatildi.');
     } catch (e) {
       setActionMsg(axiosErrorMessage(e, 'Holatni saqlab bo‘lmadi.'));
     } finally {
@@ -205,26 +283,88 @@ export function CandidateDetail() {
     }
   }
 
+  async function handleDeleteCandidate() {
+    if (!candidateRouteId) return;
+    setDeleting(true);
+    setDeleteErr(null);
+    try {
+      await deleteCandidate(candidateRouteId);
+      setDeleteOpen(false);
+      navigate('/admin/candidates', { replace: true });
+    } catch (e) {
+      setDeleteErr(axiosErrorMessage(e, 'O‘chirishda xato.'));
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const languages = useMemo(() => {
     const raw = detail ? pickCandidateField(detail, 'languages', 'language_items') : undefined;
     return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
-  const targetCountries = useMemo(() => {
+  type TargetCountryRow = { priority: number; countryCode: string };
+
+  const targetCountryRows = useMemo((): TargetCountryRow[] => {
     const raw = detail
       ? pickCandidateField(detail, 'target_countries', 'targetCountries', 'country_codes', 'targetCountryCodes')
       : undefined;
-    if (Array.isArray(raw)) return raw.map((x) => String(x));
-    const s = detail ? pickStr(detail, 'target_countries', 'targetCountries') : '';
-    if (s.includes(',')) return s.split(',').map((x) => x.trim());
-    return [];
+    if (!Array.isArray(raw)) {
+      const s = detail ? pickStr(detail, 'target_countries', 'targetCountries') : '';
+      if (s.includes(',')) {
+        return s
+          .split(',')
+          .map((x) => x.trim().toUpperCase())
+          .filter(Boolean)
+          .map((countryCode, i) => ({ priority: i + 1, countryCode }));
+      }
+      return [];
+    }
+    const rows: TargetCountryRow[] = [];
+    for (const item of raw) {
+      if (typeof item === 'string') {
+        const countryCode = item.trim().toUpperCase();
+        if (countryCode) rows.push({ priority: rows.length + 1, countryCode });
+        continue;
+      }
+      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+      const o = item as Record<string, unknown>;
+      const countryCode = pickStr(o, 'country_code', 'countryCode', 'code').trim().toUpperCase();
+      if (!countryCode) continue;
+      const pr = pickNum(o, 'priority');
+      rows.push({ priority: pr ?? 999, countryCode });
+    }
+    return rows.sort((a, b) => a.priority - b.priority);
+  }, [detail]);
+
+  const educations = useMemo(() => {
+    const raw = detail ? pickCandidateField(detail, 'educations', 'education_items') : undefined;
+    return Array.isArray(raw) ? raw : [];
+  }, [detail]);
+
+  const skills = useMemo(() => {
+    const raw = detail ? pickCandidateField(detail, 'skills', 'skill_items') : undefined;
+    return Array.isArray(raw) ? raw : [];
+  }, [detail]);
+
+  const documents = useMemo(() => {
+    const raw = detail ? pickCandidateField(detail, 'documents', 'document_items') : undefined;
+    return Array.isArray(raw) ? raw : [];
+  }, [detail]);
+
+  const workExperiences = useMemo(() => {
+    const raw = detail ? pickCandidateField(detail, 'work_experiences', 'workExperiences') : undefined;
+    return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
   const tabs = [
     { id: 'basic', label: 'Asosiy' },
     { id: 'languages', label: 'Tillar' },
     { id: 'countries', label: 'Mamlakatlar' },
-    { id: 'json', label: 'Barcha ma‘lumot' },
+    { id: 'education', label: 'Ta’lim' },
+    { id: 'work', label: 'Ish tajribasi' },
+    { id: 'skills', label: 'Ko‘nikmalar' },
+    { id: 'documents', label: 'Hujjatlar' },
   ];
 
   if (loading && !detail) {
@@ -252,14 +392,34 @@ export function CandidateDetail() {
 
   const exp = pickStr(detail, 'experience_range', 'experienceRange', 'experience');
   const avail = pickStr(detail, 'availability_status', 'availabilityStatus', 'availability');
-  const salMin = pickNum(detail, 'salary_min', 'salaryMin', 'expected_salary_min');
-  const salMax = pickNum(detail, 'salary_max', 'salaryMax', 'expected_salary_max');
+  const salMin = pickNum(
+    detail,
+    'salary_min',
+    'salaryMin',
+    'expected_salary_min',
+    'desired_salary_min',
+    'desiredSalaryMin',
+  );
+  const salMax = pickNum(
+    detail,
+    'salary_max',
+    'salaryMax',
+    'expected_salary_max',
+    'desired_salary_max',
+    'desiredSalaryMax',
+  );
   const currency = pickStr(detail, 'currency', 'salary_currency', 'salaryCurrency') || 'USD';
   const score = pickNum(detail, 'score', 'profile_score', 'profileScore');
   const category = pickStr(detail, 'category_name', 'categoryName', 'category');
   const profession = pickStr(detail, 'profession_name', 'professionName', 'profession');
   const registeredAt = pickStr(detail, 'created_at', 'createdAt', 'registered_at', 'registeredAt');
   const lastLogin = pickStr(detail, 'last_login_at', 'lastLoginAt', 'last_login', 'lastLogin');
+  const dateBirth = pickStr(detail, 'date_birth', 'dateBirth');
+  const marital = pickStr(detail, 'marital_status', 'maritalStatus');
+  const eduLevel = pickStr(detail, 'education_level', 'educationLevel');
+  const dataConsentRaw = pickCandidateField(detail, 'data_consent', 'dataConsent');
+  const updatedAt = pickStr(detail, 'updated_at', 'updatedAt');
+  const completenessPct = pickNum(detail, 'profile_completeness', 'profileCompleteness');
 
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
@@ -274,9 +434,65 @@ export function CandidateDetail() {
         </span>
       </nav>
 
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-primary/20">
+            <UserRound className="h-5 w-5" strokeWidth={2} aria-hidden />
+          </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-semibold tracking-tight text-text-primary sm:text-xl">
+              Nomzod profili
+            </h1>
+            <p className="truncate text-xs text-text-muted">
+              Ko‘rish, holat va agentni boshqarish, bog‘langan akkaunt
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {linkedUserId != null && linkedUserId > 0 ? (
+            <Link
+              to={`/admin/users/${linkedUserId}`}
+              className={`${btnSecondary} inline-flex items-center gap-2`}
+            >
+              Foydalanuvchi kartasi
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            className={`${btnSecondary} inline-flex items-center gap-2`}
+            onClick={() =>
+              document.getElementById('candidate-admin-actions')?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'start',
+              })
+            }
+          >
+            <Pencil className="h-4 w-4" strokeWidth={2} aria-hidden />
+            Tahrirlash
+          </button>
+          <button
+            type="button"
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-danger/70 bg-surface px-4 text-sm font-medium text-danger shadow-[var(--elite-shadow-xs)] transition-all duration-200 hover:bg-danger hover:text-white"
+            onClick={() => {
+              setDeleteErr(null);
+              setDeleteOpen(true);
+            }}
+          >
+            <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+            O‘chirish
+          </button>
+        </div>
+      </div>
+
       {actionMsg ? (
         <div className="rounded-xl border border-border/80 bg-muted/30 px-4 py-2 text-sm text-text-primary">
           {actionMsg}
+        </div>
+      ) : null}
+
+      {listFallbackNotice ? (
+        <div className="rounded-xl border border-amber-500/35 bg-amber-500/10 px-4 py-2 text-sm text-text-primary">
+          {listFallbackNotice}
         </div>
       ) : null}
 
@@ -301,13 +517,13 @@ export function CandidateDetail() {
               </div>
             </div>
 
-            <div className="space-y-3 border-t border-border pt-4">
+            <div id="candidate-admin-actions" className="scroll-mt-24 space-y-3 border-t border-border pt-4">
               <div className="flex items-center justify-between gap-4 rounded-xl border border-border/80 bg-background/80 px-4 py-3 shadow-[var(--elite-shadow-xs)] transition-colors duration-300 hover:border-primary/20">
                 <div className="min-w-0 space-y-0.5">
                   <Label htmlFor="profile-active" className="text-sm font-medium text-text-primary">
                     Profil faol
                   </Label>
-                  <p className="text-xs text-text-muted">ACTIVE / SUSPENDED (dark mode kabi)</p>
+                  <p className="text-xs text-text-muted">O‘chiq — profil to‘xtatilgan; yoqilgan — faol.</p>
                 </div>
                 <Switch
                   id="profile-active"
@@ -369,7 +585,10 @@ export function CandidateDetail() {
                 <span className="text-text-primary">{lastLogin || '—'}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-text-muted">
-                Holat: <span className="font-medium text-text-primary">{profileStatus || '—'}</span>
+                Holat:{' '}
+                <span className="font-medium text-text-primary">
+                  {profileStatus ? uzOrCode(candidateProfileStatusUz, profileStatus) : '—'}
+                </span>
               </div>
             </div>
 
@@ -446,83 +665,178 @@ export function CandidateDetail() {
                       <span className="text-sm font-medium text-text-primary">{score ?? 0}%</span>
                     </div>
                   </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Profil to‘liqligi</div>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-sky-500 transition-all duration-500"
+                          style={{ width: `${Math.min(100, completenessPct ?? 0)}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium text-text-primary tabular-nums">
+                        {completenessPct ?? 0}%
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Tug‘ilgan sana</div>
+                    <div className="text-sm text-text-primary">{dateBirth || '—'}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Oilaviy holat</div>
+                    <div className="text-sm text-text-primary">
+                      {marital ? uzOrCode(maritalStatusUz, marital) : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Ta’lim darajasi (profil)</div>
+                    <div className="text-sm text-text-primary">
+                      {eduLevel ? uzOrCode(educationLevelUz, eduLevel) : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Ma’lumotlar roziligi</div>
+                    <div className="text-sm text-text-primary">
+                      {typeof dataConsentRaw === 'boolean' ? (dataConsentRaw ? 'Ha' : 'Yo‘q') : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Oxirgi yangilanish</div>
+                    <div className="text-sm text-text-primary">{updatedAt || '—'}</div>
+                  </div>
                 </div>
               )}
 
               {activeTab === 'languages' && (
                 <div className="space-y-4">
                   {languages.length === 0 ? (
-                    <p className="text-sm text-text-muted">Tillar ro‘yxati yo‘q yoki format boshqacha.</p>
+                    <p className="text-sm text-text-muted">Tillar ro‘yxati yo‘q.</p>
                   ) : (
-                    <table className="w-full">
-                      <thead className={theadElite}>
-                        <tr>
-                          <th className="pb-3 text-left text-xs font-semibold uppercase text-text-muted">Til</th>
-                          <th className="pb-3 text-left text-xs font-semibold uppercase text-text-muted">Daraja</th>
-                          <th className="pb-3 text-left text-xs font-semibold uppercase text-text-muted">Boshqa</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border">
-                        {languages.map((lang, i) => {
-                          const L = lang as Record<string, unknown>;
-                          const code = pickStr(L, 'language', 'lang', 'code');
-                          const level = pickStr(L, 'level', 'language_level', 'languageLevel');
-                          const cert = pickCandidateField(L, 'has_certificate', 'hasCertificate', 'certified');
-                          return (
-                            <tr key={i}>
-                              <td className="py-3 text-sm text-text-primary">
-                                {languageFlags[code] ?? ''} {code || JSON.stringify(L)}
-                              </td>
-                              <td className="py-3">
-                                <span className="inline-flex items-center rounded-full border border-blue-200 bg-blue-100 px-2.5 py-1 text-xs font-medium text-blue-700">
-                                  {level || '—'}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {languages.map((lang, i) => {
+                        const L = lang as Record<string, unknown>;
+                        const rowId = pickStr(L, 'id') || `lang-${i}`;
+                        const code = pickStr(L, 'language', 'lang', 'code');
+                        const level = pickStr(L, 'level', 'language_level', 'languageLevel');
+                        const cert = pickCandidateField(L, 'has_certificate', 'hasCertificate', 'certified');
+                        return (
+                          <div
+                            key={rowId}
+                            className="flex gap-4 rounded-2xl border border-border/80 bg-gradient-to-br from-muted/30 to-transparent p-4 shadow-[var(--elite-shadow-xs)] transition-colors hover:border-primary/25"
+                          >
+                            <div
+                              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-surface shadow-inner ring-1 ring-border/60"
+                              aria-hidden
+                            >
+                              <LanguageIcon code={code} size={30} />
+                            </div>
+                            <div className="min-w-0 flex-1 space-y-2">
+                              <div className="text-base font-semibold text-text-primary">
+                                {code ? languageLabelUz(code) : '—'}
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                                  {level ? uzOrCode(cefrLevelUz, level) : '—'}
                                 </span>
-                              </td>
-                              <td className="py-3 text-sm">
                                 {typeof cert === 'boolean' ? (
-                                  cert ? (
-                                    <span className="inline-flex items-center gap-1 text-success">
+                                  <span
+                                    className={`inline-flex items-center gap-1 text-xs font-medium ${cert ? 'text-success' : 'text-text-muted'}`}
+                                  >
+                                    {cert ? (
                                       <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                                      Bor
-                                    </span>
-                                  ) : (
-                                    <span className="inline-flex items-center gap-1 text-text-muted">
+                                    ) : (
                                       <XCircle className="h-3.5 w-3.5 opacity-70" aria-hidden />
-                                      Yo‘q
-                                    </span>
-                                  )
-                                ) : (
-                                  '—'
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                    )}
+                                    Sertifikat: {cert ? 'bor' : 'yo‘q'}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
               )}
 
               {activeTab === 'countries' && (
                 <div className="space-y-3">
-                  {targetCountries.length === 0 ? (
-                    <p className="text-sm text-text-muted">Mamlakatlar yo‘q.</p>
+                  {targetCountryRows.length === 0 ? (
+                    <p className="text-sm text-text-muted">Maqsad mamlakatlar kiritilmagan.</p>
                   ) : (
-                    targetCountries.map((code, index) => {
-                      const country = COUNTRIES.find((c) => c.code === code);
+                    <ul className="space-y-2">
+                      {targetCountryRows.map((row, index) => {
+                        const country = COUNTRIES.find((c) => c.code === row.countryCode);
+                        const label = country?.name ?? countryNameUz(row.countryCode) ?? row.countryCode;
+                        return (
+                          <li
+                            key={`${row.countryCode}-${row.priority}-${index}`}
+                            className="flex items-center gap-4 rounded-2xl border border-border/80 bg-muted/20 px-4 py-3 transition-all hover:border-primary/30 hover:bg-muted/35"
+                          >
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-sm font-bold text-primary tabular-nums">
+                              {index + 1}
+                            </div>
+                            <span className="text-2xl leading-none" aria-hidden>
+                              {countryFlagEmoji(row.countryCode)}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="text-sm font-semibold text-text-primary">{label}</div>
+                              <div className="text-xs text-text-muted">Ustuvorlik: {row.priority}</div>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'education' && (
+                <div className="space-y-3">
+                  {educations.length === 0 ? (
+                    <p className="text-sm text-text-muted">Ta’lim yozuvlari yo‘q.</p>
+                  ) : (
+                    educations.map((ed, i) => {
+                      const E = ed as Record<string, unknown>;
+                      const eid = pickStr(E, 'id') || `ed-${i}`;
+                      const level = pickStr(E, 'level');
+                      const specialty = pickStr(E, 'specialty');
+                      const institution = pickStr(E, 'institution_name', 'institutionName');
+                      const country = pickStr(E, 'country');
+                      const year = pickNum(E, 'graduation_year', 'graduationYear');
                       return (
                         <div
-                          key={`${code}-${index}`}
-                          className="flex items-center gap-3 rounded-lg border border-border p-3 transition-all duration-200 hover:border-primary/20 hover:bg-muted/40"
+                          key={eid}
+                          className="rounded-2xl border border-border/80 bg-surface/80 p-4 shadow-[var(--elite-shadow-xs)]"
                         >
-                          <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-                            {index + 1}
+                          <div className="mb-2 flex items-start gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
+                              <GraduationCap className="h-5 w-5" strokeWidth={2} aria-hidden />
+                            </div>
+                            <div className="min-w-0 flex-1 space-y-1">
+                              <div className="text-sm font-semibold text-text-primary">
+                                {specialty || 'Mutaxassislik ko‘rsatilmagan'}
+                              </div>
+                              <div className="text-xs text-text-muted">
+                                {level ? uzOrCode(educationLevelUz, level) : '—'}
+                                {year != null ? ` · ${year}` : ''}
+                                {country ? (
+                                  <>
+                                    {' · '}
+                                    <span className="inline-flex items-center gap-1">
+                                      <span aria-hidden>{countryFlagEmoji(country)}</span>
+                                      <span>{countryNameUz(country) ?? country}</span>
+                                    </span>
+                                  </>
+                                ) : null}
+                              </div>
+                              {institution ? (
+                                <div className="text-sm text-text-primary">{institution}</div>
+                              ) : null}
+                            </div>
                           </div>
-                          <span className="text-2xl">{country?.flag ?? '🌍'}</span>
-                          <span className="text-sm font-medium text-text-primary">
-                            {country?.name ?? code}
-                          </span>
                         </div>
                       );
                     })
@@ -530,35 +844,164 @@ export function CandidateDetail() {
                 </div>
               )}
 
-              {activeTab === 'json' && (
+              {activeTab === 'work' && (
                 <div className="space-y-3">
-                  <p className="text-xs text-text-muted">
-                    API javobi — maydon nomlari backend bilan mos kelishi mumkin (snake_case / camelCase).
-                  </p>
-                  <pre className="max-h-[min(70vh,560px)] overflow-auto rounded-xl border border-border/80 bg-muted/20 p-4 text-[11px] leading-relaxed text-text-primary">
-                    {JSON.stringify(detail, null, 2)}
-                  </pre>
+                  {workExperiences.length === 0 ? (
+                    <p className="text-sm text-text-muted">Ish tajribasi kiritilmagan.</p>
+                  ) : (
+                    workExperiences.map((wx, i) => {
+                      const W = wx as Record<string, unknown>;
+                      const wid = pickStr(W, 'id') || `wx-${i}`;
+                      const title = pickStr(W, 'position', 'title', 'job_title', 'jobTitle', 'employer_name');
+                      const org = pickStr(W, 'company', 'organization', 'employer');
+                      const period = pickStr(W, 'period', 'duration', 'start_date', 'startDate');
+                      const desc = pickStr(W, 'description', 'responsibilities');
+                      return (
+                        <div
+                          key={wid}
+                          className="rounded-2xl border border-border/80 bg-muted/15 p-4 shadow-[var(--elite-shadow-xs)]"
+                        >
+                          <div className="flex gap-3">
+                            <Briefcase className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
+                            <div className="min-w-0 space-y-1">
+                              <div className="text-sm font-semibold text-text-primary">{title || '—'}</div>
+                              {org ? <div className="text-sm text-text-muted">{org}</div> : null}
+                              {period ? <div className="text-xs text-text-muted">{period}</div> : null}
+                              {desc ? <p className="mt-2 text-sm leading-relaxed text-text-primary">{desc}</p> : null}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'skills' && (
+                <div className="flex flex-wrap gap-2">
+                  {skills.length === 0 ? (
+                    <p className="text-sm text-text-muted">Ko‘nikmalar ro‘yxati bo‘sh.</p>
+                  ) : (
+                    skills.map((sk, i) => {
+                      const S = sk as Record<string, unknown>;
+                      const sid = pickStr(S, 'id') || `sk-${i}`;
+                      const name = pickStr(S, 'skill_name', 'skillName', 'name');
+                      const verified = pickCandidateField(S, 'is_verified', 'isVerified');
+                      const v = verified === true;
+                      return (
+                        <span
+                          key={sid}
+                          className="inline-flex items-center gap-2 rounded-full border border-border/90 bg-surface px-3 py-1.5 text-sm font-medium text-text-primary shadow-[var(--elite-shadow-xs)]"
+                        >
+                          <Award className="h-3.5 w-3.5 text-amber-600/90" strokeWidth={2} aria-hidden />
+                          {name || '—'}
+                          {typeof verified === 'boolean' ? (
+                            v ? (
+                              <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
+                            ) : (
+                              <span className="text-[10px] font-normal text-text-muted">tekshirilmagan</span>
+                            )
+                          ) : null}
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'documents' && (
+                <div className="space-y-3">
+                  {documents.length === 0 ? (
+                    <p className="text-sm text-text-muted">Hujjatlar yo‘q.</p>
+                  ) : (
+                    documents.map((doc, i) => {
+                      const D = doc as Record<string, unknown>;
+                      const did = pickStr(D, 'id') || `doc-${i}`;
+                      const docType = pickStr(D, 'document_type', 'documentType');
+                      const fileUrl = pickStr(D, 'file_url', 'fileUrl');
+                      const fileName = pickStr(D, 'file_name', 'fileName');
+                      const uploaded = pickStr(D, 'uploaded_at', 'uploadedAt');
+                      const expires = pickStr(D, 'expires_at', 'expiresAt');
+                      const verified = pickCandidateField(D, 'is_verified', 'isVerified');
+                      const v = verified === true;
+                      return (
+                        <div
+                          key={did}
+                          className="flex flex-col gap-3 rounded-2xl border border-border/80 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="flex min-w-0 items-start gap-3">
+                            <FileText className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-text-primary">
+                                {docType ? uzOrCode(documentTypeUz, docType) : fileName || 'Hujjat'}
+                              </div>
+                              {fileName ? (
+                                <div className="truncate text-xs text-text-muted">{fileName}</div>
+                              ) : null}
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
+                                {uploaded ? <span>Yuklangan: {uploaded}</span> : null}
+                                {expires ? <span>Muddati: {expires}</span> : null}
+                                {typeof verified === 'boolean' ? (
+                                  <span className={v ? 'text-success' : ''}>
+                                    {v ? 'Tasdiqlangan' : 'Tasdiqlanmagan'}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                          {fileUrl ? (
+                            <a
+                              href={fileUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className={`${btnSecondary} inline-flex shrink-0 items-center gap-2 self-start sm:self-center`}
+                            >
+                              <Link2 className="h-4 w-4" strokeWidth={2} aria-hidden />
+                              Ochish
+                            </a>
+                          ) : null}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>
           </div>
-
-          <div className={`${panelElite} mt-6 p-6`}>
-            <h3 className="mb-4 flex items-center gap-2 text-base font-semibold">
-              <GraduationCap className="h-5 w-5 text-primary" aria-hidden />
-              Qo‘shimcha bloklar
-            </h3>
-            <p className="mb-4 text-sm text-text-muted">
-              Ta’lim, ko‘nikmalar va hujjatlar API dagi kalitlar bilan kelganda shu yerda kengaytiramiz.
-              Hozircha to‘liq struktura «Barcha ma‘lumot» yorlig‘ida.
-            </p>
-            <div className="rounded-lg border border-dashed border-border/80 p-4 text-center text-sm text-text-muted">
-              <FileText className="mx-auto mb-2 h-8 w-8 opacity-40" aria-hidden />
-              education / skills / documents — JSON dan tekshiring
-            </div>
-          </div>
         </div>
       </div>
+
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={(open) => {
+          setDeleteOpen(open);
+          if (!open) setDeleteErr(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bu nomzodni o‘chirish?</AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                <strong className="text-text-primary">{displayName || phone || 'Nomzod'}</strong> — barcha
+                bog‘langan profil ma’lumotlari o‘chiriladi.
+              </span>
+              {deleteErr ? <span className="block text-sm text-danger">{deleteErr}</span> : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Bekor qilish</AlertDialogCancel>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={() => void handleDeleteCandidate()}
+            >
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
+              Ha, o‘chirish
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

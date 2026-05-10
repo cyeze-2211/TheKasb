@@ -56,7 +56,12 @@ export const COUNTRIES = [
   { code: 'TUR', name: 'Turkiya', flag: '🇹🇷' },
   { code: 'RUS', name: 'Rossiya', flag: '🇷🇺' },
   { code: 'UAE', name: 'BAA', flag: '🇦🇪' },
-  { code: 'KAZ', name: 'Qozog\'iston', flag: '🇰🇿' }
+  { code: 'KAZ', name: 'Qozog\'iston', flag: '🇰🇿' },
+  { code: 'CZE', name: 'Chexiya', flag: '🇨🇿' },
+  { code: 'LTU', name: 'Litva', flag: '🇱🇹' },
+  { code: 'UZB', name: 'O‘zbekiston', flag: '🇺🇿' },
+  { code: 'USA', name: 'AQSH', flag: '🇺🇸' },
+  { code: 'GBR', name: 'Buyuk Britaniya', flag: '🇬🇧' },
 ];
 
 // Mock Users
