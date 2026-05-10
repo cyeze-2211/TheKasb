@@ -119,6 +119,30 @@ type ActivityRow = {
   actor: string;
 };
 
+function mapCandidatesToActivity(content: Record<string, unknown>[]): ActivityRow[] {
+  return content.map((row, i) => {
+    const created = pickStr(row, 'createdAt', 'created_at', 'registeredAt');
+    let time = '—';
+    if (created) {
+      try {
+        time = new Date(created).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
+      } catch {
+        time = '—';
+      }
+    }
+    const phone = pickStr(row, 'phone_number', 'phoneNumber', 'phone', 'mobile');
+    const name = pickStr(row, 'full_name', 'fullName', 'name', 'firstName', 'first_name');
+    const st = pickStr(row, 'profile_status', 'profileStatus', 'status');
+    return {
+      id: `${i}-${phone || i}`,
+      time,
+      type: st === 'ACTIVE' ? 'success' : st === 'SUSPENDED' ? 'danger' : 'info',
+      event: name ? `${name} — ${st || 'nomzod'}` : `Yangi nomzod (${st || '—'})`,
+      actor: phone || '—',
+    };
+  });
+}
+
 function KPICard({
   title,
   value,
@@ -213,35 +237,20 @@ export default function DashboardPage() {
   const loadActivity = useCallback(async () => {
     try {
       const page = await fetchCandidatesList({ page: 0, size: 10, sort: 'createdAt,desc' });
-      const rows: ActivityRow[] = page.content.map((row, i) => {
-        const created = pickStr(row, 'createdAt', 'created_at', 'registeredAt');
-        let time = '—';
-        if (created) {
-          try {
-            time = new Date(created).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' });
-          } catch {
-            time = '—';
-          }
-        }
-        const phone = pickStr(row, 'phone_number', 'phoneNumber', 'phone', 'mobile');
-        const name = pickStr(row, 'full_name', 'fullName', 'name', 'firstName', 'first_name');
-        const st = pickStr(row, 'profile_status', 'profileStatus', 'status');
-        return {
-          id: `${i}-${phone || i}`,
-          time,
-          type: st === 'ACTIVE' ? 'success' : st === 'SUSPENDED' ? 'danger' : 'info',
-          event: name ? `${name} — ${st || 'nomzod'}` : `Yangi nomzod (${st || '—'})`,
-          actor: phone || '—',
-        };
-      });
-      setActivity(rows);
+      setActivity(mapCandidatesToActivity(page.content));
     } catch {
       setActivity([]);
     }
   }, []);
 
   useEffect(() => {
-    if (!loading && data) void loadActivity();
+    if (loading || !data) return;
+    const embedded = data.recentCandidates;
+    if (embedded?.length) {
+      setActivity(mapCandidatesToActivity(embedded.slice(0, 10)));
+      return;
+    }
+    void loadActivity();
   }, [loading, data, loadActivity]);
 
   const formatHeaderTime = (date: Date) => {

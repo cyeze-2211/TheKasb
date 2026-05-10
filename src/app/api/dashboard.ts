@@ -7,6 +7,13 @@ import { fetchCustomProfessionsList } from './customProfessions';
 
 const DASHBOARD_PATHS = ['/v1/admin/dashboard/stats', '/v1/admin/dashboard'] as const;
 
+let dashboardFetchInFlight: Promise<DashboardData> | null = null;
+
+function isEnvelopeFailure(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  return (data as Record<string, unknown>).success === false;
+}
+
 const EMPTY_STATUS: DashboardData['statusDistribution'] = {
   DRAFT: 0,
   PENDING: 0,
@@ -55,6 +62,7 @@ function normalizeDashboard(d: DashboardData): DashboardData {
       completed: 0,
       label: 'Bugungi maqsad',
     },
+    recentCandidates: Array.isArray(d.recentCandidates) ? d.recentCandidates : undefined,
   };
 }
 
@@ -132,31 +140,61 @@ function aggregateProfessions(rows: Record<string, unknown>[]): DashboardData['t
   }));
 }
 
+function countStatusesInSample(rows: Record<string, unknown>[]): DashboardData['statusDistribution'] {
+  const c = { ...EMPTY_STATUS };
+  for (const row of rows) {
+    const st = pickStr(row, 'profile_status', 'profileStatus', 'status').toUpperCase();
+    if (st === 'DRAFT') c.DRAFT += 1;
+    else if (st === 'PENDING') c.PENDING += 1;
+    else if (st === 'ACTIVE') c.ACTIVE += 1;
+    else if (st === 'SUSPENDED') c.SUSPENDED += 1;
+    else if (st === 'PLACED') c.PLACED += 1;
+    else c.PENDING += 1;
+  }
+  return c;
+}
+
+/** Namunadan umumiy nomzodlar soniga taxminan moslashtirish (alohida filtr so‘rovlarsiz). */
+function scaleStatusDistribution(
+  raw: DashboardData['statusDistribution'],
+  sampleSize: number,
+  total: number,
+): DashboardData['statusDistribution'] {
+  if (total <= 0 || sampleSize <= 0) return { ...EMPTY_STATUS };
+  if (total <= sampleSize) return { ...EMPTY_STATUS, ...raw };
+
+  type K = keyof DashboardData['statusDistribution'];
+  const keys: K[] = ['DRAFT', 'PENDING', 'ACTIVE', 'SUSPENDED', 'PLACED'];
+  const scaled = keys.map((k) => Math.max(0, Math.round((raw[k] / sampleSize) * total)));
+  let diff = total - scaled.reduce((a, b) => a + b, 0);
+  let guard = 0;
+  while (diff !== 0 && guard < 10_000) {
+    const j = scaled.indexOf(Math.max(...scaled));
+    if (diff > 0) {
+      scaled[j] += 1;
+      diff -= 1;
+    } else if (scaled[j] > 0) {
+      scaled[j] -= 1;
+      diff += 1;
+    } else break;
+    guard += 1;
+  }
+  return { DRAFT: scaled[0], PENDING: scaled[1], ACTIVE: scaled[2], SUSPENDED: scaled[3], PLACED: scaled[4] };
+}
+
 async function buildDashboardFallback(): Promise<DashboardData> {
   try {
-    const [
-      allCandidates,
-      activeVac,
-      urgentVac,
-      pendingCand,
-      draftCand,
-      activeCand,
-      suspendedCand,
-      placedCand,
-      customPending,
-      sample,
-    ] = await Promise.all([
-      fetchCandidatesList({ page: 0, size: 1 }),
+    const [sample, activeVac, urgentVac, customPending] = await Promise.all([
+      fetchCandidatesList({ page: 0, size: 400, sort: 'createdAt,desc' }),
       fetchVacanciesList({ status: 'ACTIVE', page: 0, size: 1 }),
       fetchVacanciesList({ status: 'ACTIVE', isUrgent: true, page: 0, size: 1 }),
-      fetchCandidatesList({ profileStatus: 'PENDING', page: 0, size: 1 }),
-      fetchCandidatesList({ profileStatus: 'DRAFT', page: 0, size: 1 }),
-      fetchCandidatesList({ profileStatus: 'ACTIVE', page: 0, size: 1 }),
-      fetchCandidatesList({ profileStatus: 'SUSPENDED', page: 0, size: 1 }),
-      fetchCandidatesList({ profileStatus: 'PLACED', page: 0, size: 1 }),
       fetchCustomProfessionsList({ isReviewed: false, page: 0, size: 1 }),
-      fetchCandidatesList({ page: 0, size: 400, sort: 'createdAt,desc' }),
     ]);
+
+    const totalCandidates = sample.totalElements;
+    const n = sample.content.length;
+    const rawStatus = countStatusesInSample(sample.content);
+    const statusDistribution = scaleStatusDistribution(rawStatus, n, totalCandidates);
 
     const flowMap = new Map<string, { newCandidates: number; activatedCount: number }>();
     for (const row of sample.content) {
@@ -185,24 +223,18 @@ async function buildDashboardFallback(): Promise<DashboardData> {
 
     return normalizeDashboard({
       summary: {
-        totalCandidates: allCandidates.totalElements,
+        totalCandidates,
         activeVacancies: activeVac.totalElements,
         urgentVacancies: urgentVac.totalElements,
         todayApplications: tToday,
         todayVsYesterdayPercent,
-        pendingApproval: pendingCand.totalElements,
+        pendingApproval: statusDistribution.PENDING,
         overdueApprovalCount: 0,
-        activeUsersLast24h: activeCand.totalElements,
+        activeUsersLast24h: statusDistribution.ACTIVE,
         pendingCustomProfessions: customPending.totalElements,
       },
       candidateFlow,
-      statusDistribution: {
-        DRAFT: draftCand.totalElements,
-        PENDING: pendingCand.totalElements,
-        ACTIVE: activeCand.totalElements,
-        SUSPENDED: suspendedCand.totalElements,
-        PLACED: placedCand.totalElements,
-      },
+      statusDistribution,
       topCountries,
       languageSkills,
       topProfessions,
@@ -218,6 +250,7 @@ async function buildDashboardFallback(): Promise<DashboardData> {
         completed: activatedToday,
         label: 'Bugungi maqsad',
       },
+      recentCandidates: sample.content.slice(0, 10),
     });
   } catch {
     return normalizeDashboard({
@@ -251,20 +284,29 @@ async function buildDashboardFallback(): Promise<DashboardData> {
 
 /**
  * Avvalo `GET /v1/admin/dashboard/stats`, keyin `GET /v1/admin/dashboard` (Swagger).
- * Ikkalasi ham yo‘q yoki noto‘g‘ri bo‘lsa — mavjud admin APIlar orqali yig‘iladi.
+ * Har yuklanishda ikkala yo‘l ham ketadi (stats har doim sinanadi). Muvaffaqiyatsiz bo‘lsa keyingi yo‘l yoki fallback.
  */
-export async function fetchDashboardData(): Promise<DashboardData> {
+async function fetchDashboardDataOnce(): Promise<DashboardData> {
   for (const path of DASHBOARD_PATHS) {
     try {
       const { data } = await api.get<unknown>(path);
+      if (isEnvelopeFailure(data)) continue;
       assertApiSuccess(data);
       const payload = extractPayload(data);
       if (payload && isDashboardShape(payload)) {
-        return normalizeDashboard(payload);
+        return normalizeDashboard(payload as DashboardData);
       }
     } catch {
       /* keyingi yo‘l yoki fallback */
     }
   }
   return buildDashboardFallback();
+}
+
+export async function fetchDashboardData(): Promise<DashboardData> {
+  if (dashboardFetchInFlight) return dashboardFetchInFlight;
+  dashboardFetchInFlight = fetchDashboardDataOnce().finally(() => {
+    dashboardFetchInFlight = null;
+  });
+  return dashboardFetchInFlight;
 }

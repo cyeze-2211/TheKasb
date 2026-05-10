@@ -459,8 +459,8 @@ export function assertApiSuccess(data: unknown): void {
 const READ_ONLY_USER_KEYS = new Set(['lastLoginAt', 'last_login_at']);
 
 /**
- * PUT /admin/users/edit — `{ dto }`.
- * DTOda forma tashqarisidagi maydonlar ham bo‘lishi mumkin (`isActive`, `usernote`, …).
+ * PATCH /admin/users/edit — body to‘g‘ridan-to‘g‘ri user obyekti (`{ dto: … }` emas).
+ * Forma tashqarisidagi maydonlar ham bo‘lishi mumkin (`isActive`, `usernote`, …).
  * Parol faqat yangilanganda yuboriladi.
  */
 function buildUserEditBody(dto: SdgUserDto & { id: number }): Record<string, unknown> {
@@ -478,12 +478,11 @@ function buildUserEditBody(dto: SdgUserDto & { id: number }): Record<string, unk
 export async function editUser(dto: SdgUserDto & { id: number }): Promise<unknown> {
   const body = buildUserEditBody(dto);
   try {
-    const { data } = await api.put<unknown>('/admin/users/edit', { dto: body });
+    const { data } = await api.patch<unknown>('/admin/users/edit', body);
     assertApiSuccess(data);
     return data;
   } catch (e) {
     if (!axios.isAxiosError(e) || e.response?.status !== 404) throw e;
-    // Eski endpoint — odatda tekis body
     const { data } = await api.put<unknown>('/sdg/uz/edit', body);
     assertApiSuccess(data);
     return data;

@@ -55,5 +55,10 @@ export interface DashboardData {
     completed: number;
     label: string;
   };
+  /**
+   * So‘nggi nomzodlar (aktivlik paneli) — dashboard bilan bir yuklashda beriladi,
+   * qo‘shimcha GET /admin/candidates chaqiruvini oldini olish uchun.
+   */
+  recentCandidates?: Record<string, unknown>[];
 }
 
