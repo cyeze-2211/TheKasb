@@ -1,5 +1,5 @@
 import type { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { clearCandidateSession } from '../candidate/candidateSession';
+import { clearCandidateSession, getCandidateToken } from '../candidate/candidateSession';
 import { logout } from '../../hooks/useAuth';
 
 let redirectScheduled = false;
@@ -23,18 +23,24 @@ function getAuthorizationHeader(cfg: InternalAxiosRequestConfig | undefined): st
   return typeof v === 'string' ? v : undefined;
 }
 
-/** Parol / OTP qadamlari — 401 bu yerda «noto‘g‘ri kirituv», sessiya tugashi emas */
+function bearerTokenValue(authHeader: string): string | null {
+  const m = authHeader.trim().match(/^Bearer\s+(\S+)/i);
+  return m?.[1] ?? null;
+}
+
+/** Parol / OTP / refresh qadamlari — 401 bu yerda «noto‘g‘ri kirituv», sessiya tugashi emas */
 function isAuthHandshakeUrl(url: string): boolean {
   return (
     url.includes('/sdg/uz/login') ||
     url.includes('/auth/send-otp') ||
-    url.includes('/auth/verify-otp')
+    url.includes('/auth/verify-otp') ||
+    url.includes('/auth/refresh')
   );
 }
 
 /**
- * 401: so‘rovda Bearer bo‘lsa (JWT yuborilgan) — sessiya yaroqsiz deb hisoblanadi.
- * Admin + nomzod saqlangan kalitlarini tozalaydi va `/login` ga o‘tkazadi.
+ * 401: Bearer bilan yuborilgan JWT yaroqsiz.
+ * Nomzod tokeni (`/`) uchun faqat nomzod kalitlari tozalanadi — admin `logout` chaqirilmaydi.
  */
 export function handleAxios401(error: AxiosError): void {
   const cfg = error.config as InternalAxiosRequestConfig | undefined;
@@ -43,6 +49,24 @@ export function handleAxios401(error: AxiosError): void {
 
   const auth = getAuthorizationHeader(cfg);
   if (!auth || !/^Bearer\s+\S+/i.test(auth.trim())) return;
+  const bearerTok = bearerTokenValue(auth);
+  if (!bearerTok) return;
+
+  const candidateTok = getCandidateToken();
+  if (candidateTok && bearerTok === candidateTok) {
+    try {
+      clearCandidateSession();
+    } catch {
+      /* ignore */
+    }
+    try {
+      const path = window.location.pathname.replace(/\/+$/, '') || '/';
+      if (path === '/') window.location.replace('/');
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
 
   if (redirectScheduled) return;
   redirectScheduled = true;

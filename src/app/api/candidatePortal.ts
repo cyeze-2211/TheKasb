@@ -3,6 +3,7 @@ import { authApi } from '../../services/authApi';
 import {
   clearCandidateSession,
   getCandidateProfileId,
+  getCandidateRefreshToken,
   getCandidateToken,
   getCandidateUserId,
   KASB_CANDIDATE_PROFILE_ID_KEY,
@@ -18,8 +19,107 @@ function extractObjectArray<T>(data: unknown): T[] {
   const o = data as Record<string, unknown>;
   const obj = o.object;
   if (Array.isArray(obj)) return obj as T[];
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    const inner = obj as Record<string, unknown>;
+    if (Array.isArray(inner.content)) return inner.content as T[];
+    if (Array.isArray(inner.items)) return inner.items as T[];
+  }
   if (Array.isArray(o.data)) return o.data as T[];
   return [];
+}
+
+/** Swagger: maqsad mamlakatlar katalogi — GET /api/admin/destination-countries */
+export type DestinationCountryDto = {
+  /** Backend UUID yoki raqamli id (string) */
+  id: string;
+  country_code: string;
+  flag_emoji?: string;
+  language_req?: string;
+  name_ru?: string;
+  name_uz?: string;
+  note?: string;
+  salary_currency?: string;
+  salary_currency_symbol?: string;
+  salary_max?: number;
+  salary_min?: number;
+  sort_order?: number;
+  is_active?: boolean;
+};
+
+function pickStrRow(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+/** UUID (32 hex + tire) yoki faqat raqamlardan iborat id */
+const DEST_ID_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseDestinationCountryId(idRaw: unknown): string | null {
+  if (typeof idRaw === 'number' && Number.isFinite(idRaw)) return String(Math.trunc(idRaw));
+  if (typeof idRaw === 'string') {
+    const s = idRaw.trim();
+    if (!s) return null;
+    if (DEST_ID_UUID.test(s)) return s;
+    if (/^\d+$/.test(s)) return s;
+  }
+  return null;
+}
+
+function normalizeDestinationCountry(row: Record<string, unknown>): DestinationCountryDto | null {
+  const active = row.is_active ?? row.isActive;
+  if (active === false) return null;
+
+  const id = parseDestinationCountryId(row.id ?? row.destination_country_id ?? row.destinationCountryId);
+  if (!id) return null;
+
+  const country_code = pickStrRow(row, 'country_code', 'countryCode').toUpperCase();
+  if (!country_code) return null;
+  const sortRaw = row.sort_order ?? row.sortOrder;
+  const sort_order =
+    typeof sortRaw === 'number' && Number.isFinite(sortRaw)
+      ? sortRaw
+      : typeof sortRaw === 'string' && /^\d+$/.test(sortRaw.trim())
+        ? Number(sortRaw.trim())
+        : 0;
+  const smin = row.salary_min ?? row.salaryMin;
+  const smax = row.salary_max ?? row.salaryMax;
+  return {
+    id,
+    country_code,
+    flag_emoji: pickStrRow(row, 'flag_emoji', 'flagEmoji') || undefined,
+    language_req: pickStrRow(row, 'language_req', 'languageReq') || undefined,
+    name_ru: pickStrRow(row, 'name_ru', 'nameRu') || undefined,
+    name_uz: pickStrRow(row, 'name_uz', 'nameUz') || undefined,
+    note: pickStrRow(row, 'note') || undefined,
+    salary_currency: pickStrRow(row, 'salary_currency', 'salaryCurrency') || undefined,
+    salary_currency_symbol: pickStrRow(row, 'salary_currency_symbol', 'salaryCurrencySymbol') || undefined,
+    salary_min: typeof smin === 'number' && Number.isFinite(smin) ? smin : undefined,
+    salary_max: typeof smax === 'number' && Number.isFinite(smax) ? smax : undefined,
+    sort_order,
+    is_active: active === true ? true : active === false ? false : undefined,
+  };
+}
+
+/** Nomzod JWT — katalogni olish (backend ruxsat bergan bo‘lsa). */
+export async function candidateFetchDestinationCountries(): Promise<DestinationCountryDto[]> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Token yo‘q');
+  const { data } = await authApi.get<unknown>('/admin/destination-countries', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assertApiSuccess(data);
+  const rows = extractObjectArray<Record<string, unknown>>(data);
+  const list = rows.map(normalizeDestinationCountry).filter((x): x is DestinationCountryDto => x != null);
+  list.sort((a, b) => {
+    const ao = a.sort_order ?? 0;
+    const bo = b.sort_order ?? 0;
+    if (ao !== bo) return ao - bo;
+    return a.id.localeCompare(b.id);
+  });
+  return list;
 }
 
 function sortProfList<T extends { sort_order?: number; id: number }>(list: T[]): T[] {
@@ -118,6 +218,113 @@ function pickProfileId(root: Record<string, unknown>): string | null {
   return null;
 }
 
+function pickRefreshToken(root: Record<string, unknown>): string | null {
+  const t = root.refreshToken ?? root.refresh_token;
+  if (typeof t === 'string' && t.trim()) return t.trim();
+  const inner = root.object ?? root.data;
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+    return pickRefreshToken(inner as Record<string, unknown>);
+  }
+  return null;
+}
+
+function pickAccessExpiresAt(root: Record<string, unknown>): string | null {
+  const t = root.accessExpiresAt ?? root.access_expires_at ?? root.expiresAt;
+  if (typeof t === 'string' && t.trim()) return t.trim();
+  const inner = root.object ?? root.data;
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+    return pickAccessExpiresAt(inner as Record<string, unknown>);
+  }
+  return null;
+}
+
+/** verify-otp / refresh / by-tg javobidan nomzod sessiyasi */
+function applyCandidateAuthFromVerifyLikePayload(data: unknown): void {
+  const flat = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  const inner = unwrapRecord(data);
+  const root = inner ?? flat;
+  if (!root) throw new Error('Noto‘g‘ri javob');
+  const token = pickToken(root) ?? (flat ? pickToken(flat) : null);
+  if (!token) throw new Error('Token qaytmadi');
+  const profileId = pickProfileId(root) ?? (flat ? pickProfileId(flat) : null);
+  const userId = pickUserIdFromRoot(root) ?? (flat ? pickUserIdFromRoot(flat) : null);
+  const refresh = pickRefreshToken(root) ?? (flat ? pickRefreshToken(flat) : null);
+  const accessExpiresAt = pickAccessExpiresAt(root) ?? (flat ? pickAccessExpiresAt(flat) : null);
+  setCandidateSession(token, profileId ?? undefined, {
+    refreshToken: refresh ?? undefined,
+    accessExpiresAt: accessExpiresAt ?? undefined,
+  });
+  if (userId != null) setCandidateUserId(userId);
+}
+
+/** `POST …/auth/refresh` — axios to‘g‘ridan (401 interceptor zanjiri bilan aralashmasin). */
+export async function candidateRefreshWithStoredRefresh(): Promise<boolean> {
+  const rt = getCandidateRefreshToken();
+  if (!rt?.trim()) return false;
+  const base = API_BASE_URL.replace(/\/+$/, '');
+  const url = `${base}/auth/refresh`;
+  for (const body of [{ refreshToken: rt.trim() }, { refresh_token: rt.trim() }]) {
+    try {
+      const { data } = await axios.post<unknown>(url, body, {
+        timeout: 30_000,
+        headers: { 'Content-Type': 'application/json' },
+      });
+      applyCandidateAuthFromVerifyLikePayload(data);
+      return true;
+    } catch {
+      /* keyingi body shakli */
+    }
+  }
+  return false;
+}
+
+/**
+ * Saqlangan access yoki refresh bilan `/users/me`.
+ * Access 401 bo‘lsa refresh, keyin qayta `/users/me`.
+ */
+export async function candidateTryResumeSession(): Promise<boolean> {
+  const access = getCandidateToken();
+  const refresh = getCandidateRefreshToken();
+  if (!access?.trim() && !refresh?.trim()) return false;
+
+  const authHeader = (tok: string) => ({ Authorization: `Bearer ${tok.trim()}` });
+
+  if (access?.trim()) {
+    try {
+      const { data } = await authApi.get<unknown>('/users/me', { headers: authHeader(access) });
+      assertApiSuccess(data);
+      return true;
+    } catch (e) {
+      if (!axios.isAxiosError(e) || e.response?.status !== 401) return false;
+    }
+  }
+
+  if (!refresh?.trim()) {
+    clearCandidateSession();
+    return false;
+  }
+
+  const refreshed = await candidateRefreshWithStoredRefresh();
+  if (!refreshed) {
+    clearCandidateSession();
+    return false;
+  }
+
+  const next = getCandidateToken();
+  if (!next?.trim()) {
+    clearCandidateSession();
+    return false;
+  }
+  try {
+    const { data } = await authApi.get<unknown>('/users/me', { headers: authHeader(next) });
+    assertApiSuccess(data);
+    return true;
+  } catch {
+    clearCandidateSession();
+    return false;
+  }
+}
+
 /** Spring: `400 Bad Request: [{"message":"SMSC not found",...}]` kabi ichki JSON */
 function parseSpringEmbeddedErrorList(message: string): string | null {
   const idx = message.indexOf('[');
@@ -207,16 +414,7 @@ export async function candidateTrySessionFromTelegramChatId(chatId: string | num
   if (!id || !/^-?\d+$/.test(id)) return false;
   try {
     const { data } = await authApi.get<unknown>(`/admin/users/by-tg/${encodeURIComponent(id)}`);
-    const flat = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
-    const inner = unwrapRecord(data);
-    const root = inner ?? flat;
-    if (!root) return false;
-    const token = pickToken(root) ?? (flat ? pickToken(flat) : null);
-    if (!token) return false;
-    const profileId = pickProfileId(root) ?? (flat ? pickProfileId(flat) : null);
-    const userId = pickUserIdFromRoot(root) ?? (flat ? pickUserIdFromRoot(flat) : null);
-    setCandidateSession(token, profileId ?? undefined);
-    if (userId != null) setCandidateUserId(userId);
+    applyCandidateAuthFromVerifyLikePayload(data);
     return true;
   } catch {
     return false;
@@ -238,16 +436,7 @@ export async function candidateVerifyOtp(params: {
   if (params.lastName?.trim()) body.last_name = params.lastName.trim();
 
   const { data } = await authApi.post<unknown>('/auth/verify-otp', body);
-  const flat = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
-  const inner = unwrapRecord(data);
-  const root = inner ?? flat;
-  if (!root) throw new Error('Noto‘g‘ri javob');
-  const token = pickToken(root) ?? (flat ? pickToken(flat) : null);
-  if (!token) throw new Error('Token qaytmadi');
-  const profileId = pickProfileId(root) ?? (flat ? pickProfileId(flat) : null);
-  const userId = pickUserIdFromRoot(root) ?? (flat ? pickUserIdFromRoot(flat) : null);
-  setCandidateSession(token, profileId ?? undefined);
-  if (userId != null) setCandidateUserId(userId);
+  applyCandidateAuthFromVerifyLikePayload(data);
 }
 
 async function fetchMeUserId(headers: { Authorization: string }): Promise<number | null> {
@@ -329,7 +518,7 @@ export type CandidateProfileCreateBody = {
 };
 
 export type CandidateProfileUpdateBody = {
-  region_id: number;
+  region_id?: number | null;
   marital_status: string;
   education_level: string;
   data_consent: boolean;
@@ -424,14 +613,15 @@ export async function candidateAddEducation(body: {
 }
 
 export async function candidateAddTargetCountry(body: {
-  country_code: string;
+  destination_country_id: string;
   priority: number;
 }): Promise<void> {
   const token = getCandidateToken();
   if (!token) throw new Error('Token yo‘q');
-  await authApi.post('/candidate/profile/target-countries', body, {
+  const { data } = await authApi.post<unknown>('/candidate/profile/target-countries', body, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  unwrapRecord(data);
 }
 
 function candidateMultipartUrl(path: string): string {

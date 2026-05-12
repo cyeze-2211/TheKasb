@@ -500,3 +500,41 @@ export function axiosErrorMessage(err: unknown, fallback: string): string {
   if (typeof body === 'string' && body) return body;
   return fallback;
 }
+
+function stripApiHtmlMessage(s: string): string {
+  return s.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').trim();
+}
+
+function extractMutationErrorText(err: unknown): string {
+  if (err instanceof Error && err.message) return stripApiHtmlMessage(err.message);
+  if (axios.isAxiosError(err)) {
+    const body = err.response?.data;
+    if (body && typeof body === 'object') {
+      const o = body as Record<string, unknown>;
+      for (const key of ['message', 'error', 'detail', 'msg'] as const) {
+        const v = o[key];
+        if (typeof v === 'string' && v.trim()) return stripApiHtmlMessage(v);
+      }
+    }
+    if (typeof body === 'string' && body.trim()) return stripApiHtmlMessage(body);
+  }
+  return '';
+}
+
+/**
+ * Admin user create/edit — Spring/Hibernate `ConstraintViolationException` va
+ * PostgreSQL unique cheklovlari uchun qisqa, tushunarli xabar.
+ */
+export function formatUserMutationError(err: unknown, fallback: string): string {
+  const raw = extractMutationErrorText(err);
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('users_telegram_chat_id_key') ||
+    (lower.includes('telegram_chat_id') && lower.includes('constraint')) ||
+    (lower.includes('constraintviolation') && lower.includes('telegram'))
+  ) {
+    return 'Bu Telegram chat ID boshqa foydalanuvchida allaqachon band. Boshqa chat ID kiriting yoki maydonni bo‘sh qoldiring.';
+  }
+  if (raw) return raw;
+  return axios.isAxiosError(err) ? axiosErrorMessage(err, fallback) : fallback;
+}

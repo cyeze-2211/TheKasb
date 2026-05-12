@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import axios from 'axios';
 import {
   type AccountType,
   type GenderType,
   type SdgUserDto,
-  axiosErrorMessage,
   createUser,
   editUser,
+  formatUserMutationError,
 } from '../../api/users';
 import { readLoginSessionRaw } from '../../auth/loginSession';
 import {
@@ -273,13 +272,7 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
       onSuccess();
       onOpenChange(false);
     } catch (err) {
-      setError(
-        axios.isAxiosError(err)
-          ? axiosErrorMessage(err, 'Saqlashda xato.')
-          : err instanceof Error
-            ? err.message
-            : 'Saqlashda xato.',
-      );
+      setError(formatUserMutationError(err, 'Saqlashda xato.'));
     } finally {
       setSaving(false);
     }

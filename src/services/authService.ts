@@ -30,14 +30,17 @@ function mapAuthResponse(raw: unknown): AuthResponse {
 }
 
 export async function sendOtp(phoneNumber: string): Promise<void> {
-  await authApi.post('/auth/send-otp', { phoneNumber, purpose: 'LOGIN' });
+  await authApi.post('/auth/send-otp', {
+    phone_number: phoneNumber,
+    purpose: 'REGISTER',
+  });
 }
 
 export async function verifyOtp(phoneNumber: string, code: string): Promise<AuthResponse> {
   const { data } = await authApi.post<unknown>('/auth/verify-otp', {
-    phoneNumber,
+    phone_number: phoneNumber,
     code,
-    purpose: 'LOGIN',
+    purpose: 'REGISTER',
   });
   return mapAuthResponse(data);
 }
