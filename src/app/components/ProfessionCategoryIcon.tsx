@@ -121,6 +121,26 @@ const ICON_BY_SLUG: Record<string, LucideIcon> = {
   default: LayoutGrid,
 };
 
+/** Admin forma: tezkor ikonka tanlash (slug `ICON_BY_SLUG` bilan mos) */
+export const PROFESSION_CATEGORY_ICON_PRESETS = [
+  'construction',
+  'medical',
+  'it',
+  'transport',
+  'cooking',
+  'education',
+  'finance',
+  'retail',
+  'hotel',
+  'agriculture',
+  'industry',
+  'beauty',
+  'sport',
+  'cleaning',
+  'aviation',
+  'default',
+] as const;
+
 export function resolveProfessionCategoryIcon(slug: string): LucideIcon {
   const key = normalizeIconKey(slug);
   if (!key) return LayoutGrid;

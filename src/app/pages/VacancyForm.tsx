@@ -10,6 +10,7 @@ import {
 import { createVacancy, fetchVacancyById, patchVacancy } from '../api/vacancies';
 import {
   adminLanguageUz,
+  ADMIN_LANGUAGE_SELECT_ORDER,
   cefrLevelUz,
   experienceRangeUz,
   genderRequirementUz,
@@ -659,7 +660,7 @@ export function VacancyForm() {
                     setLanguages(next);
                   }}
                 >
-                  {(Object.keys(adminLanguageUz) as (keyof typeof adminLanguageUz)[]).map((k) => (
+                  {ADMIN_LANGUAGE_SELECT_ORDER.map((k) => (
                     <option key={k} value={k}>
                       {adminLanguageUz[k]}
                     </option>

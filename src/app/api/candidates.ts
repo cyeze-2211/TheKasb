@@ -1,17 +1,12 @@
 import axios from 'axios';
+import type { AdminLanguageName } from '../lib/adminUiUz';
 import { api } from './client';
 import { assertApiSuccess } from './users';
 
 export type AvailabilityStatus = 'READY_NOW' | 'WITHIN_1_MONTH' | 'WITHIN_3_MONTHS';
 export type ExperienceRange = 'YEAR_1_3' | 'YEAR_3_5' | 'YEAR_5_PLUS';
-export type AdminLanguage =
-  | 'ENGLISH'
-  | 'GERMAN'
-  | 'KOREAN'
-  | 'OTHER'
-  | 'POLISH'
-  | 'RUSSIAN'
-  | 'TURKISH';
+/** Backend `LanguageName` — `ADMIN_LANGUAGE_SELECT_ORDER` bilan sinxron */
+export type AdminLanguage = AdminLanguageName;
 export type LanguageLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | 'NONE';
 export type AdminProfileStatus = 'ACTIVE' | 'DRAFT' | 'PENDING' | 'PLACED' | 'SUSPENDED';
 

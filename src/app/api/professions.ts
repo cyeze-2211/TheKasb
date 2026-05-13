@@ -7,6 +7,8 @@ export type ProfessionCategoryDto = {
   name_ru: string;
   name_uz: string;
   sort_order: number;
+  /** Backend bo‘lsa — admin ro‘yxatda ko‘rsatiladi */
+  is_active?: boolean;
 };
 
 export type ProfessionDto = {
@@ -54,6 +56,49 @@ export type ProfessionFilterOption = {
   categoryId: number;
   label: string;
 };
+
+/** POST/PATCH `/api/admin/professions/categories` */
+export type AdminProfessionCategoryBody = {
+  icon: string;
+  is_active: boolean;
+  name_ru: string;
+  name_uz: string;
+  sort_order: number;
+};
+
+function pickCreatedEntityId(data: unknown): number | null {
+  if (!data || typeof data !== 'object') return null;
+  const o = data as Record<string, unknown>;
+  if (typeof o.object === 'number' && Number.isFinite(o.object) && o.object > 0) return o.object;
+  const obj = o.object;
+  if (obj && typeof obj === 'object' && !Array.isArray(obj)) {
+    const id = (obj as Record<string, unknown>).id;
+    if (typeof id === 'number' && Number.isFinite(id) && id > 0) return id;
+  }
+  return null;
+}
+
+/** POST `/api/admin/professions/categories` — yangi `id` bo‘lsa qaytaradi */
+export async function createAdminProfessionCategory(body: AdminProfessionCategoryBody): Promise<number | null> {
+  const { data } = await api.post<unknown>('/admin/professions/categories', body);
+  assertApiSuccess(data);
+  return pickCreatedEntityId(data);
+}
+
+/** PATCH `/api/admin/professions/categories/{id}` */
+export async function patchAdminProfessionCategory(
+  id: number,
+  body: AdminProfessionCategoryBody,
+): Promise<void> {
+  const { data } = await api.patch<unknown>(`/admin/professions/categories/${id}`, body);
+  assertApiSuccess(data);
+}
+
+/** DELETE `/api/admin/professions/categories/{id}` */
+export async function deleteAdminProfessionCategory(id: number): Promise<void> {
+  const { data } = await api.delete<unknown>(`/admin/professions/categories/${id}`);
+  assertApiSuccess(data);
+}
 
 /** Filtr/select uchun: barcha kategoriyalar bo‘yicha kasblar (GET orqali). */
 export async function fetchProfessionsFilterOptions(): Promise<ProfessionFilterOption[]> {

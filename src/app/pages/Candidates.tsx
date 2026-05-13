@@ -39,7 +39,13 @@ import {
   type AdminProfileStatus,
   type CandidatesListQuery,
 } from '../api/candidates';
-import { adminLanguageUz, candidateProfileStatusUz, cefrLevelUz, uzOrCode } from '../lib/adminUiUz';
+import {
+  adminLanguageUz,
+  ADMIN_LANGUAGE_SELECT_ORDER,
+  candidateProfileStatusUz,
+  cefrLevelUz,
+  uzOrCode,
+} from '../lib/adminUiUz';
 import { languageLabelUz, parseLanguageCodesFromCell } from '../lib/languageUi';
 
 const experienceLabels: Record<string, string> = {
@@ -413,7 +419,7 @@ export function Candidates() {
                 onChange={(e) => setField({ language: e.target.value as CandidatesListQuery['language'] })}
               >
                 <option value="">Barchasi</option>
-                {(Object.keys(adminLanguageUz) as (keyof typeof adminLanguageUz)[]).map((k) => (
+                {ADMIN_LANGUAGE_SELECT_ORDER.map((k) => (
                   <option key={k} value={k}>
                     {adminLanguageUz[k]}
                   </option>

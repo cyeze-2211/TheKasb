@@ -43,36 +43,79 @@ export const experienceRangeUz: Record<string, string> = {
   YEAR_5_PLUS: '5+ yil',
 };
 
-export const adminLanguageUz: Record<string, string> = {
-  ENGLISH: 'Ingliz tili',
-  EN: 'Ingliz tili',
-  GERMAN: 'Nemis tili',
-  DE: 'Nemis tili',
-  KOREAN: 'Koreys tili',
-  KO: 'Koreys tili',
-  POLISH: 'Polyak tili',
-  PL: 'Polyak tili',
+/**
+ * Backend `LanguageName` — selectda **bitta** qator; tartib Java enum bilan mos.
+ * Qisqa kodlar (`EN`, `RU`, …) faqat `adminLanguageUz` lookup uchun, ro‘yxatga kiritilmaydi.
+ */
+export const ADMIN_LANGUAGE_SELECT_ORDER = [
+  'RUSSIAN',
+  'ENGLISH',
+  'GERMAN',
+  'KOREAN',
+  'TURKISH',
+  'POLISH',
+  'JAPANESE',
+  'CHINESE',
+  'ARABIC',
+  'HINDI',
+  'FRENCH',
+  'SPANISH',
+  'ITALIAN',
+  'PORTUGUESE',
+  'UKRAINIAN',
+  'UZBEK',
+  'KAZAKH',
+  'TAJIK',
+  'KYRGYZ',
+  'OTHER',
+] as const;
+
+export type AdminLanguageName = (typeof ADMIN_LANGUAGE_SELECT_ORDER)[number];
+
+const ADMIN_LANGUAGE_NAME_LABELS: Record<AdminLanguageName, string> = {
   RUSSIAN: 'Rus tili',
-  RU: 'Rus tili',
+  ENGLISH: 'Ingliz tili',
+  GERMAN: 'Nemis tili',
+  KOREAN: 'Koreys tili',
   TURKISH: 'Turk tili',
-  TR: 'Turk tili',
-  FRENCH: 'Fransuz tili',
-  FR: 'Fransuz tili',
-  ITALIAN: 'Italyan tili',
-  IT: 'Italyan tili',
-  SPANISH: 'Ispan tili',
-  ES: 'Ispan tili',
-  PORTUGUESE: 'Portugal tili',
-  PT: 'Portugal tili',
+  POLISH: 'Polyak tili',
   JAPANESE: 'Yapon tili',
-  JA: 'Yapon tili',
   CHINESE: 'Xitoy tili',
-  ZH: 'Xitoy tili',
   ARABIC: 'Arab tili',
-  AR: 'Arab tili',
+  HINDI: 'Hind tili',
+  FRENCH: 'Fransuz tili',
+  SPANISH: 'Ispan tili',
+  ITALIAN: 'Italyan tili',
+  PORTUGUESE: 'Portugal tili',
+  UKRAINIAN: 'Ukrain tili',
   UZBEK: 'O‘zbek tili',
-  UZ: 'O‘zbek tili',
+  KAZAKH: 'Qozoq tili',
+  TAJIK: 'Tojik tili',
+  KYRGYZ: 'Qirg‘iz tili',
   OTHER: 'Boshqa',
+};
+
+/** ISO 639-1 / qisqa kodlar — eski ma’lumot va API uchun yorliq (selectda ko‘rinmaydi) */
+const ADMIN_LANGUAGE_ALIASES: Record<string, string> = {
+  EN: ADMIN_LANGUAGE_NAME_LABELS.ENGLISH,
+  RU: ADMIN_LANGUAGE_NAME_LABELS.RUSSIAN,
+  DE: ADMIN_LANGUAGE_NAME_LABELS.GERMAN,
+  KO: ADMIN_LANGUAGE_NAME_LABELS.KOREAN,
+  PL: ADMIN_LANGUAGE_NAME_LABELS.POLISH,
+  TR: ADMIN_LANGUAGE_NAME_LABELS.TURKISH,
+  FR: ADMIN_LANGUAGE_NAME_LABELS.FRENCH,
+  IT: ADMIN_LANGUAGE_NAME_LABELS.ITALIAN,
+  ES: ADMIN_LANGUAGE_NAME_LABELS.SPANISH,
+  PT: ADMIN_LANGUAGE_NAME_LABELS.PORTUGUESE,
+  JA: ADMIN_LANGUAGE_NAME_LABELS.JAPANESE,
+  ZH: ADMIN_LANGUAGE_NAME_LABELS.CHINESE,
+  AR: ADMIN_LANGUAGE_NAME_LABELS.ARABIC,
+  UZ: ADMIN_LANGUAGE_NAME_LABELS.UZBEK,
+};
+
+export const adminLanguageUz: Record<string, string> = {
+  ...ADMIN_LANGUAGE_NAME_LABELS,
+  ...ADMIN_LANGUAGE_ALIASES,
 };
 
 export const cefrLevelUz: Record<string, string> = {
