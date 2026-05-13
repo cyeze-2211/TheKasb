@@ -12,6 +12,7 @@ import {
 } from '../candidate/candidateSession';
 import type { ProfessionCategoryDto, ProfessionDto } from './professions';
 import { API_BASE_URL } from './client';
+import { normalizeEducationLevelForApi } from '../lib/adminUiUz';
 import { assertApiSuccess } from './users';
 
 function extractObjectArray<T>(data: unknown): T[] {
@@ -503,12 +504,14 @@ export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Pr
 }
 
 export type CandidateProfileCreateBody = {
-  region_id: number | null;
+  /** Bo‘sh bo‘lsa JSON ga kiritilmaydi (null 500 berishi mumkin) */
+  region_id?: number | null;
   marital_status: string;
   education_level: string;
   data_consent: boolean;
   profession_id?: number;
   profession_category_id?: number;
+  experience_years?: number;
   availability_status?: string;
   experience_range?: string;
   desired_salary_min?: number;
@@ -533,12 +536,63 @@ export type CandidateProfileUpdateBody = {
   profile_status?: string;
 };
 
+/** POST /candidate/profile — null maydonlar va defaultlar backend bilan mos */
+function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): Record<string, unknown> {
+  const {
+    region_id,
+    profession_id,
+    profession_category_id,
+    experience_years,
+    education_level,
+    custom_profession_name,
+    ...rest
+  } = body;
+
+  const payload: Record<string, unknown> = {
+    ...rest,
+    education_level: normalizeEducationLevelForApi(education_level),
+  };
+
+  if (region_id != null && Number.isFinite(Number(region_id))) {
+    payload.region_id = region_id;
+  }
+  if (experience_years != null && Number.isFinite(Number(experience_years))) {
+    payload.experience_years = Math.max(0, Math.trunc(Number(experience_years)));
+  }
+  const cp = typeof custom_profession_name === 'string' ? custom_profession_name.trim() : '';
+  if (cp) payload.custom_profession_name = cp;
+
+  const pcid = profession_category_id;
+  const pid = profession_id;
+  if (pcid != null && Number.isFinite(Number(pcid)) && Number(pcid) > 0) {
+    payload.profession_category_id = Math.trunc(Number(pcid));
+  }
+  if (pid != null && Number.isFinite(Number(pid)) && Number(pid) > 0) {
+    payload.profession_id = Math.trunc(Number(pid));
+  } else if (cp && pcid != null && Number.isFinite(Number(pcid)) && Number(pcid) > 0) {
+    payload.profession_id = 0;
+  }
+
+  return payload;
+}
+
+/** PUT — null region_id yuborilmasin */
+function stripNullRegionFromPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  if (payload.region_id === null || payload.region_id === undefined) {
+    const { region_id: _r, ...rest } = payload;
+    return rest;
+  }
+  return payload;
+}
+
 /** 2-qadam */
 export async function candidateCreateProfile(body: CandidateProfileCreateBody): Promise<string | null> {
   const token = getCandidateToken();
   if (!token) throw new Error('Avval OTP bilan kiring');
 
-  const { data } = await authApi.post<unknown>('/candidate/profile', body, {
+  const payload = buildCandidateProfileCreatePayload(body);
+
+  const { data } = await authApi.post<unknown>('/candidate/profile', payload, {
     headers: { Authorization: `Bearer ${token}` },
   });
   const rec = unwrapRecord(data);
@@ -558,7 +612,13 @@ export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): 
   const token = getCandidateToken();
   if (!token) throw new Error('Avval OTP bilan kiring');
 
-  const { data } = await authApi.put<unknown>('/candidate/profile', body, {
+  const raw: Record<string, unknown> = {
+    ...body,
+    education_level: normalizeEducationLevelForApi(body.education_level),
+  };
+  const payload = stripNullRegionFromPayload(raw);
+
+  const { data } = await authApi.put<unknown>('/candidate/profile', payload, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return unwrapRecord(data);

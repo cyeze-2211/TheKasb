@@ -85,12 +85,74 @@ export const cefrLevelUz: Record<string, string> = {
   C2: 'C2',
 };
 
+/** Backend `EducationLevel` (Java) */
+const EDUCATION_LEVEL_VALID = new Set([
+  'PRIMARY',
+  'SECONDARY',
+  'VOCATIONAL',
+  'COLLEGE',
+  'TECHNICAL_SCHOOL',
+  'INCOMPLETE_HIGHER',
+  'BACHELOR',
+  'MASTER',
+  'PHD',
+  'DSC',
+  'SELF_TAUGHT',
+  'OTHER',
+]);
+
+const EDUCATION_LEVEL_LEGACY: Record<string, string> = {
+  HIGHER: 'BACHELOR',
+  SECONDARY_GENERAL: 'SECONDARY',
+  BASIC: 'PRIMARY',
+  NONE: 'OTHER',
+};
+
+/** POST/PUT — noto‘g‘ri enum xatosi oldini olish */
+export function normalizeEducationLevelForApi(raw: string | undefined | null): string {
+  const u = (raw || '').trim().toUpperCase();
+  if (!u) return 'BACHELOR';
+  if (EDUCATION_LEVEL_VALID.has(u)) return u;
+  return EDUCATION_LEVEL_LEGACY[u] ?? 'BACHELOR';
+}
+
+/** Select uchun — profilda eski qiymat bo‘lsa */
+export function educationLevelToFormValue(raw: string | undefined | null): string {
+  return normalizeEducationLevelForApi(raw);
+}
+
+export const EDUCATION_LEVEL_SELECT_ORDER: readonly string[] = [
+  'PRIMARY',
+  'SECONDARY',
+  'VOCATIONAL',
+  'COLLEGE',
+  'TECHNICAL_SCHOOL',
+  'INCOMPLETE_HIGHER',
+  'BACHELOR',
+  'MASTER',
+  'PHD',
+  'DSC',
+  'SELF_TAUGHT',
+  'OTHER',
+];
+
 export const educationLevelUz: Record<string, string> = {
-  HIGHER: 'Oliy',
-  SECONDARY: 'O‘rta maxsus',
-  SECONDARY_GENERAL: 'Umumiy o‘rta',
-  BASIC: 'Boshlang‘ich',
-  NONE: 'Ko‘rsatilmagan',
+  PRIMARY: 'Boshlang‘ich maktab',
+  SECONDARY: 'O‘rta maktab',
+  VOCATIONAL: 'Kasb-hunar / professional',
+  COLLEGE: 'Kollej',
+  TECHNICAL_SCHOOL: 'Texnikum',
+  INCOMPLETE_HIGHER: 'Tugallanmagan oliy',
+  BACHELOR: 'Bakalavr',
+  MASTER: 'Magistr',
+  PHD: 'PhD',
+  DSC: 'Fan doktori (DSc)',
+  SELF_TAUGHT: 'Mustaqil o‘rgangan',
+  OTHER: 'Boshqa',
+  HIGHER: 'Oliy (eskicha)',
+  SECONDARY_GENERAL: 'Umumiy o‘rta (eskicha)',
+  BASIC: 'Boshlang‘ich (eskicha)',
+  NONE: 'Ko‘rsatilmagan (eskicha)',
 };
 
 export const maritalStatusUz: Record<string, string> = {

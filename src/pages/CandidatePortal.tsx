@@ -76,6 +76,8 @@ import {
   candidateProfileStatusUz,
   cefrLevelUz,
   documentTypeUz,
+  EDUCATION_LEVEL_SELECT_ORDER,
+  educationLevelToFormValue,
   educationLevelUz,
   experienceRangeUz,
   maritalStatusUz,
@@ -2590,7 +2592,7 @@ function CandidateProfileUnifiedForm({
 }) {
   const [busy, setBusy] = useState(false);
   const [marital, setMarital] = useState('SINGLE');
-  const [edu, setEdu] = useState('HIGHER');
+  const [edu, setEdu] = useState('BACHELOR');
   const [avail, setAvail] = useState('WITHIN_3_MONTHS');
   const [exp, setExp] = useState('YEAR_1_3');
   const [salMin, setSalMin] = useState(SALARY_EUR_DEFAULT_MIN);
@@ -2603,7 +2605,7 @@ function CandidateProfileUnifiedForm({
   const applyServerToDraft = useCallback(() => {
     if (!profile) return;
     setMarital(pickStr(profile, 'marital_status', 'maritalStatus') || 'SINGLE');
-    setEdu(pickStr(profile, 'education_level', 'educationLevel') || 'HIGHER');
+    setEdu(educationLevelToFormValue(pickStr(profile, 'education_level', 'educationLevel')));
     setAvail(pickStr(profile, 'availability_status', 'availabilityStatus') || 'WITHIN_3_MONTHS');
     setExp(pickStr(profile, 'experience_range', 'experienceRange') || 'YEAR_1_3');
     setSalMin(pickNum(profile, 'desired_salary_min', 'desiredSalaryMin') ?? SALARY_EUR_DEFAULT_MIN);
@@ -2845,9 +2847,9 @@ function CandidateProfileUnifiedForm({
             Ta’lim darajasi
           </span>
           <select className={ctl} style={fieldStyle} value={edu} onChange={(e) => setEdu(e.target.value)}>
-            {Object.keys(educationLevelUz).map((k) => (
+            {EDUCATION_LEVEL_SELECT_ORDER.map((k) => (
               <option key={k} value={k}>
-                {educationLevelUz[k]}
+                {educationLevelUz[k] ?? k}
               </option>
             ))}
           </select>
@@ -4221,16 +4223,31 @@ export default function CandidatePortal() {
       const availability_status =
         form.availability === 'now' ? 'READY_NOW' : form.availability === 'soon' ? 'WITHIN_1_MONTH' : 'WITHIN_3_MONTHS';
 
+      const lead = entries[0]!;
+      const customName = lead.custom_profession_name?.trim() ?? '';
+      if (lead.profession_category_id == null || lead.profession_category_id <= 0) {
+        throw new Error('Kasb toifasi aniqlanmadi. 5-qadamda ish tajribasini qayta kiriting.');
+      }
+      if (
+        (lead.profession_id == null || lead.profession_id <= 0) &&
+        !customName
+      ) {
+        throw new Error('Kasb tanlanmagan. 5-qadamda kasbni tanlang yoki «Boshqa» kasbni kiriting.');
+      }
+
       const createdProfileId = await candidateCreateProfile({
-        region_id: null,
         marital_status: 'SINGLE',
-        education_level: 'HIGHER',
+        education_level: 'BACHELOR',
         data_consent: true,
         experience_range,
+        experience_years: maxY,
         availability_status,
         desired_salary_min: form.desiredSalaryMin,
         desired_salary_max: form.desiredSalaryMax,
         salary_currency: 'EUR',
+        profession_id: lead.profession_id,
+        profession_category_id: lead.profession_category_id,
+        ...(customName ? { custom_profession_name: customName } : {}),
       });
       if (!createdProfileId && !getCandidateProfileId()) {
         throw new Error('Profil yaratilmadi. Internet aloqasini tekshirib, qayta urinib ko‘ring.');
