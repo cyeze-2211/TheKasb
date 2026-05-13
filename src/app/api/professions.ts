@@ -17,6 +17,7 @@ export type ProfessionDto = {
   name_ru: string;
   name_uz: string;
   sort_order: number;
+  is_active?: boolean;
 };
 
 function extractObjectArray<T>(data: unknown): T[] {
@@ -97,6 +98,34 @@ export async function patchAdminProfessionCategory(
 /** DELETE `/api/admin/professions/categories/{id}` */
 export async function deleteAdminProfessionCategory(id: number): Promise<void> {
   const { data } = await api.delete<unknown>(`/admin/professions/categories/${id}`);
+  assertApiSuccess(data);
+}
+
+/** POST/PATCH `/api/admin/professions` */
+export type AdminProfessionBody = {
+  category_id: number;
+  is_active: boolean;
+  name_ru: string;
+  name_uz: string;
+  sort_order: number;
+};
+
+/** POST `/api/admin/professions` */
+export async function createAdminProfession(body: AdminProfessionBody): Promise<number | null> {
+  const { data } = await api.post<unknown>('/admin/professions', body);
+  assertApiSuccess(data);
+  return pickCreatedEntityId(data);
+}
+
+/** PATCH `/api/admin/professions/{id}` */
+export async function patchAdminProfession(id: number, body: AdminProfessionBody): Promise<void> {
+  const { data } = await api.patch<unknown>(`/admin/professions/${id}`, body);
+  assertApiSuccess(data);
+}
+
+/** DELETE `/api/admin/professions/{id}` */
+export async function deleteAdminProfession(id: number): Promise<void> {
+  const { data } = await api.delete<unknown>(`/admin/professions/${id}`);
   assertApiSuccess(data);
 }
 
