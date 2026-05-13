@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { KASB_ACCESS_TOKEN_KEY, KASB_REFRESH_TOKEN_KEY } from '../../constants/kasbAuth';
 import { saveAuthProfile } from '../../hooks/useAuth';
-import { api } from './client';
+import { apiSdgPublic } from './client';
 import type { AuthUser } from '../auth/AuthContext';
 import { saveLoginSession } from '../auth/loginSession';
 import { fetchCurrentUserMe, getUserDisplayName, type SdgUserDto } from './users';
@@ -97,6 +97,7 @@ export type LoginResult =
 
 /**
  * `POST /sdg/uz/login` — server `login` va `password` ni **query** param sifatida kutadi.
+ * Prod’da to‘liq yo‘l: `https://…/sdg/uz/login` (`apiSdgPublic`, `/api/sdg/...` emas).
  * `login` qiymati — telefon (bo‘shliqsiz), masalan `+998901234567`.
  */
 export async function loginWithApi(phone: string, password: string): Promise<LoginResult> {
@@ -108,7 +109,7 @@ export async function loginWithApi(phone: string, password: string): Promise<Log
   const loginAlt = trimmed.startsWith('+') ? trimmed.slice(1) : null;
 
   const tryOnce = async (loginValue: string): Promise<LoginResult> => {
-    const { data } = await api.post<unknown>('/sdg/uz/login', null, {
+    const { data } = await apiSdgPublic.post<unknown>('/sdg/uz/login', null, {
       params: { login: loginValue, password },
     });
 

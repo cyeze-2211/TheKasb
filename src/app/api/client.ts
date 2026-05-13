@@ -1,4 +1,4 @@
-import axios, { type InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { handleAxios401 } from '../auth/handleUnauthorized';
 import { getAccessTokenFromLoginSession } from '../auth/loginSession';
 
@@ -33,8 +33,23 @@ function apiPublicOrigin(): string {
  */
 export const API_BASE_URL = import.meta.env.DEV ? '/api' : `${apiPublicOrigin()}/api`;
 
+/**
+ * Ba’zi SDG yo‘llari backendda **`/sdg/...`** ( `/api` prefiksisiz ).
+ * Devda Vite `/api/sdg/uz/login` va h.k. ni rewrite qilib `/sdg/...` qiladi;
+ * prod’da shu bilan mos: `https://api.host/sdg/uz/login`, **`/api/sdg/...` emas** (403/404 oldini olish).
+ */
+export const API_SDG_PUBLIC_BASE_URL = import.meta.env.DEV ? '/api' : apiPublicOrigin();
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 30_000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+export const apiSdgPublic = axios.create({
+  baseURL: API_SDG_PUBLIC_BASE_URL,
   timeout: 30_000,
   headers: {
     'Content-Type': 'application/json',
@@ -54,21 +69,26 @@ function stripContentTypeForMultipart(config: InternalAxiosRequestConfig) {
   }
 }
 
-api.interceptors.request.use((config) => {
-  stripContentTypeForMultipart(config);
-  const token = getAccessTokenFromLoginSession();
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-api.interceptors.response.use(
-  (response) => response,
-  (error: unknown) => {
-    if (axios.isAxiosError(error) && error.response?.status === 401) {
-      handleAxios401(error);
+function attachDefaultApiInterceptors(instance: AxiosInstance) {
+  instance.interceptors.request.use((config) => {
+    stripContentTypeForMultipart(config);
+    const token = getAccessTokenFromLoginSession();
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
     }
-    return Promise.reject(error);
-  },
-);
+    return config;
+  });
+
+  instance.interceptors.response.use(
+    (response) => response,
+    (error: unknown) => {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        handleAxios401(error);
+      }
+      return Promise.reject(error);
+    },
+  );
+}
+
+attachDefaultApiInterceptors(api);
+attachDefaultApiInterceptors(apiSdgPublic);

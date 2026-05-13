@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { api } from './client';
+import { apiSdgPublic } from './client';
 import { assertApiSuccess } from './users';
 
 const FILE_HASH_KEYS = [
@@ -96,7 +96,7 @@ function unwrapSpringPage<T>(data: unknown): SpringPage<T> {
 export async function fetchUserFilesList(
   query: UserFilesListQuery,
 ): Promise<SpringPage<Record<string, unknown>>> {
-  const { data } = await api.get<unknown>('/sdg/uz/get/all', { params: cleanQuery(query) });
+  const { data } = await apiSdgPublic.get<unknown>('/sdg/uz/get/all', { params: cleanQuery(query) });
   assertApiSuccess(data);
   return unwrapSpringPage<Record<string, unknown>>(data);
 }
@@ -106,7 +106,7 @@ export async function fetchUserFilesList(
  * Agar backend yo‘l `/sdg/uz/get/one/{fileName}` bo‘lsa, `userFiles.ts` ni moslang.
  */
 export async function fetchUserFileBlob(id: number): Promise<{ blob: Blob; fileName?: string }> {
-  const res = await api.get<Blob>(`/sdg/uz/get/one`, {
+  const res = await apiSdgPublic.get<Blob>(`/sdg/uz/get/one`, {
     params: { id },
     responseType: 'blob',
   });
@@ -138,7 +138,7 @@ export async function uploadUserFile(params: {
 }): Promise<unknown> {
   const body = new FormData();
   body.append('file', params.file);
-  const { data } = await api.post<unknown>('/sdg/uz/upload', body, {
+  const { data } = await apiSdgPublic.post<unknown>('/sdg/uz/upload', body, {
     params: {
       category: params.category.trim(),
       userId: params.userId,
@@ -159,11 +159,11 @@ export async function deleteUserFile(params: { fileHashId: string; userId: numbe
   };
 
   try {
-    const { data } = await api.delete<unknown>('/sdg/uz/delete', { params: query });
+    const { data } = await apiSdgPublic.delete<unknown>('/sdg/uz/delete', { params: query });
     assertApiSuccess(data);
   } catch (e) {
     if (!axios.isAxiosError(e) || e.response?.status !== 405) throw e;
-    const { data } = await api.post<unknown>('/sdg/uz/delete', null, { params: query });
+    const { data } = await apiSdgPublic.post<unknown>('/sdg/uz/delete', null, { params: query });
     assertApiSuccess(data);
   }
 }
