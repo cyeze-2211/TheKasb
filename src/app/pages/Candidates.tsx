@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ChevronLeft,
   ChevronRight,
   ExternalLink,
   Loader2,
@@ -17,6 +16,7 @@ import {
 } from '../api/professions';
 import { fetchAgentsForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
 import { Link } from 'react-router';
+import { AdminPaginationBar } from '../components/AdminPaginationBar';
 import { FilterPanel } from '../components/FilterPanel';
 import { LanguageIcon } from '../components/LanguageIcon';
 import {
@@ -248,8 +248,6 @@ export function Candidates() {
 
   const page = applied.page ?? 0;
   const size = applied.size ?? 20;
-  const canPrev = page > 0;
-  const canNext = page + 1 < totalPages;
 
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
@@ -723,35 +721,18 @@ export function Candidates() {
             </tbody>
           </table>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4">
-          <div className="text-sm text-text-muted">
-            Sahifa {totalPages > 0 ? page + 1 : 0} / {Math.max(1, totalPages)} ·{' '}
-            {size}
-            {' ta/sahifa'}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`${btnSecondary} disabled:pointer-events-none disabled:opacity-50`}
-              disabled={!canPrev || loading}
-              onClick={() => setApplied((a) => ({ ...a, page: Math.max(0, (a.page ?? 0) - 1) }))}
-            >
-              <ChevronLeft className="h-4 w-4" aria-hidden />
-              Oldingi
-            </button>
-            <button
-              type="button"
-              className={`${btnSecondary} disabled:pointer-events-none disabled:opacity-50`}
-              disabled={!canNext || loading}
-              onClick={() =>
-                setApplied((a) => ({ ...a, page: (a.page ?? 0) + 1 }))
-              }
-            >
-              Keyingi
-              <ChevronRight className="h-4 w-4" aria-hidden />
-            </button>
-          </div>
-        </div>
+        <AdminPaginationBar
+          page={page}
+          totalPages={totalPages}
+          pageSize={size}
+          rowsOnPage={rows.length}
+          loading={loading}
+          onPageChange={(p) => setApplied((a) => ({ ...a, page: p }))}
+          onPageSizeChange={(newSize) => {
+            setQ((prev) => ({ ...prev, size: newSize }));
+            setApplied((a) => ({ ...a, size: newSize, page: 0 }));
+          }}
+        />
       </div>
     </div>
   );

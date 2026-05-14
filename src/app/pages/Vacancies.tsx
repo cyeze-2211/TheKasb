@@ -9,6 +9,7 @@ import { fetchStaffUsersForSelect, getUserDisplayName, type SdgUserDto } from '.
 import { Link } from 'react-router';
 import { CircleAlert, Eye, Loader2, Plus, RefreshCw } from 'lucide-react';
 import { COUNTRIES } from '../data/mockData';
+import { AdminPaginationBar } from '../components/AdminPaginationBar';
 import { FilterPanel } from '../components/FilterPanel';
 import {
   btnPrimary,
@@ -139,8 +140,7 @@ export function Vacancies() {
   }, [load]);
 
   const page = applied.page ?? 0;
-  const canPrev = page > 0;
-  const canNext = page + 1 < totalPages;
+  const pageSize = applied.size ?? 20;
 
   const applyFilters = () => setApplied({ ...q, page: 0 });
   const clearFilters = () => {
@@ -423,29 +423,18 @@ export function Vacancies() {
             </tbody>
           </table>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border p-4 text-sm text-text-muted">
-          <span>
-            Sahifa {totalPages > 0 ? page + 1 : 0} / {Math.max(1, totalPages)}
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              className={`${btnSecondary} disabled:pointer-events-none disabled:opacity-50`}
-              disabled={!canPrev || loading}
-              onClick={() => setApplied((a) => ({ ...a, page: Math.max(0, (a.page ?? 0) - 1) }))}
-            >
-              Oldingi
-            </button>
-            <button
-              type="button"
-              className={`${btnSecondary} disabled:pointer-events-none disabled:opacity-50`}
-              disabled={!canNext || loading}
-              onClick={() => setApplied((a) => ({ ...a, page: (a.page ?? 0) + 1 }))}
-            >
-              Keyingi
-            </button>
-          </div>
-        </div>
+        <AdminPaginationBar
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          rowsOnPage={rows.length}
+          loading={loading}
+          onPageChange={(p) => setApplied((a) => ({ ...a, page: p }))}
+          onPageSizeChange={(size) => {
+            setQ((prev) => ({ ...prev, size }));
+            setApplied((a) => ({ ...a, size, page: 0 }));
+          }}
+        />
       </div>
     </div>
   );

@@ -7,11 +7,11 @@ import {
 } from '../api/customProfessions';
 import { fetchProfessionCategories, fetchProfessionsByCategory, type ProfessionDto } from '../api/professions';
 import { FilterPanel } from '../components/FilterPanel';
+import { AdminPaginationBar } from '../components/AdminPaginationBar';
 import {
   btnPrimary,
   btnPrimaryLg,
   btnSecondary,
-  btnSecondaryLg,
   ctlSelect,
   ctlSelectLg,
   pageKicker,
@@ -56,7 +56,7 @@ export function CustomProfessions() {
   const [filtersOpen, setFiltersOpen] = useState(true);
   const [reviewFilter, setReviewFilter] = useState<ReviewFilter>('');
   const [page, setPage] = useState(0);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(20);
 
   const [list, setList] = useState<SpringPage<Record<string, unknown>> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -163,8 +163,6 @@ export function CustomProfessions() {
   }
 
   const totalPages = list?.totalPages ?? 0;
-  const canPrev = page > 0;
-  const canNext = totalPages > 0 && page < totalPages - 1;
 
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
@@ -282,31 +280,18 @@ export function CustomProfessions() {
           )}
         </div>
 
-        {list && list.totalElements > 0 ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-4 text-sm text-text-muted">
-            <span>
-              Jami: {list.totalElements} · Sahifa {list.number + 1} / {Math.max(1, list.totalPages)}
-            </span>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={!canPrev || loading}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                className={btnSecondaryLg}
-              >
-                Oldingi
-              </button>
-              <button
-                type="button"
-                disabled={!canNext || loading}
-                onClick={() => setPage((p) => p + 1)}
-                className={btnSecondaryLg}
-              >
-                Keyingi
-              </button>
-            </div>
-          </div>
-        ) : null}
+        <AdminPaginationBar
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          rowsOnPage={list?.content?.length ?? 0}
+          loading={loading}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(0);
+          }}
+        />
       </div>
 
       {showModal && selectedRow ? (

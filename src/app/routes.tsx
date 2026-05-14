@@ -19,6 +19,9 @@ const CustomProfessions = lazy(() =>
 );
 const Professions = lazy(() => import('./pages/Professions').then((m) => ({ default: m.Professions })));
 const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const DestinationCountries = lazy(() =>
+  import('./pages/DestinationCountries').then((m) => ({ default: m.DestinationCountries })),
+);
 
 function LazyBoundary({ children }: { children: ReactNode }) {
   return (
@@ -147,6 +150,14 @@ export const router = createBrowserRouter([
             element: (
               <LazyBoundary>
                 <Professions />
+              </LazyBoundary>
+            ),
+          },
+          {
+            path: 'destination-countries',
+            element: (
+              <LazyBoundary>
+                <DestinationCountries />
               </LazyBoundary>
             ),
           },

@@ -11,6 +11,7 @@ import {
   Bell,
   Search,
   AlertCircle,
+  Globe,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ const TITLE_MAP: Record<string, string> = {
   vacancies: 'Vakansiyalar',
   professions: 'Kasblar',
   'custom-professions': 'Maxsus kasblar',
+  'destination-countries': 'Maqsad mamlakatlar',
   settings: 'Sozlamalar',
 };
 
@@ -78,6 +80,7 @@ export function AppLayout() {
     { path: '/admin/vacancies', label: 'Vakansiyalar', icon: FileText },
     { path: '/admin/professions', label: 'Kasblar', icon: Wrench },
     { path: '/admin/custom-professions', label: 'Maxsus kasblar', icon: AlertCircle },
+    { path: '/admin/destination-countries', label: 'Maqsad mamlakatlar', icon: Globe },
     { path: '/admin/settings', label: 'Sozlamalar', icon: Settings },
   ];
 

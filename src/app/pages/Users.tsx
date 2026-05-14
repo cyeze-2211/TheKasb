@@ -1,14 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import {
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  RefreshCw,
-  UserPlus,
-  XCircle,
-} from 'lucide-react';
+import { CheckCircle2, ChevronRight, Loader2, RefreshCw, UserPlus, XCircle } from 'lucide-react';
 import type { UserRole } from '../data/mockData';
 import {
   axiosErrorMessage,
@@ -20,6 +12,7 @@ import {
 } from '../api/users';
 import { UserFormDialog } from '../components/users/UserFormDialog';
 import { RoleBadge } from '../components/StatusBadge';
+import { AdminPaginationBar } from '../components/AdminPaginationBar';
 import { FilterPanel } from '../components/FilterPanel';
 import { btnPrimary, btnSecondary, ctlInput, ctlSelect, pageKicker, panelElite, rowElite, theadElite } from '../components/pageChrome';
 import { accountTypeUz } from '../lib/adminUiUz';
@@ -37,31 +30,6 @@ function fmtLastLogin(s: string | null | undefined): string {
   } catch {
     return s;
   }
-}
-
-/** 0-based joriy sahifa va jami sahifalar — bosiladigan raqamlar (+ … chetlar) */
-type PageNavItem = number | 'ellipsis';
-
-function adminUsersPaginationItems(currentZeroBased: number, totalPages: number): PageNavItem[] {
-  const total = Math.max(1, totalPages);
-  const cur = Math.min(Math.max(0, currentZeroBased), total - 1);
-  if (total <= 9) {
-    return Array.from({ length: total }, (_, i) => i);
-  }
-  const s = new Set<number>();
-  s.add(0);
-  s.add(total - 1);
-  for (let d = -2; d <= 2; d++) {
-    const p = cur + d;
-    if (p >= 0 && p < total) s.add(p);
-  }
-  const nums = Array.from(s).sort((a, b) => a - b);
-  const out: PageNavItem[] = [];
-  for (let i = 0; i < nums.length; i++) {
-    if (i > 0 && nums[i] - nums[i - 1] > 1) out.push('ellipsis');
-    out.push(nums[i]);
-  }
-  return out;
 }
 
 export function Users() {
@@ -144,14 +112,6 @@ export function Users() {
 
   const totalElements = pageMeta?.totalElements ?? rows.length;
   const totalPages = Math.max(1, pageMeta?.totalPages ?? 1);
-  const displayPageOneBased = pageMeta ? pageMeta.pageNumber + 1 : page + 1;
-  const canPrev = page > 0;
-  const canNext = pageMeta ? page < totalPages - 1 : rows.length >= pageSize && rows.length > 0;
-
-  const paginationItems = useMemo(
-    () => adminUsersPaginationItems(page, totalPages),
-    [page, totalPages],
-  );
 
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
@@ -386,87 +346,18 @@ export function Users() {
             </tbody>
           </table>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-6 py-4 text-sm text-text-muted">
-          <div className="flex flex-wrap items-center gap-2">
-            <span>
-              Sahifa: <span className="tabular-nums text-text-primary">{displayPageOneBased}</span> /{' '}
-              <span className="tabular-nums text-text-primary">{totalPages}</span>
-              {pageMeta ? (
-                <>
-                  {' '}
-                  · Sahifada <span className="tabular-nums">{rows.length}</span> /{' '}
-                  <span className="tabular-nums">{pageMeta.pageSize}</span>
-                </>
-              ) : null}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex items-center gap-2">
-              <span className="text-xs">Sahifada</span>
-              <select
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(0);
-                }}
-                className={`${ctlSelect} h-9 min-w-[5.5rem] py-0 text-xs`}
-              >
-                {[20, 50, 100, 200].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="flex flex-wrap items-center gap-1">
-              <button
-                type="button"
-                className={`${btnSecondary} inline-flex h-9 items-center gap-1 px-2.5 text-xs`}
-                disabled={!canPrev || loading}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                aria-label="Oldingi sahifa"
-              >
-                <ChevronLeft className="h-4 w-4" strokeWidth={2} aria-hidden />
-              </button>
-              {paginationItems.map((item, idx) =>
-                item === 'ellipsis' ? (
-                  <span
-                    key={`e-${idx}`}
-                    className="inline-flex min-w-[1.75rem] select-none items-center justify-center px-0.5 text-xs text-text-muted"
-                    aria-hidden
-                  >
-                    …
-                  </span>
-                ) : (
-                  <button
-                    key={item}
-                    type="button"
-                    disabled={loading}
-                    onClick={() => setPage(item)}
-                    aria-label={`${item + 1}-sahifa`}
-                    aria-current={item === page ? 'page' : undefined}
-                    className={
-                      item === page
-                        ? `inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg border border-primary bg-primary/15 px-2 text-xs font-semibold tabular-nums text-primary`
-                        : `inline-flex h-9 min-w-[2.25rem] items-center justify-center rounded-lg border border-border/80 bg-surface px-2 text-xs font-medium tabular-nums text-text-primary transition-colors hover:border-border hover:bg-muted/30 disabled:opacity-50`
-                    }
-                  >
-                    {item + 1}
-                  </button>
-                ),
-              )}
-              <button
-                type="button"
-                className={`${btnSecondary} inline-flex h-9 items-center gap-1 px-2.5 text-xs`}
-                disabled={!canNext || loading}
-                onClick={() => setPage((p) => p + 1)}
-                aria-label="Keyingi sahifa"
-              >
-                <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden />
-              </button>
-            </div>
-          </div>
-        </div>
+        <AdminPaginationBar
+          page={page}
+          totalPages={totalPages}
+          pageSize={pageSize}
+          rowsOnPage={rows.length}
+          loading={loading}
+          onPageChange={setPage}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setPage(0);
+          }}
+        />
       </div>
     </div>
   );
