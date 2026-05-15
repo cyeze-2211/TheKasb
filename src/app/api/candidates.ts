@@ -211,6 +211,89 @@ export function adminCandidateIdFromListRow(row: unknown, depth = 0): string | n
   return null;
 }
 
+/** Admin profil — `target_countries[]` elementi (ichki `destination_country` bilan) */
+export type AdminTargetCountryRow = {
+  rowId: string;
+  priority: number;
+  countryCode: string;
+  nameUz: string;
+  nameRu: string;
+  flagEmoji: string;
+  salaryMin?: number;
+  salaryMax?: number;
+  salaryCurrency: string;
+  salarySymbol: string;
+  languageReq: string;
+  note: string;
+  isActive?: boolean;
+  sortOrder?: number;
+};
+
+function pickStrFromRow(row: Record<string, unknown>, ...keys: string[]): string {
+  for (const k of keys) {
+    const v = row[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+/** GET /admin/candidates/{id} — `target_countries` massivini normalizatsiya */
+export function parseAdminTargetCountries(raw: unknown): AdminTargetCountryRow[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: AdminTargetCountryRow[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const item = raw[i];
+    if (typeof item === 'string') {
+      const countryCode = item.trim().toUpperCase();
+      if (!countryCode) continue;
+      rows.push({
+        rowId: `tc-${i}`,
+        priority: rows.length + 1,
+        countryCode,
+        nameUz: '',
+        nameRu: '',
+        flagEmoji: '',
+        salaryCurrency: '',
+        salarySymbol: '',
+        languageReq: '',
+        note: '',
+      });
+      continue;
+    }
+    if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
+    const o = item as Record<string, unknown>;
+    const destRaw = o.destination_country ?? o.destinationCountry;
+    const dest =
+      destRaw && typeof destRaw === 'object' && !Array.isArray(destRaw)
+        ? (destRaw as Record<string, unknown>)
+        : o;
+    const countryCode = pickStrFromRow(dest, 'country_code', 'countryCode').toUpperCase();
+    if (!countryCode) continue;
+    const pr = pickNum(o, 'priority');
+    const smin = pickNum(dest, 'salary_min', 'salaryMin');
+    const smax = pickNum(dest, 'salary_max', 'salaryMax');
+    const sortRaw = pickNum(dest, 'sort_order', 'sortOrder');
+    const active = pickCandidateField(dest, 'is_active', 'isActive');
+    rows.push({
+      rowId: pickStrFromRow(o, 'id') || `tc-${i}`,
+      priority: pr ?? rows.length + 1,
+      countryCode,
+      nameUz: pickStrFromRow(dest, 'name_uz', 'nameUz'),
+      nameRu: pickStrFromRow(dest, 'name_ru', 'nameRu'),
+      flagEmoji: pickStrFromRow(dest, 'flag_emoji', 'flagEmoji'),
+      salaryMin: smin,
+      salaryMax: smax,
+      salaryCurrency: pickStrFromRow(dest, 'salary_currency', 'salaryCurrency'),
+      salarySymbol: pickStrFromRow(dest, 'salary_currency_symbol', 'salaryCurrencySymbol'),
+      languageReq: pickStrFromRow(dest, 'language_req', 'languageReq'),
+      note: pickStrFromRow(dest, 'note'),
+      isActive: typeof active === 'boolean' ? active : undefined,
+      sortOrder: sortRaw,
+    });
+  }
+  return rows.sort((a, b) => a.priority - b.priority);
+}
+
 export function axiosErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error && err.message && !axios.isAxiosError(err)) return err.message;
   if (!axios.isAxiosError(err)) return fallback;

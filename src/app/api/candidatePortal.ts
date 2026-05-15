@@ -553,9 +553,8 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
     education_level: normalizeEducationLevelForApi(education_level),
   };
 
-  if (region_id != null && Number.isFinite(Number(region_id))) {
-    payload.region_id = region_id;
-  }
+  const rid = normalizeCandidateRegionId(region_id);
+  if (rid != null) payload.region_id = rid;
   if (experience_years != null && Number.isFinite(Number(experience_years))) {
     payload.experience_years = Math.max(0, Math.trunc(Number(experience_years)));
   }
@@ -576,13 +575,33 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
   return payload;
 }
 
-/** PUT — null region_id yuborilmasin */
+/** Backend viloyat id — `REGIONS` ro‘yxati (1…14) */
+export const CANDIDATE_REGION_ID_MAX = 14;
+
+/** Faqat 1…14 oralig‘idagi butun son; aks holda `undefined` */
+export function normalizeCandidateRegionId(raw: unknown): number | undefined {
+  if (raw == null || raw === '') return undefined;
+  let n: number;
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    n = Math.trunc(raw);
+  } else {
+    const s = String(raw).trim();
+    if (!/^\d{1,2}$/.test(s)) return undefined;
+    n = Math.trunc(Number(s));
+  }
+  if (!Number.isFinite(n) || n < 1 || n > CANDIDATE_REGION_ID_MAX) return undefined;
+  return n;
+}
+
+/** PATCH/POST — noto‘g‘ri yoki null `region_id` yuborilmasin */
 function stripNullRegionFromPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  if (payload.region_id === null || payload.region_id === undefined) {
+  if (!('region_id' in payload)) return payload;
+  const rid = normalizeCandidateRegionId(payload.region_id);
+  if (rid == null) {
     const { region_id: _r, ...rest } = payload;
     return rest;
   }
-  return payload;
+  return { ...payload, region_id: rid };
 }
 
 /** 2-qadam */
@@ -607,7 +626,7 @@ export async function candidateCreateProfile(body: CandidateProfileCreateBody): 
   return id;
 }
 
-/** 2-qadam (edit) — Swagger: PUT /api/candidate/profile */
+/** 2-qadam (edit) — PATCH /api/candidate/profile */
 export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): Promise<Record<string, unknown> | null> {
   const token = getCandidateToken();
   if (!token) throw new Error('Avval OTP bilan kiring');
@@ -618,7 +637,7 @@ export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): 
   };
   const payload = stripNullRegionFromPayload(raw);
 
-  const { data } = await authApi.put<unknown>('/candidate/profile', payload, {
+  const { data } = await authApi.patch<unknown>('/candidate/profile', payload, {
     headers: { Authorization: `Bearer ${token}` },
   });
   return unwrapRecord(data);

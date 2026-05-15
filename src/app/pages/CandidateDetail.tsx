@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router';
 import { COUNTRIES } from '../data/mockData';
 import {
@@ -7,12 +7,14 @@ import {
   axiosErrorMessage,
   deleteCandidate,
   fetchCandidateById,
+  parseAdminTargetCountries,
   pickCandidateField,
   pickNum,
   pickStr,
   updateCandidateProfileStatus,
   type AdminProfileStatus,
 } from '../api/candidates';
+import { fetchProfessionCategories, fetchProfessionsByCategory } from '../api/professions';
 import {
   Award,
   Briefcase,
@@ -75,6 +77,33 @@ const availabilityLabels: Record<string, string> = {
   WITHIN_3_MONTHS: '3 oy ichida',
 };
 
+function fmtDateTime(iso?: string): string {
+  if (!iso?.trim()) return '—';
+  try {
+    return new Date(iso).toLocaleString('uz-UZ', { dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
+
+function ProfileField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="mb-1 text-xs text-text-muted">{label}</div>
+      <div className="text-sm text-text-primary">{children}</div>
+    </div>
+  );
+}
+
+function ProfileSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="space-y-3 border-b border-border/60 pb-6 last:border-0 last:pb-0">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">{title}</h3>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:gap-x-12">{children}</div>
+    </section>
+  );
+}
+
 function initialsFromName(name: string): string {
   return name
     .split(/\s+/)
@@ -105,6 +134,8 @@ export function CandidateDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+  const [categoryLabel, setCategoryLabel] = useState<string | null>(null);
+  const [professionLabel, setProfessionLabel] = useState<string | null>(null);
 
   const listRowSnapshot = useMemo((): Record<string, unknown> | null => {
     const st = location.state as { candidateListRow?: Record<string, unknown> } | null;
@@ -167,6 +198,54 @@ export function CandidateDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!detail) {
+      setCategoryLabel(null);
+      setProfessionLabel(null);
+      return;
+    }
+    const customName = pickStr(detail, 'custom_profession_name', 'customProfessionName');
+    const catName = pickStr(detail, 'category_name', 'categoryName');
+    const profName = pickStr(detail, 'profession_name', 'professionName');
+    const catId = pickNum(detail, 'profession_category_id', 'professionCategoryId');
+    const profId = pickNum(detail, 'profession_id', 'professionId');
+
+    if (customName) setProfessionLabel(customName);
+    else if (profName) setProfessionLabel(profName);
+    else setProfessionLabel(null);
+
+    if (catName) setCategoryLabel(catName);
+    else setCategoryLabel(null);
+
+    const needCatLookup = catId != null && !catName;
+    const needProfLookup = catId != null && profId != null && !profName && !customName;
+    if (!needCatLookup && !needProfLookup) return;
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        if (needCatLookup) {
+          const cats = await fetchProfessionCategories();
+          const c = cats.find((x) => x.id === catId);
+          if (!cancelled) setCategoryLabel(c ? c.name_uz || c.name_ru : `ID ${catId}`);
+        }
+        if (needProfLookup) {
+          const profs = await fetchProfessionsByCategory(catId!);
+          const p = profs.find((x) => x.id === profId);
+          if (!cancelled) setProfessionLabel(p ? p.name_uz || p.name_ru : `ID ${profId}`);
+        }
+      } catch {
+        if (!cancelled) {
+          if (needCatLookup) setCategoryLabel(`ID ${catId}`);
+          if (needProfLookup) setProfessionLabel(`ID ${profId}`);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail]);
 
   useEffect(() => {
     const st = location.state as { candidateFocus?: string } | null;
@@ -303,38 +382,16 @@ export function CandidateDetail() {
     return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
-  type TargetCountryRow = { priority: number; countryCode: string };
-
-  const targetCountryRows = useMemo((): TargetCountryRow[] => {
-    const raw = detail
-      ? pickCandidateField(detail, 'target_countries', 'targetCountries', 'country_codes', 'targetCountryCodes')
-      : undefined;
-    if (!Array.isArray(raw)) {
-      const s = detail ? pickStr(detail, 'target_countries', 'targetCountries') : '';
-      if (s.includes(',')) {
-        return s
-          .split(',')
-          .map((x) => x.trim().toUpperCase())
-          .filter(Boolean)
-          .map((countryCode, i) => ({ priority: i + 1, countryCode }));
-      }
-      return [];
-    }
-    const rows: TargetCountryRow[] = [];
-    for (const item of raw) {
-      if (typeof item === 'string') {
-        const countryCode = item.trim().toUpperCase();
-        if (countryCode) rows.push({ priority: rows.length + 1, countryCode });
-        continue;
-      }
-      if (!item || typeof item !== 'object' || Array.isArray(item)) continue;
-      const o = item as Record<string, unknown>;
-      const countryCode = pickStr(o, 'country_code', 'countryCode', 'code').trim().toUpperCase();
-      if (!countryCode) continue;
-      const pr = pickNum(o, 'priority');
-      rows.push({ priority: pr ?? 999, countryCode });
-    }
-    return rows.sort((a, b) => a.priority - b.priority);
+  const targetCountryRows = useMemo(() => {
+    if (!detail) return [];
+    const raw = pickCandidateField(
+      detail,
+      'target_countries',
+      'targetCountries',
+      'country_codes',
+      'targetCountryCodes',
+    );
+    return parseAdminTargetCountries(raw);
   }, [detail]);
 
   const educations = useMemo(() => {
@@ -359,12 +416,12 @@ export function CandidateDetail() {
 
   const tabs = [
     { id: 'basic', label: 'Asosiy' },
-    { id: 'languages', label: 'Tillar' },
-    { id: 'countries', label: 'Mamlakatlar' },
-    { id: 'education', label: 'Ta’lim' },
-    { id: 'work', label: 'Ish tajribasi' },
-    { id: 'skills', label: 'Ko‘nikmalar' },
-    { id: 'documents', label: 'Hujjatlar' },
+    { id: 'languages', label: `Tillar (${languages.length})` },
+    { id: 'countries', label: `Mamlakatlar (${targetCountryRows.length})` },
+    { id: 'education', label: `Ta’lim (${educations.length})` },
+    { id: 'work', label: `Ish tajribasi (${workExperiences.length})` },
+    { id: 'skills', label: `Ko‘nikmalar (${skills.length})` },
+    { id: 'documents', label: `Hujjatlar (${documents.length})` },
   ];
 
   if (loading && !detail) {
@@ -410,16 +467,28 @@ export function CandidateDetail() {
   );
   const currency = pickStr(detail, 'currency', 'salary_currency', 'salaryCurrency') || 'USD';
   const score = pickNum(detail, 'score', 'profile_score', 'profileScore');
-  const category = pickStr(detail, 'category_name', 'categoryName', 'category');
-  const profession = pickStr(detail, 'profession_name', 'professionName', 'profession');
+  const categoryDisplay = categoryLabel ?? pickStr(detail, 'category_name', 'categoryName', 'category');
+  const professionDisplay =
+    professionLabel ?? pickStr(detail, 'profession_name', 'professionName', 'profession');
   const registeredAt = pickStr(detail, 'created_at', 'createdAt', 'registered_at', 'registeredAt');
   const lastLogin = pickStr(detail, 'last_login_at', 'lastLoginAt', 'last_login', 'lastLogin');
   const dateBirth = pickStr(detail, 'date_birth', 'dateBirth');
   const marital = pickStr(detail, 'marital_status', 'maritalStatus');
   const eduLevel = pickStr(detail, 'education_level', 'educationLevel');
   const dataConsentRaw = pickCandidateField(detail, 'data_consent', 'dataConsent');
+  const dataConsentAt = pickStr(detail, 'data_consent_at', 'dataConsentAt');
   const updatedAt = pickStr(detail, 'updated_at', 'updatedAt');
   const completenessPct = pickNum(detail, 'profile_completeness', 'profileCompleteness');
+  const profileId = pickStr(detail, 'id');
+  const regionId = pickNum(detail, 'region_id', 'regionId');
+  const categoryId = pickNum(detail, 'profession_category_id', 'professionCategoryId');
+  const professionId = pickNum(detail, 'profession_id', 'professionId');
+  const customProfessionId = pickStr(detail, 'custom_profession_id', 'customProfessionId');
+  const customProfessionName = pickStr(detail, 'custom_profession_name', 'customProfessionName');
+  const experienceYears = pickNum(detail, 'experience_years', 'experienceYears');
+  const agentId = pickNum(detail, 'agent_id', 'agentId', 'assigned_agent_id');
+  const agentNotes = pickStr(detail, 'agent_notes', 'agentNotes');
+  const assignedAgent = agentId != null ? agents.find((a) => a.id === agentId) : undefined;
 
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
@@ -574,15 +643,21 @@ export function CandidateDetail() {
             </div>
 
             <div className="space-y-2.5 border-t border-border pt-4 text-sm">
+              {profileId ? (
+                <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-2">
+                  <div className="text-[10px] font-medium uppercase tracking-wide text-text-muted">Profil ID</div>
+                  <div className="mt-0.5 break-all font-mono text-xs text-text-primary">{profileId}</div>
+                </div>
+              ) : null}
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 flex-shrink-0 text-text-muted" strokeWidth={2} aria-hidden />
                 <span className="text-text-muted">Ro‘yxatdan:</span>
-                <span className="text-text-primary">{registeredAt || '—'}</span>
+                <span className="text-text-primary">{fmtDateTime(registeredAt)}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="h-4 w-4 flex-shrink-0 text-text-muted" strokeWidth={2} aria-hidden />
                 <span className="text-text-muted">Oxirgi kirish:</span>
-                <span className="text-text-primary">{lastLogin || '—'}</span>
+                <span className="text-text-primary">{fmtDateTime(lastLogin)}</span>
               </div>
               <div className="flex items-center gap-2 text-xs text-text-muted">
                 Holat:{' '}
@@ -590,6 +665,17 @@ export function CandidateDetail() {
                   {profileStatus ? uzOrCode(candidateProfileStatusUz, profileStatus) : '—'}
                 </span>
               </div>
+              {score != null ? (
+                <div className="text-xs text-text-muted">
+                  Ball: <span className="font-semibold tabular-nums text-text-primary">{score}%</span>
+                  {completenessPct != null ? (
+                    <>
+                      {' · '}To‘liqlik:{' '}
+                      <span className="font-semibold tabular-nums text-text-primary">{completenessPct}%</span>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
 
             <button
@@ -627,11 +713,11 @@ export function CandidateDetail() {
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:gap-x-12">
                   <div>
                     <div className="mb-1 text-xs text-text-muted">Kategoriya</div>
-                    <div className="text-sm text-text-primary">{category || '—'}</div>
+                    <div className="text-sm text-text-primary">{categoryDisplay || '—'}</div>
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-text-muted">Kasb</div>
-                    <div className="text-sm text-text-primary">{profession || '—'}</div>
+                    <div className="text-sm text-text-primary">{professionDisplay || customProfessionName || '—'}</div>
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-text-muted">Tajriba</div>
@@ -703,7 +789,80 @@ export function CandidateDetail() {
                   </div>
                   <div>
                     <div className="mb-1 text-xs text-text-muted">Oxirgi yangilanish</div>
-                    <div className="text-sm text-text-primary">{updatedAt || '—'}</div>
+                    <div className="text-sm text-text-primary">{fmtDateTime(updatedAt)}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Profil ID</div>
+                    <div className="break-all font-mono text-xs text-text-primary">{profileId || '—'}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Foydalanuvchi ID</div>
+                    <div className="text-sm text-text-primary">
+                      {linkedUserId != null && linkedUserId > 0 ? (
+                        <Link to={`/admin/users/${linkedUserId}`} className="text-primary hover:underline">
+                          {linkedUserId}
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Viloyat ID</div>
+                    <div className="text-sm text-text-primary">{regionId != null ? regionId : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Kategoriya ID</div>
+                    <div className="text-sm text-text-primary">{categoryId != null ? categoryId : '—'}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Kasb ID</div>
+                    <div className="text-sm text-text-primary">{professionId != null ? professionId : '—'}</div>
+                  </div>
+                  {customProfessionId || customProfessionName ? (
+                    <div>
+                      <div className="mb-1 text-xs text-text-muted">Maxsus kasb</div>
+                      <div className="text-sm text-text-primary">
+                        {customProfessionName || '—'}
+                        {customProfessionId ? (
+                          <span className="mt-1 block font-mono text-xs text-text-muted">{customProfessionId}</span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Tajriba (yil)</div>
+                    <div className="text-sm text-text-primary">
+                      {experienceYears != null ? `${experienceYears} yil` : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Profil holati</div>
+                    <div className="text-sm text-text-primary">
+                      {profileStatus ? uzOrCode(candidateProfileStatusUz, profileStatus) : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Agent</div>
+                    <div className="text-sm text-text-primary">
+                      {assignedAgent
+                        ? `${getUserDisplayName(assignedAgent)} (ID ${agentId})`
+                        : agentId != null
+                          ? `ID ${agentId}`
+                          : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Agent izohi</div>
+                    <div className="text-sm text-text-primary">{agentNotes || '—'}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Rozilik vaqti</div>
+                    <div className="text-sm text-text-primary">{fmtDateTime(dataConsentAt)}</div>
+                  </div>
+                  <div>
+                    <div className="mb-1 text-xs text-text-muted">Yaratilgan</div>
+                    <div className="text-sm text-text-primary">{fmtDateTime(registeredAt)}</div>
                   </div>
                 </div>
               )}
@@ -735,6 +894,9 @@ export function CandidateDetail() {
                               <div className="text-base font-semibold text-text-primary">
                                 {code ? languageLabelUz(code) : '—'}
                               </div>
+                              {rowId && !rowId.startsWith('lang-') ? (
+                                <p className="font-mono text-[10px] text-text-muted">{rowId}</p>
+                              ) : null}
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
                                   {level ? uzOrCode(cefrLevelUz, level) : '—'}
@@ -767,23 +929,49 @@ export function CandidateDetail() {
                     <p className="text-sm text-text-muted">Maqsad mamlakatlar kiritilmagan.</p>
                   ) : (
                     <ul className="space-y-2">
-                      {targetCountryRows.map((row, index) => {
-                        const country = COUNTRIES.find((c) => c.code === row.countryCode);
-                        const label = country?.name ?? countryNameUz(row.countryCode) ?? row.countryCode;
+                      {targetCountryRows.map((row) => {
+                        const label =
+                          row.nameUz ||
+                          row.nameRu ||
+                          COUNTRIES.find((c) => c.code === row.countryCode)?.name ||
+                          countryNameUz(row.countryCode) ||
+                          row.countryCode;
+                        const flag = row.flagEmoji || countryFlagEmoji(row.countryCode);
+                        const salaryStr =
+                          row.salaryMin != null && row.salaryMax != null
+                            ? `${row.salaryMin.toLocaleString('ru-RU')}–${row.salaryMax.toLocaleString('ru-RU')} ${row.salaryCurrency}${row.salarySymbol ? ` (${row.salarySymbol})` : ''}`
+                            : null;
                         return (
                           <li
-                            key={`${row.countryCode}-${row.priority}-${index}`}
+                            key={row.rowId}
                             className="flex items-center gap-4 rounded-2xl border border-border/80 bg-muted/20 px-4 py-3 transition-all hover:border-primary/30 hover:bg-muted/35"
                           >
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-sm font-bold text-primary tabular-nums">
-                              {index + 1}
+                              {row.priority}
                             </div>
                             <span className="text-2xl leading-none" aria-hidden>
-                              {countryFlagEmoji(row.countryCode)}
+                              {flag}
                             </span>
-                            <div className="min-w-0 flex-1">
+                            <div className="min-w-0 flex-1 space-y-1">
                               <div className="text-sm font-semibold text-text-primary">{label}</div>
-                              <div className="text-xs text-text-muted">Ustuvorlik: {row.priority}</div>
+                              <div className="text-xs text-text-muted">
+                                {row.countryCode}
+                                {row.nameRu && row.nameUz && row.nameRu !== row.nameUz
+                                  ? ` · ${row.nameRu}`
+                                  : ''}
+                              </div>
+                              {salaryStr ? (
+                                <div className="text-xs font-medium text-text-primary">{salaryStr}</div>
+                              ) : null}
+                              {row.languageReq ? (
+                                <div className="text-xs text-text-muted">Til talabi: {row.languageReq}</div>
+                              ) : null}
+                              {row.note ? <div className="text-xs text-text-muted">{row.note}</div> : null}
+                              {row.isActive === false ? (
+                                <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                                  Nofaol
+                                </span>
+                              ) : null}
                             </div>
                           </li>
                         );

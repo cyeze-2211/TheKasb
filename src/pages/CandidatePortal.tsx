@@ -66,6 +66,7 @@ import {
   candidateUpdateMyUser,
   candidateUpdateProfile,
   candidateVerifyOtp,
+  normalizeCandidateRegionId,
   type CandidateProfileUpdateBody,
   type DestinationCountryDto,
   type PublicVacancyRow,
@@ -83,6 +84,7 @@ import {
   maritalStatusUz,
   uzOrCode,
 } from '../app/lib/adminUiUz';
+import { REGIONS } from '../app/data/mockData';
 import { countryFlagEmoji, countryNameUz } from '../app/lib/regionFlags';
 import { getCandidateProfileId, getCandidateToken } from '../app/candidate/candidateSession';
 import { syntheticTelegramChatId } from '../app/lib/syntheticTelegramChatId';
@@ -91,6 +93,13 @@ import {
   isTelegramMiniApp,
   readTelegramMiniAppChatId,
 } from '../app/lib/telegramWebApp';
+
+/** `mockData` REGIONS — "1-Toshkent..." → id */
+const REGION_OPTIONS: { id: number; label: string }[] = REGIONS.map((r) => {
+  const m = /^(\d+)\s*[-–]\s*/.exec(r.trim()) ?? /^(\d+)/.exec(r.trim());
+  const id = m ? Number(m[1]) : NaN;
+  return { id, label: r };
+}).filter((x) => Number.isFinite(x.id) && x.id > 0);
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 
@@ -2599,7 +2608,7 @@ function CandidateProfileUnifiedForm({
   const [salMax, setSalMax] = useState(SALARY_EUR_DEFAULT_MAX);
   const [salCur, setSalCur] = useState('EUR');
   const [consent, setConsent] = useState(true);
-  const [regionIdStr, setRegionIdStr] = useState('');
+  const [regionSelect, setRegionSelect] = useState<number | ''>('');
   const [customProf, setCustomProf] = useState('');
 
   const applyServerToDraft = useCallback(() => {
@@ -2612,8 +2621,8 @@ function CandidateProfileUnifiedForm({
     setSalMax(pickNum(profile, 'desired_salary_max', 'desiredSalaryMax') ?? SALARY_EUR_DEFAULT_MAX);
     setSalCur(pickStr(profile, 'salary_currency', 'salaryCurrency') || 'EUR');
     setConsent(profile.data_consent === true || profile.dataConsent === true);
-    const rid = pickNum(profile, 'region_id', 'regionId');
-    setRegionIdStr(rid != null && rid > 0 ? String(rid) : '');
+    const rid = normalizeCandidateRegionId(pickNum(profile, 'region_id', 'regionId'));
+    setRegionSelect(rid ?? '');
     setCustomProf(pickStr(profile, 'custom_profession_name', 'customProfessionName'));
   }, [profile]);
 
@@ -2682,13 +2691,14 @@ function CandidateProfileUnifiedForm({
         desired_salary_max: salMax,
         salary_currency: salCur,
       };
-      const rDigits = regionIdStr.replace(/\D/g, '');
-      if (rDigits) {
-        const n = Number(rDigits);
-        if (Number.isFinite(n) && n > 0) body.region_id = n;
-      } else {
-        const exR = pickNum(profile, 'region_id', 'regionId');
-        if (exR != null && exR > 0) body.region_id = exR;
+      if (regionSelect !== '') {
+        const rid = normalizeCandidateRegionId(regionSelect);
+        if (rid == null) {
+          toast.error('Hududni ro‘yxatdan tanlang.');
+          setBusy(false);
+          return;
+        }
+        body.region_id = rid;
       }
       const pid = pickNum(profile, 'profession_id', 'professionId');
       const pcid = pickNum(profile, 'profession_category_id', 'professionCategoryId');
@@ -2926,17 +2936,24 @@ function CandidateProfileUnifiedForm({
         </label>
         <label className="block">
           <span className="mb-0.5 block text-[12px] font-medium" style={{ color: C.muted }}>
-            Hudud (raqam, ixtiyoriy)
+            Hudud
           </span>
-          <input
-            type="text"
-            inputMode="numeric"
+          <select
             className={ctl}
             style={fieldStyle}
-            value={regionIdStr}
-            onChange={(e) => setRegionIdStr(e.target.value.replace(/[^\d]/g, ''))}
-            placeholder="Bo‘sh qoldirish mumkin"
-          />
+            value={regionSelect === '' ? '' : String(regionSelect)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setRegionSelect(v ? Number(v) : '');
+            }}
+          >
+            <option value="">Tanlang (ixtiyoriy)</option>
+            {REGION_OPTIONS.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="block">
           <span className="mb-0.5 block text-[12px] font-medium" style={{ color: C.muted }}>
