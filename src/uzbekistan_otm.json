@@ -1,0 +1,300 @@
+{
+  "meta": {
+    "source": "https://my.uzbmb.uz/university/1",
+    "description": "O'zbekiston OTMlari viloyatlar kesimida ro'yxati",
+    "total": 157,
+    "updated": "2026"
+  },
+  "regions": [
+    {
+      "id": 1,
+      "code": "AND",
+      "name_uz": "Andijon viloyati",
+      "name_ru": "Андижанская область",
+      "name_en": "Andijan region",
+      "universities": [
+        { "id": 679, "name": "Turon universitet Andijon filliali", "type": "nodavlat", "score": 6430, "url": "https://my.uzbmb.uz/university-about-direction/679" },
+        { "id": 301, "name": "Andijon davlat universiteti", "type": "davlat", "score": 2600, "url": "https://my.uzbmb.uz/university-about-direction/301" },
+        { "id": 403, "name": "Andijon davlat pedagogika instituti", "type": "davlat", "score": 2149, "url": "https://my.uzbmb.uz/university-about-direction/403" },
+        { "id": 361, "name": "Andijon davlat tibbiyot instituti", "type": "davlat", "score": 2059, "url": "https://my.uzbmb.uz/university-about-direction/361" },
+        { "id": 420, "name": "Andijon davlat chet tillari instituti", "type": "davlat", "score": 1270, "url": "https://my.uzbmb.uz/university-about-direction/420" },
+        { "id": 371, "name": "Andijon qishloq xo'jaligi va agrotexnologiyalar instituti", "type": "davlat", "score": 1105, "url": "https://my.uzbmb.uz/university-about-direction/371" },
+        { "id": 303, "name": "Andijon mashinasozlik instituti", "type": "davlat", "score": 720, "url": "https://my.uzbmb.uz/university-about-direction/303" },
+        { "id": 432, "name": "Andijon davlat texnika instituti", "type": "davlat", "score": 674, "url": "https://my.uzbmb.uz/university-about-direction/432" },
+        { "id": 323, "name": "Andijon iqtisodiyot va qurilish instituti", "type": "davlat", "score": 609, "url": "https://my.uzbmb.uz/university-about-direction/323" },
+        { "id": 423, "name": "Toshkent moliya instituti Andijon fakulteti", "type": "davlat", "score": 418, "url": "https://my.uzbmb.uz/university-about-direction/423" }
+      ]
+    },
+    {
+      "id": 2,
+      "code": "BUX",
+      "name_uz": "Buxoro viloyati",
+      "name_ru": "Бухарская область",
+      "name_en": "Bukhara region",
+      "universities": [
+        { "id": 304, "name": "Buxoro davlat universiteti", "type": "davlat", "score": 2755, "url": "https://my.uzbmb.uz/university-about-direction/304" },
+        { "id": 362, "name": "Buxoro tibbiyot instituti", "type": "davlat", "score": 1387, "url": "https://my.uzbmb.uz/university-about-direction/362" },
+        { "id": 404, "name": "Buxoro davlat pedagogika instituti", "type": "davlat", "score": 1082, "url": "https://my.uzbmb.uz/university-about-direction/404" },
+        { "id": 547, "name": "Osiyo xalqaro universiteti", "type": "nodavlat", "score": 722, "url": "https://my.uzbmb.uz/university-about-direction/547" },
+        { "id": 305, "name": "Buxoro muhandislik-texnologiya instituti", "type": "davlat", "score": 672, "url": "https://my.uzbmb.uz/university-about-direction/305" },
+        { "id": 434, "name": "Buxoro davlat texnika universiteti", "type": "davlat", "score": 639, "url": "https://my.uzbmb.uz/university-about-direction/434" },
+        { "id": 546, "name": "Buxoro innovatsiyalar universiteti", "type": "nodavlat", "score": 448, "url": "https://my.uzbmb.uz/university-about-direction/546" },
+        { "id": 535, "name": "Zarmed Universiteti Buxoro kampusi", "type": "nodavlat", "score": 421, "url": "https://my.uzbmb.uz/university-about-direction/535" },
+        { "id": 394, "name": "Buxoro tabiiy resurslarni boshqarish instituti", "type": "davlat", "score": 351, "url": "https://my.uzbmb.uz/university-about-direction/394" }
+      ]
+    },
+    {
+      "id": 3,
+      "code": "JIZ",
+      "name_uz": "Jizzax viloyati",
+      "name_ru": "Джизакская область",
+      "name_en": "Jizzakh region",
+      "universities": [
+        { "id": 351, "name": "Jizzax davlat pedagogika universiteti", "type": "davlat", "score": 1932, "url": "https://my.uzbmb.uz/university-about-direction/351" },
+        { "id": 401, "name": "O'zbekiston Milliy universiteti Jizzax filiali", "type": "davlat", "score": 1052, "url": "https://my.uzbmb.uz/university-about-direction/401" },
+        { "id": 308, "name": "Jizzax politexnika instituti", "type": "davlat", "score": 967, "url": "https://my.uzbmb.uz/university-about-direction/308" }
+      ]
+    },
+    {
+      "id": 4,
+      "code": "QAS",
+      "name_uz": "Qashqadaryo viloyati",
+      "name_ru": "Кашкадарьинская область",
+      "name_en": "Kashkadarya region",
+      "universities": [
+        { "id": 345, "name": "Qarshi davlat universiteti", "type": "davlat", "score": 2178, "url": "https://my.uzbmb.uz/university-about-direction/345" },
+        { "id": 405, "name": "Shahrisabz davlat pedagogika instituti", "type": "davlat", "score": 1454, "url": "https://my.uzbmb.uz/university-about-direction/405" },
+        { "id": 435, "name": "Qarshi davlat texnika universiteti", "type": "davlat", "score": 687, "url": "https://my.uzbmb.uz/university-about-direction/435" },
+        { "id": 558, "name": "Turon universitet (Qarshi)", "type": "nodavlat", "score": 680, "url": "https://my.uzbmb.uz/university-about-direction/558" },
+        { "id": 375, "name": "Qarshi muhandislik-iqtisodiyot instituti", "type": "davlat", "score": 632, "url": "https://my.uzbmb.uz/university-about-direction/375" },
+        { "id": 397, "name": "Qarshi irrigatsiya va agrotexnologiyalar instituti", "type": "davlat", "score": 424, "url": "https://my.uzbmb.uz/university-about-direction/397" },
+        { "id": 389, "name": "Toshkent axborot texnologiyalari universiteti Qarshi filiali", "type": "davlat", "score": 312, "url": "https://my.uzbmb.uz/university-about-direction/389" },
+        { "id": 335, "name": "Toshkent kimyo-texnologiya instituti Shahrisabz filiali", "type": "davlat", "score": 226, "url": "https://my.uzbmb.uz/university-about-direction/335" },
+        { "id": 446, "name": "Qarshi davlat texnika universiteti Shaxrisabz oziq-ovqat muhandisligi fakulteti", "type": "davlat", "score": 187, "url": "https://my.uzbmb.uz/university-about-direction/446" }
+      ]
+    },
+    {
+      "id": 5,
+      "code": "NAV",
+      "name_uz": "Navoiy viloyati",
+      "name_ru": "Навоийская область",
+      "name_en": "Navoiy region",
+      "universities": [
+        { "id": 319, "name": "Navoiy davlat konchilik va texnologiyalar universiteti", "type": "davlat", "score": 2067, "url": "https://my.uzbmb.uz/university-about-direction/319" },
+        { "id": 353, "name": "Navoiy davlat pedagogika instituti", "type": "davlat", "score": 1341, "url": "https://my.uzbmb.uz/university-about-direction/353" },
+        { "id": 437, "name": "Navoiy davlat universiteti", "type": "davlat", "score": 1296, "url": "https://my.uzbmb.uz/university-about-direction/437" }
+      ]
+    },
+    {
+      "id": 6,
+      "code": "NAM",
+      "name_uz": "Namangan viloyati",
+      "name_ru": "Наманганская область",
+      "name_en": "Namangan region",
+      "universities": [
+        { "id": 309, "name": "Namangan davlat universiteti", "type": "davlat", "score": 2474, "url": "https://my.uzbmb.uz/university-about-direction/309" },
+        { "id": 426, "name": "Namangan davlat pedagogika instituti", "type": "davlat", "score": 1161, "url": "https://my.uzbmb.uz/university-about-direction/426" },
+        { "id": 419, "name": "Namangan davlat chet tillari instituti", "type": "davlat", "score": 971, "url": "https://my.uzbmb.uz/university-about-direction/419" },
+        { "id": 549, "name": "University of Business and Science (Namangan)", "type": "nodavlat", "score": 928, "url": "https://my.uzbmb.uz/university-about-direction/549" },
+        { "id": 438, "name": "Namangan davlat texnika universiteti", "type": "davlat", "score": 745, "url": "https://my.uzbmb.uz/university-about-direction/438" },
+        { "id": 677, "name": "Turan International University", "type": "nodavlat", "score": 694, "url": "https://my.uzbmb.uz/university-about-direction/677" },
+        { "id": 310, "name": "Namangan muhandislik-qurilish instituti", "type": "davlat", "score": 482, "url": "https://my.uzbmb.uz/university-about-direction/310" },
+        { "id": 675, "name": "Toshkent iqtisodiyot va texnologiyalar universiteti Namangan manzili", "type": "nodavlat", "score": 476, "url": "https://my.uzbmb.uz/university-about-direction/675" },
+        { "id": 311, "name": "Namangan muhandislik-texnologiya instituti", "type": "davlat", "score": 417, "url": "https://my.uzbmb.uz/university-about-direction/311" },
+        { "id": 427, "name": "Namangan to'qimachilik sanoati instituti", "type": "davlat", "score": 240, "url": "https://my.uzbmb.uz/university-about-direction/427" }
+      ]
+    },
+    {
+      "id": 7,
+      "code": "SAM",
+      "name_uz": "Samarqand viloyati",
+      "name_ru": "Самаркандская область",
+      "name_en": "Samarkand region",
+      "universities": [
+        { "id": 312, "name": "Samarqand davlat universiteti", "type": "davlat", "score": 4313, "url": "https://my.uzbmb.uz/university-about-direction/312" },
+        { "id": 363, "name": "Samarqand davlat tibbiyot universiteti", "type": "davlat", "score": 2885, "url": "https://my.uzbmb.uz/university-about-direction/363" },
+        { "id": 347, "name": "Samarqand davlat chet tillar instituti", "type": "davlat", "score": 2647, "url": "https://my.uzbmb.uz/university-about-direction/347" },
+        { "id": 385, "name": "Samarqand iqtisodiyot va servis instituti", "type": "davlat", "score": 2275, "url": "https://my.uzbmb.uz/university-about-direction/385" },
+        { "id": 396, "name": "«Ipak yo'li» turizm va madaniy meros xalqaro universiteti", "type": "davlat", "score": 2189, "url": "https://my.uzbmb.uz/university-about-direction/396" },
+        { "id": 534, "name": "Zarmed Universiteti Samarqand kampusi", "type": "nodavlat", "score": 1612, "url": "https://my.uzbmb.uz/university-about-direction/534" },
+        { "id": 360, "name": "Toshkent davlat iqtisodiyot universiteti Samarqand filiali", "type": "davlat", "score": 1364, "url": "https://my.uzbmb.uz/university-about-direction/360" },
+        { "id": 313, "name": "Samarqand davlat arxitektura-qurilish universiteti", "type": "davlat", "score": 1162, "url": "https://my.uzbmb.uz/university-about-direction/313" },
+        { "id": 415, "name": "O'zbekiston-Finlyandiya pedagogika instituti", "type": "davlat", "score": 1132, "url": "https://my.uzbmb.uz/university-about-direction/415" },
+        { "id": 388, "name": "Toshkent axborot texnologiyalari universiteti Samarqand filiali", "type": "davlat", "score": 1042, "url": "https://my.uzbmb.uz/university-about-direction/388" },
+        { "id": 680, "name": "«ISFT» instituti Samarqand filiali", "type": "nodavlat", "score": 866, "url": "https://my.uzbmb.uz/university-about-direction/680" },
+        { "id": 406, "name": "Samarqand davlat universiteti Kattaqo'rg'on filiali", "type": "davlat", "score": 695, "url": "https://my.uzbmb.uz/university-about-direction/406" },
+        { "id": 358, "name": "Samarqand davlat universiteti Urgut filiali", "type": "davlat", "score": 660, "url": "https://my.uzbmb.uz/university-about-direction/358" },
+        { "id": 372, "name": "Samarqand davlat veterinariya meditsinasi, chorvachilik va biotexnologiyalar universiteti", "type": "davlat", "score": 602, "url": "https://my.uzbmb.uz/university-about-direction/372" },
+        { "id": 440, "name": "Samarqand agroinnovatsiyalar va tadqiqotlar instituti (1)", "type": "davlat", "score": 443, "url": "https://my.uzbmb.uz/university-about-direction/440" },
+        { "id": 320, "name": "Samarqand agroinnovatsiyalar va tadqiqotlar instituti (2)", "type": "davlat", "score": 435, "url": "https://my.uzbmb.uz/university-about-direction/320" },
+        { "id": 414, "name": "Samarqand davlat chet tillar instituti Payariq «Xorijiy tillar» fakulteti", "type": "davlat", "score": 280, "url": "https://my.uzbmb.uz/university-about-direction/414" },
+        { "id": 413, "name": "Samarqand davlat chet tillar instituti Narpay «Xorijiy tillar» fakulteti", "type": "davlat", "score": 271, "url": "https://my.uzbmb.uz/university-about-direction/413" },
+        { "id": 417, "name": "Samarqand davlat universiteti Agrobiotexnologiyalar va oziq-ovqat xavfsizligi instituti", "type": "davlat", "score": 203, "url": "https://my.uzbmb.uz/university-about-direction/417" }
+      ]
+    },
+    {
+      "id": 8,
+      "code": "SUR",
+      "name_uz": "Surxondaryo viloyati",
+      "name_ru": "Сурхандарьинская область",
+      "name_en": "Surkhandarya region",
+      "universities": [
+        { "id": 340, "name": "Termiz davlat universiteti", "type": "davlat", "score": 2004, "url": "https://my.uzbmb.uz/university-about-direction/340" },
+        { "id": 368, "name": "Toshkent tibbiyot akademiyasi Termiz filiali", "type": "davlat", "score": 1429, "url": "https://my.uzbmb.uz/university-about-direction/368" },
+        { "id": 357, "name": "Termiz davlat pedagogika instituti", "type": "davlat", "score": 1032, "url": "https://my.uzbmb.uz/university-about-direction/357" },
+        { "id": 348, "name": "Samarqand davlat universiteti Denov tadbirkorlik va pedagogika instituti", "type": "davlat", "score": 730, "url": "https://my.uzbmb.uz/university-about-direction/348" },
+        { "id": 442, "name": "Termiz davlat muhandislik va agrotexnologiyalar universiteti", "type": "davlat", "score": 550, "url": "https://my.uzbmb.uz/university-about-direction/442" },
+        { "id": 379, "name": "Termiz muhandislik-texnologiya instituti", "type": "davlat", "score": 405, "url": "https://my.uzbmb.uz/university-about-direction/379" },
+        { "id": 374, "name": "Termiz agrotexnologiyalar va innovatsion rivojlanish instituti", "type": "davlat", "score": 346, "url": "https://my.uzbmb.uz/university-about-direction/374" }
+      ]
+    },
+    {
+      "id": 9,
+      "code": "SIR",
+      "name_uz": "Sirdaryo viloyati",
+      "name_ru": "Сырдарьинская область",
+      "name_en": "Sirdarya region",
+      "universities": [
+        { "id": 307, "name": "Guliston davlat universiteti", "type": "davlat", "score": 1988, "url": "https://my.uzbmb.uz/university-about-direction/307" },
+        { "id": 425, "name": "Guliston davlat pedagogika instituti", "type": "davlat", "score": 961, "url": "https://my.uzbmb.uz/university-about-direction/425" },
+        { "id": 402, "name": "Toshkent kimyo-texnologiya instituti Yangiyer filiali", "type": "davlat", "score": 634, "url": "https://my.uzbmb.uz/university-about-direction/402" }
+      ]
+    },
+    {
+      "id": 10,
+      "code": "TSH",
+      "name_uz": "Toshkent shahri",
+      "name_ru": "город Ташкент",
+      "name_en": "Tashkent city",
+      "universities": [
+        { "id": 324, "name": "Toshkent davlat iqtisodiyot universiteti", "type": "davlat", "score": 17530, "url": "https://my.uzbmb.uz/university-about-direction/324" },
+        { "id": 314, "name": "O'zbekiston Milliy universiteti", "type": "davlat", "score": 12608, "url": "https://my.uzbmb.uz/university-about-direction/314" },
+        { "id": 350, "name": "Jahon iqtisodiyoti va diplomatiya universiteti", "type": "davlat", "score": 11208, "url": "https://my.uzbmb.uz/university-about-direction/350" },
+        { "id": 326, "name": "O'zbekiston davlat jahon tillari universiteti", "type": "davlat", "score": 9217, "url": "https://my.uzbmb.uz/university-about-direction/326" },
+        { "id": 384, "name": "Toshkent davlat yuridik universiteti", "type": "davlat", "score": 8320, "url": "https://my.uzbmb.uz/university-about-direction/384" },
+        { "id": 327, "name": "Toshkent davlat sharqshunoslik universiteti", "type": "davlat", "score": 7593, "url": "https://my.uzbmb.uz/university-about-direction/327" },
+        { "id": 334, "name": "Toshkent davlat transport universiteti", "type": "davlat", "score": 6648, "url": "https://my.uzbmb.uz/university-about-direction/334" },
+        { "id": 380, "name": "Toshkent axborot texnologiyalari universiteti", "type": "davlat", "score": 5710, "url": "https://my.uzbmb.uz/university-about-direction/380" },
+        { "id": 444, "name": "Toshkent davlat tibbiyot universiteti", "type": "davlat", "score": 5508, "url": "https://my.uzbmb.uz/university-about-direction/444" },
+        { "id": 306, "name": "O'zbekiston xalqaro islom akademiyasi", "type": "davlat", "score": 4955, "url": "https://my.uzbmb.uz/university-about-direction/306" },
+        { "id": 315, "name": "Toshkent davlat texnika universiteti", "type": "davlat", "score": 4322, "url": "https://my.uzbmb.uz/university-about-direction/315" },
+        { "id": 430, "name": "O'zbekiston Respublikasi Huquqni muhofaza qilish akademiyasi", "type": "davlat", "score": 3967, "url": "https://my.uzbmb.uz/university-about-direction/430" },
+        { "id": 355, "name": "Toshkent davlat pedagogika universiteti", "type": "davlat", "score": 3631, "url": "https://my.uzbmb.uz/university-about-direction/355" },
+        { "id": 322, "name": "Jamoat xavfsizligi universiteti", "type": "davlat", "score": 3497, "url": "https://my.uzbmb.uz/university-about-direction/322" },
+        { "id": 524, "name": "Profi University", "type": "nodavlat", "score": 2892, "url": "https://my.uzbmb.uz/university-about-direction/524" },
+        { "id": 328, "name": "Toshkent arxitektura-qurilish universiteti", "type": "davlat", "score": 2872, "url": "https://my.uzbmb.uz/university-about-direction/328" },
+        { "id": 395, "name": "O'zbekiston jurnalistika va ommaviy kommunikatsiyalar universiteti", "type": "davlat", "score": 2846, "url": "https://my.uzbmb.uz/university-about-direction/395" },
+        { "id": 443, "name": "O'zbekiston milliy pedagogika universiteti", "type": "davlat", "score": 2778, "url": "https://my.uzbmb.uz/university-about-direction/443" },
+        { "id": 523, "name": "Toshkent amaliy fanlar universiteti", "type": "nodavlat", "score": 2056, "url": "https://my.uzbmb.uz/university-about-direction/523" },
+        { "id": 366, "name": "Toshkent davlat stomatologiya instituti", "type": "davlat", "score": 2040, "url": "https://my.uzbmb.uz/university-about-direction/366" },
+        { "id": 302, "name": "Toshkent davlat o'zbek tili va adabiyoti universiteti", "type": "davlat", "score": 1958, "url": "https://my.uzbmb.uz/university-about-direction/302" },
+        { "id": 522, "name": "Diplomat university", "type": "nodavlat", "score": 1957, "url": "https://my.uzbmb.uz/university-about-direction/522" },
+        { "id": 376, "name": "TIQXMMI milliy tadqiqotlar universiteti", "type": "davlat", "score": 1868, "url": "https://my.uzbmb.uz/university-about-direction/376" },
+        { "id": 364, "name": "Toshkent tibbiyot akademiyasi", "type": "davlat", "score": 1824, "url": "https://my.uzbmb.uz/university-about-direction/364" },
+        { "id": 337, "name": "Toshkent kimyo-texnologiya instituti", "type": "davlat", "score": 1729, "url": "https://my.uzbmb.uz/university-about-direction/337" },
+        { "id": 678, "name": "University of Business and Science Toshkent shahar filiali", "type": "nodavlat", "score": 1712, "url": "https://my.uzbmb.uz/university-about-direction/678" },
+        { "id": 674, "name": "Central Asian University (CAU)", "type": "nodavlat", "score": 1599, "url": "https://my.uzbmb.uz/university-about-direction/674" },
+        { "id": 369, "name": "Toshkent farmatsevtika instituti", "type": "davlat", "score": 1593, "url": "https://my.uzbmb.uz/university-about-direction/369" },
+        { "id": 516, "name": "TMC instituti (Singapur)", "type": "nodavlat", "score": 1387, "url": "https://my.uzbmb.uz/university-about-direction/516" },
+        { "id": 562, "name": "Renessans ta'lim universiteti", "type": "nodavlat", "score": 1346, "url": "https://my.uzbmb.uz/university-about-direction/562" },
+        { "id": 329, "name": "Milliy rassomlik va dizayn instituti", "type": "davlat", "score": 1344, "url": "https://my.uzbmb.uz/university-about-direction/329" },
+        { "id": 331, "name": "Toshkent to'qimachilik va yengil sanoat instituti", "type": "davlat", "score": 1215, "url": "https://my.uzbmb.uz/university-about-direction/331" },
+        { "id": 367, "name": "Toshkent pediatriya tibbiyot instituti", "type": "davlat", "score": 1032, "url": "https://my.uzbmb.uz/university-about-direction/367" },
+        { "id": 563, "name": "Toshkent iqtisodiyot va texnologiyalari universiteti", "type": "nodavlat", "score": 1025, "url": "https://my.uzbmb.uz/university-about-direction/563" },
+        { "id": 377, "name": "O'zbekiston davlat san'at va madaniyat instituti", "type": "davlat", "score": 994, "url": "https://my.uzbmb.uz/university-about-direction/377" },
+        { "id": 556, "name": "Toshkent xalqaro moliyaviy boshqaruv va texnologiyalar universiteti", "type": "nodavlat", "score": 988, "url": "https://my.uzbmb.uz/university-about-direction/556" },
+        { "id": 378, "name": "O'zbekiston davlat konservatoriyasi", "type": "davlat", "score": 893, "url": "https://my.uzbmb.uz/university-about-direction/378" },
+        { "id": 529, "name": "Fan va texnologiyalar universiteti", "type": "nodavlat", "score": 889, "url": "https://my.uzbmb.uz/university-about-direction/529" },
+        { "id": 318, "name": "Geologiya fanlari universiteti", "type": "davlat", "score": 845, "url": "https://my.uzbmb.uz/university-about-direction/318" },
+        { "id": 447, "name": "O'zbekiston davlat sport akademiyasi", "type": "davlat", "score": 829, "url": "https://my.uzbmb.uz/university-about-direction/447" },
+        { "id": 387, "name": "Samarqand davlat veterinariya meditsinasi, chorvachilik va biotexnologiyalar universiteti Toshkent filiali", "type": "davlat", "score": 823, "url": "https://my.uzbmb.uz/university-about-direction/387" },
+        { "id": 566, "name": "Aniq va ijtimoiy fanlar universiteti", "type": "nodavlat", "score": 788, "url": "https://my.uzbmb.uz/university-about-direction/566" },
+        { "id": 685, "name": "Japan Digital University", "type": "nodavlat", "score": 787, "url": "https://my.uzbmb.uz/university-about-direction/685" },
+        { "id": 518, "name": "Farmatsevtika ta'lim va tadqiqot instituti", "type": "nodavlat", "score": 761, "url": "https://my.uzbmb.uz/university-about-direction/518" },
+        { "id": 530, "name": "Raqamli iqtisodiyot va agrotexnologiyalar universiteti", "type": "nodavlat", "score": 701, "url": "https://my.uzbmb.uz/university-about-direction/530" },
+        { "id": 421, "name": "O'zbekiston davlat konservatoriyasi huzuridagi Milliy estrada san'ati instituti", "type": "davlat", "score": 689, "url": "https://my.uzbmb.uz/university-about-direction/421" },
+        { "id": 407, "name": "O'zbek milliy musiqa san'ati instituti", "type": "davlat", "score": 686, "url": "https://my.uzbmb.uz/university-about-direction/407" },
+        { "id": 325, "name": "O'zbekiston davlat xoreografiya akademiyasi", "type": "davlat", "score": 685, "url": "https://my.uzbmb.uz/university-about-direction/325" }
+      ]
+    },
+    {
+      "id": 11,
+      "code": "TOV",
+      "name_uz": "Toshkent viloyati",
+      "name_ru": "Ташкентская область",
+      "name_en": "Tashkent region",
+      "universities": [
+        { "id": 354, "name": "Chirchiq davlat pedagogika universiteti", "type": "davlat", "score": 2627, "url": "https://my.uzbmb.uz/university-about-direction/354" },
+        { "id": 555, "name": "Cyber University", "type": "davlat", "score": 2014, "url": "https://my.uzbmb.uz/university-about-direction/555" },
+        { "id": 373, "name": "Toshkent davlat agrar universiteti", "type": "davlat", "score": 1425, "url": "https://my.uzbmb.uz/university-about-direction/373" },
+        { "id": 365, "name": "Toshkent davlat texnika universiteti Olmaliq filiali", "type": "davlat", "score": 1276, "url": "https://my.uzbmb.uz/university-about-direction/365" },
+        { "id": 382, "name": "O'zbekiston davlat jismoniy tarbiya va sport universiteti", "type": "davlat", "score": 1161, "url": "https://my.uzbmb.uz/university-about-direction/382" },
+        { "id": 418, "name": "Toshkent tibbiyot akademiyasi Chirchiq filiali", "type": "davlat", "score": 1069, "url": "https://my.uzbmb.uz/university-about-direction/418" },
+        { "id": 519, "name": "ISFT instituti", "type": "nodavlat", "score": 1004, "url": "https://my.uzbmb.uz/university-about-direction/519" },
+        { "id": 542, "name": "Toshkent iqtisodiyot va pedagogika universiteti", "type": "nodavlat", "score": 952, "url": "https://my.uzbmb.uz/university-about-direction/542" },
+        { "id": 433, "name": "O'zbekiston davlat jahon tillari universiteti qoshidagi Angren xorijiy tillar fakulteti", "type": "davlat", "score": 516, "url": "https://my.uzbmb.uz/university-about-direction/433" },
+        { "id": 441, "name": "Toshkent axborot texnologiyalari universiteti Zarafshon fakulteti", "type": "davlat", "score": 369, "url": "https://my.uzbmb.uz/university-about-direction/441" },
+        { "id": 684, "name": "Pharmaceutical Technical University", "type": "davlat", "score": 366, "url": "https://my.uzbmb.uz/university-about-direction/684" },
+        { "id": 682, "name": "Xalqaro qishloq xo'jaligi universiteti", "type": "davlat", "score": 347, "url": "https://my.uzbmb.uz/university-about-direction/682" },
+        { "id": 410, "name": "Toshkent axborot texnologiyalari universiteti Nurafshon filiali", "type": "davlat", "score": 342, "url": "https://my.uzbmb.uz/university-about-direction/410" },
+        { "id": 565, "name": "Ipak yo'li innovatsiyalar universiteti", "type": "nodavlat", "score": 337, "url": "https://my.uzbmb.uz/university-about-direction/565" }
+      ]
+    },
+    {
+      "id": 12,
+      "code": "FAR",
+      "name_uz": "Farg'ona viloyati",
+      "name_ru": "Ферганская область",
+      "name_en": "Fergana region",
+      "universities": [
+        { "id": 342, "name": "Farg'ona davlat universiteti", "type": "davlat", "score": 4262, "url": "https://my.uzbmb.uz/university-about-direction/342" },
+        { "id": 356, "name": "Qo'qon davlat pedagogika instituti", "type": "davlat", "score": 1962, "url": "https://my.uzbmb.uz/university-about-direction/356" },
+        { "id": 344, "name": "Farg'ona jamoat salomatligi tibbiyot instituti", "type": "davlat", "score": 1672, "url": "https://my.uzbmb.uz/university-about-direction/344" },
+        { "id": 343, "name": "Farg'ona politexnika instituti", "type": "davlat", "score": 1067, "url": "https://my.uzbmb.uz/university-about-direction/343" },
+        { "id": 445, "name": "Farg'ona davlat texnika universiteti", "type": "davlat", "score": 865, "url": "https://my.uzbmb.uz/university-about-direction/445" },
+        { "id": 424, "name": "Oziq-ovqat texnologiyasi va muhandisligi xalqaro instituti", "type": "davlat", "score": 789, "url": "https://my.uzbmb.uz/university-about-direction/424" },
+        { "id": 392, "name": "Toshkent axborot texnologiyalari universiteti Farg'ona filiali", "type": "davlat", "score": 603, "url": "https://my.uzbmb.uz/university-about-direction/392" },
+        { "id": 370, "name": "Toshkent davlat texnika universiteti Qo'qon filiali", "type": "davlat", "score": 347, "url": "https://my.uzbmb.uz/university-about-direction/370" },
+        { "id": 411, "name": "O'zbekiston davlat jismoniy tarbiya va sport universiteti Farg'ona filiali", "type": "davlat", "score": 332, "url": "https://my.uzbmb.uz/university-about-direction/411" },
+        { "id": 381, "name": "O'zbekiston davlat san'at va madaniyat instituti Farg'ona mintaqaviy filiali", "type": "davlat", "score": 287, "url": "https://my.uzbmb.uz/university-about-direction/381" }
+      ]
+    },
+    {
+      "id": 13,
+      "code": "XOR",
+      "name_uz": "Xorazm viloyati",
+      "name_ru": "Хорезмская область",
+      "name_en": "Khorezm region",
+      "universities": [
+        { "id": 341, "name": "Urganch davlat universiteti", "type": "davlat", "score": 2852, "url": "https://my.uzbmb.uz/university-about-direction/341" },
+        { "id": 338, "name": "Toshkent tibbiyot akademiyasi Urganch filiali", "type": "davlat", "score": 1482, "url": "https://my.uzbmb.uz/university-about-direction/338" },
+        { "id": 428, "name": "Urganch davlat pedagogika instituti", "type": "davlat", "score": 1224, "url": "https://my.uzbmb.uz/university-about-direction/428" },
+        { "id": 390, "name": "Toshkent axborot texnologiyalari universiteti Urganch filiali", "type": "davlat", "score": 429, "url": "https://my.uzbmb.uz/university-about-direction/390" },
+        { "id": 409, "name": "O'zbekiston davlat xoreografiya akademiyasi Urganch filiali", "type": "davlat", "score": 216, "url": "https://my.uzbmb.uz/university-about-direction/409" }
+      ]
+    },
+    {
+      "id": 14,
+      "code": "QQR",
+      "name_uz": "Qoraqalpog'iston Respublikasi",
+      "name_ru": "Республика Каракалпакстан",
+      "name_en": "Republic of Karakalpakstan",
+      "universities": [
+        { "id": 346, "name": "Qoraqalpoq davlat universiteti", "type": "davlat", "score": 3602, "url": "https://my.uzbmb.uz/university-about-direction/346" },
+        { "id": 352, "name": "Nukus davlat pedagogika instituti", "type": "davlat", "score": 1281, "url": "https://my.uzbmb.uz/university-about-direction/352" },
+        { "id": 349, "name": "Qoraqalpog'iston tibbiyot instituti", "type": "davlat", "score": 1125, "url": "https://my.uzbmb.uz/university-about-direction/349" },
+        { "id": 439, "name": "Nukus davlat texnika universiteti", "type": "davlat", "score": 695, "url": "https://my.uzbmb.uz/university-about-direction/439" },
+        { "id": 391, "name": "Toshkent axborot texnologiyalari universiteti Nukus filiali", "type": "davlat", "score": 579, "url": "https://my.uzbmb.uz/university-about-direction/391" },
+        { "id": 386, "name": "Qoraqalpog'iston qishloq xo'jaligi va agrotexnologiyalar instituti", "type": "davlat", "score": 456, "url": "https://my.uzbmb.uz/university-about-direction/386" },
+        { "id": 412, "name": "Toshkent davlat iqtisodiyot universiteti To'rtko'l fakulteti", "type": "davlat", "score": 423, "url": "https://my.uzbmb.uz/university-about-direction/412" },
+        { "id": 399, "name": "O'zbekiston davlat jismoniy tarbiya va sport universiteti Nukus filiali", "type": "davlat", "score": 388, "url": "https://my.uzbmb.uz/university-about-direction/399" },
+        { "id": 393, "name": "O'zbekiston davlat san'at va madaniyat instituti Nukus filiali", "type": "davlat", "score": 360, "url": "https://my.uzbmb.uz/university-about-direction/393" },
+        { "id": 408, "name": "O'zbekiston davlat konservatoriyasi Nukus filiali", "type": "davlat", "score": 261, "url": "https://my.uzbmb.uz/university-about-direction/408" },
+        { "id": 317, "name": "Nukus konchilik instituti", "type": "davlat", "score": 257, "url": "https://my.uzbmb.uz/university-about-direction/317" },
+        { "id": 398, "name": "Samarqand davlat veterinariya meditsinasi, chorvachilik va biotexnologiyalar universiteti Nukus filiali", "type": "davlat", "score": 247, "url": "https://my.uzbmb.uz/university-about-direction/398" },
+        { "id": 422, "name": "Qoraqalpoq davlat universiteti Chimboy fakulteti", "type": "davlat", "score": 199, "url": "https://my.uzbmb.uz/university-about-direction/422" },
+        { "id": 436, "name": "Qoraqalpoq davlat universiteti Qo'ng'irot fakulteti", "type": "davlat", "score": 177, "url": "https://my.uzbmb.uz/university-about-direction/436" }
+      ]
+    }
+  ]
+}

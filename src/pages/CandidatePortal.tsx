@@ -6,6 +6,7 @@ import FotonLogo from '../Img/e9ee15f1-3bc8-490d-941f-3b6a5ee4ce9c_removalai_pre
 import { getUzRegionGroups, UzRegionGroup } from '../app/lib/uzRegionsCodeSystem'; // adjust import path
 import type { LucideIcon } from 'lucide-react';
 import {
+  Award,
   Bell,
   Bookmark,
   Briefcase,
@@ -50,10 +51,12 @@ import {
   UZ_PHONE_PREFIX,
 } from '../app/lib/uzPhone';
 import {
+  candidateAddEducation,
   candidateAddLanguage,
   candidateAddTargetCountry,
   candidateAddWorkExperience,
-  candidateCreateProfile,
+  ensureCandidateProfile,
+  linkCandidateProfileAfterUserEdit,
   type CandidateWorkExperienceBody,
   bootstrapCandidatePortalSession,
   candidateFetchDestinationCountries,
@@ -80,15 +83,24 @@ import {
   candidateProfileStatusUz,
   cefrLevelUz,
   documentTypeUz,
+  formatSalaryCurrencyLabel,
   EDUCATION_LEVEL_SELECT_ORDER,
   educationLevelToFormValue,
   educationLevelUz,
+  normalizeEducationLevelForApi,
   experienceRangeUz,
   maritalStatusUz,
   uzOrCode,
 } from '../app/lib/adminUiUz';
 import { REGIONS } from '../app/data/mockData';
 import { countryFlagEmoji, countryNameUz } from '../app/lib/regionFlags';
+import {
+  filterUniversities,
+  findOtmRegion,
+  getOtmRegions,
+  universitiesInRegion,
+  type OtmRegion,
+} from '../app/lib/uzbekistanOtm';
 import {
   getCachedCandidateSummary,
   getCandidateProfileId,
@@ -159,13 +171,13 @@ function CandidatePortalShell({ children }: { children: ReactNode }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Screen = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+type Screen = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type View = 'onboarding' | 'home';
 
 /** Til darajasi (CEFR) — backend `level` bilan mos */
 type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
-type LanguageSelection = { name: string; level: CefrLevel };
+type LanguageSelection = { name: string; level: CefrLevel; hasCertificate: boolean };
 
 type CandidateDocumentType =
   | 'PASSPORT'
@@ -176,12 +188,12 @@ type CandidateDocumentType =
   | 'OTHER';
 
 const DOCUMENT_TYPES: Array<{ type: CandidateDocumentType; label: string; required: boolean }> = [
-  { type: 'PASSPORT', label: 'Passport', required: true },
-  { type: 'PHOTO', label: 'Photo', required: true },
-  { type: 'DIPLOMA', label: 'Diploma', required: false },
-  { type: 'CERTIFICATE', label: 'Certificate', required: false },
-  { type: 'WORK_PERMIT', label: 'Ish ruxsatnomasi', required: false },
-  { type: 'OTHER', label: 'Other', required: false },
+  { type: 'PASSPORT', label: documentTypeUz.PASSPORT, required: true },
+  { type: 'PHOTO', label: documentTypeUz.PHOTO, required: true },
+  { type: 'DIPLOMA', label: documentTypeUz.DIPLOMA, required: false },
+  { type: 'CERTIFICATE', label: documentTypeUz.CERTIFICATE, required: false },
+  { type: 'WORK_PERMIT', label: documentTypeUz.WORK_PERMIT, required: false },
+  { type: 'OTHER', label: documentTypeUz.OTHER, required: false },
 ];
 
 interface FormState {
@@ -218,6 +230,14 @@ interface FormState {
   addressDistrict: string;
   addressMFY: string;
   address: string;
+  /** Ta’lim — `uzbekistan_otm.json` */
+  educationLevel: string;
+  educationRegionId: number | null;
+  educationUniversityId: number | null;
+  educationInstitutionName: string;
+  educationSpecialty: string;
+  educationGraduationYear: number | null;
+  educationCountry: string;
   documents: Partial<Record<CandidateDocumentType, File>>;
 }
 
@@ -288,7 +308,13 @@ const SALARY_USD_STEP = 50;
 const SALARY_USD_DEFAULT_MIN = 600;
 const SALARY_USD_DEFAULT_MAX = 3500;
 
-const TOTAL_SCREENS = 8;
+const TOTAL_SCREENS = 9;
+
+const OTM_REGIONS = getOtmRegions();
+const GRADUATION_YEAR_OPTIONS = (() => {
+  const y = new Date().getFullYear();
+  return Array.from({ length: 55 }, (_, i) => y - i);
+})();
 /** Backend SMS kodi uzunligi */
 const OTP_SLOT_COUNT = 5;
 /** Qayta yuborishgacha kutish (sekund) */
@@ -329,14 +355,49 @@ function InlineNoticeBar({ notice }: { notice: SmsInlineNotice }) {
 }
 
 const PROGRESS_BY_SCREEN: Record<number, number> = {
-  2: 14,
-  3: 28,
-  4: 42,
-  5: 55,
-  6: 70,
-  7: 85,
-  8: 100,
+  2: 12,
+  3: 24,
+  4: 36,
+  5: 48,
+  6: 60,
+  7: 72,
+  8: 86,
+  9: 100,
 };
+
+function experienceRangeFromWorkEntries(entries: CandidateWorkExperienceBody[]): string {
+  const maxY = Math.max(...entries.map((e) => e.duration_years), 1);
+  return maxY >= 5 ? 'YEAR_5_PLUS' : 'YEAR_1_3';
+}
+
+function availabilityStatusFromForm(form: FormState): string {
+  if (form.availability === 'now') return 'READY_NOW';
+  if (form.availability === 'soon') return 'WITHIN_1_MONTH';
+  return 'WITHIN_3_MONTHS';
+}
+
+const PROFILE_STEP_DEFAULTS = {
+  marital_status: 'SINGLE',
+  education_level: 'BACHELOR',
+  data_consent: true,
+} as const;
+
+/** Bakalavr va yuqori — OTM ro‘yxati (viloyat → universitet) */
+const OTM_PICKER_EDUCATION_LEVELS = new Set([
+  'INCOMPLETE_HIGHER',
+  'BACHELOR',
+  'MASTER',
+  'PHD',
+  'DSC',
+  'COLLEGE',
+  'TECHNICAL_SCHOOL',
+  'VOCATIONAL',
+]);
+
+function educationLevelUsesOtmPicker(level: string): boolean {
+  const code = normalizeEducationLevelForApi(level);
+  return OTM_PICKER_EDUCATION_LEVELS.has(code);
+}
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -413,8 +474,9 @@ function OptionCard({
   onClick: () => void;
   left: React.ReactNode;
   title: string;
-  desc: string;
+  desc?: string;
 }) {
+  const descTrim = desc?.trim();
   return (
     <button
       onClick={onClick}
@@ -429,7 +491,9 @@ function OptionCard({
         <p className="font-medium" style={{ fontSize: 14, color: C.text }}>
           {title}
         </p>
-        <p style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{desc}</p>
+        {descTrim ? (
+          <p style={{ fontSize: 12, color: C.muted, marginTop: 1 }}>{descTrim}</p>
+        ) : null}
       </div>
       <div
         className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full transition-colors"
@@ -536,7 +600,7 @@ function TopBar({ onBack }: { onBack?: () => void }) {
     <div className="flex items-center gap-2 px-5 pb-2 pt-[52px]">
       <img
         src={LOGO_URL}
-        alt="THE KASB"
+        alt="The Kasb logotipi"
         width={32}
         height={32}
         style={{ objectFit: 'contain', width: 32, height: 32, borderRadius: 8 }}
@@ -565,10 +629,11 @@ function stepLabel(screen: Screen): string {
     2: 'Telefon raqam',
     3: 'SMS Tasdiqlash',
     4: 'Shaxsiy ma’lumotlar',
-    5: 'Kasb tanlash',
-    6: 'Til bilimi',
-    7: 'Hujjatlar',
+    5: 'Ta’lim',
+    6: 'Kasb tanlash',
+    7: 'Til bilimi',
     8: 'Davlat va maosh',
+    9: 'Hujjatlar',
   };
   return labels[screen] ?? '';
 }
@@ -643,7 +708,7 @@ function Screen1({
           className="mb-3 flex items-center justify-center"
           
         >
-          <img className='' src={FotonLogo} alt="THE KASB logo" style={{ objectFit: 'contain', width: 100, height: 100 }} />
+          <img className="" src={FotonLogo} alt="The Kasb logotipi" style={{ objectFit: 'contain', width: 100, height: 100 }} />
         </div>
         <p className="mb-10 font-semibold" style={{ fontSize: 12, color: C.blue, letterSpacing: '1px' }}>
           THE KASB
@@ -748,9 +813,6 @@ function Screen2({
         >
           Telefon raqamingizni kiriting
         </h2>
-        <p className="mb-6" style={{ fontSize: 14, color: C.muted }}>
-          SMS orqali tasdiqlash kodi yuboramiz
-        </p>
         <div
           className="mb-2 flex min-h-[56px] w-full min-w-0 items-stretch overflow-hidden rounded-[14px] transition-[box-shadow] focus-within:shadow-[0_0_0_2px_rgba(27,79,138,0.4)]"
           style={{ border: `1.5px solid ${C.border}`, backgroundColor: C.card }}
@@ -800,9 +862,6 @@ function Screen2({
             </span>
           ))}
         </div>
-        <p className="mb-2" style={{ fontSize: 12, color: C.muted }}>
-          Ma&apos;lumotlaringizni hech kimga bermaymiz
-        </p>
       </div>
       <div className="px-5 pb-9 pt-4">
         <InlineNoticeBar notice={notice} />
@@ -880,17 +939,7 @@ function Screen3({
         >
           SMS kodni kiriting
         </h2>
-        <p
-          className="mb-6 max-w-full break-words sm:mb-8"
-          style={{ fontSize: 14, color: C.muted, lineHeight: 1.45 }}
-        >
-          <span className="inline sm:inline">{UZ_PHONE_PREFIX} </span>
-          <span className="inline-block break-all tabular-nums">
-            {sanitizeNationalDigits(form.phoneNational) || '—'}
-          </span>{' '}
-          raqamiga yuborilgan 5 raqamli kodni kiriting
-        </p>
-        <div className="mb-5 mx-auto grid w-full max-w-[min(100%,320px)] grid-cols-5 gap-1.5 sm:max-w-[380px] sm:gap-2.5">
+        <div className="mb-6 mx-auto grid w-full max-w-[min(100%,320px)] grid-cols-5 gap-1.5 sm:mb-8 sm:max-w-[380px] sm:gap-2.5">
           {form.otp.map((d, i) => (
             <input
               key={i}
@@ -1124,23 +1173,369 @@ function Screen4Personal({
       <div className="px-5 pb-9 pt-4">
         <InlineNoticeBar notice={notice} />
         <PrimaryButton onClick={onNext} disabled={!canContinue} loading={busy}>
-          Saqlash va davom etish
+          Keyingi
         </PrimaryButton>
       </div>
     </div>
   );
 }
 
-function Screen5({
+function Screen5Education({
   onNext,
   onBack,
   form,
   setForm,
+  busy = false,
 }: {
-  onNext: () => void;
+  onNext: () => void | Promise<void>;
   onBack: () => void;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  busy?: boolean;
+}) {
+  type Panel = 'level' | 'region' | 'university' | 'details';
+
+  const [panel, setPanel] = useState<Panel>('level');
+  const [uniSearch, setUniSearch] = useState('');
+
+  /** Qoralama: foydalanuvchi darajani tanlagan bo‘lsa, qolgan qadamga qaytish */
+  useEffect(() => {
+    if (!form.educationLevel.trim()) {
+      setPanel('level');
+      return;
+    }
+    if (form.educationGraduationYear != null && form.educationInstitutionName.trim()) {
+      setPanel('details');
+      return;
+    }
+    if (form.educationInstitutionName.trim() || form.educationUniversityId != null) {
+      setPanel('details');
+      return;
+    }
+    if (form.educationRegionId != null && educationLevelUsesOtmPicker(form.educationLevel)) {
+      setPanel('university');
+      return;
+    }
+    if (educationLevelUsesOtmPicker(form.educationLevel)) {
+      setPanel('region');
+      return;
+    }
+    setPanel('details');
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat sahifaga kirganda qoralama tiklash
+  }, []);
+
+  const selectedRegion = useMemo(
+    () => findOtmRegion(OTM_REGIONS, form.educationRegionId),
+    [form.educationRegionId],
+  );
+  const universities = useMemo(
+    () => filterUniversities(universitiesInRegion(selectedRegion), uniSearch),
+    [selectedRegion, uniSearch],
+  );
+
+  const handleTopBack = () => {
+    if (panel === 'level') {
+      onBack();
+      return;
+    }
+    if (panel === 'region') {
+      setPanel('level');
+      return;
+    }
+    if (panel === 'details' && form.educationLevel && !educationLevelUsesOtmPicker(form.educationLevel)) {
+      setPanel('level');
+      setForm((f) => ({
+        ...f,
+        educationInstitutionName: '',
+        educationSpecialty: '',
+        educationGraduationYear: null,
+      }));
+      return;
+    }
+    if (panel === 'university') {
+      setPanel('region');
+      setUniSearch('');
+      setForm((f) => ({
+        ...f,
+        educationRegionId: null,
+        educationUniversityId: null,
+        educationInstitutionName: '',
+      }));
+      return;
+    }
+    setPanel('university');
+    setForm((f) => ({
+      ...f,
+      educationUniversityId: null,
+      educationInstitutionName: '',
+      educationSpecialty: '',
+      educationGraduationYear: null,
+    }));
+  };
+
+  const selectLevel = (level: string) => {
+    setForm((f) => ({
+      ...f,
+      educationLevel: level,
+      educationRegionId: null,
+      educationUniversityId: null,
+      educationInstitutionName: '',
+      educationSpecialty: '',
+      educationGraduationYear: null,
+    }));
+    setPanel(educationLevelUsesOtmPicker(level) ? 'region' : 'details');
+  };
+
+  const selectRegion = (region: OtmRegion) => {
+    setForm((f) => ({
+      ...f,
+      educationRegionId: region.id,
+      educationUniversityId: null,
+      educationInstitutionName: '',
+    }));
+    setUniSearch('');
+    setPanel('university');
+  };
+
+  const selectUniversity = (u: { id: number; name: string }) => {
+    setForm((f) => ({
+      ...f,
+      educationUniversityId: u.id,
+      educationInstitutionName: u.name,
+      educationCountry: 'UZB',
+    }));
+    setPanel('details');
+  };
+
+  const canFinish =
+    !!form.educationLevel &&
+    !!form.educationInstitutionName.trim() &&
+    form.educationGraduationYear != null &&
+    form.educationGraduationYear >= 1950;
+
+  const fieldStyle: CSSProperties = {
+    borderColor: C.border,
+    backgroundColor: C.card2,
+    color: C.text,
+    fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+  };
+  const ctl =
+    'mt-2 box-border min-h-[48px] w-full rounded-[14px] border px-3.5 py-2.5 text-[15px] outline-none focus:border-[#2980B9]';
+
+  return (
+    <div className="flex h-full flex-col">
+      <TopBar onBack={handleTopBack} />
+      <ProgressBar screen={5} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5">
+        <div className="mb-3 flex items-center gap-2">
+          <GraduationCap size={22} style={{ color: C.blueL }} strokeWidth={2} aria-hidden />
+          <h2
+            style={{
+              fontSize: 28,
+              fontWeight: 700,
+              color: C.text,
+              letterSpacing: '-0.5px',
+              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+            }}
+          >
+            {panel === 'level'
+              ? 'Ta’lim darajasi'
+              : panel === 'region'
+                ? 'Viloyat'
+                : panel === 'university'
+                  ? 'OTM'
+                  : 'Ta’lim tafsilotlari'}
+          </h2>
+        </div>
+
+        {panel !== 'level' && form.educationLevel ? (
+          <button
+            type="button"
+            onClick={() => setPanel('level')}
+            className="mb-3 flex w-full items-center justify-between rounded-[12px] border px-3 py-2.5 text-left transition-all active:scale-[0.98]"
+            style={{ borderColor: C.border, backgroundColor: C.card2 }}
+          >
+            <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+              Ta’lim darajasi
+            </span>
+            <span className="text-[14px] font-semibold" style={{ color: C.blueL }}>
+              {educationLevelUz[form.educationLevel] ?? form.educationLevel} · o‘zgartish
+            </span>
+          </button>
+        ) : null}
+
+        {panel === 'level' ? (
+          <div className="grid gap-2 pb-2">
+            {EDUCATION_LEVEL_SELECT_ORDER.map((code) => (
+              <OptionCard
+                key={code}
+                selected={form.educationLevel === code}
+                onClick={() => selectLevel(code)}
+                left={
+                  <span
+                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[11px] font-bold"
+                    style={{ backgroundColor: C.card2, border: `1px solid ${C.border}`, color: C.blueL }}
+                  >
+                    {(educationLevelUz[code] ?? code).slice(0, 2).toUpperCase()}
+                  </span>
+                }
+                title={educationLevelUz[code] ?? code}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {panel === 'region' && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
+          <div className="grid gap-2 pb-2">
+            {OTM_REGIONS.map((region) => (
+              <OptionCard
+                key={region.id}
+                selected={form.educationRegionId === region.id}
+                onClick={() => selectRegion(region)}
+                left={
+                  <span className="text-[13px] font-semibold tabular-nums" style={{ color: C.muted }}>
+                    {region.code}
+                  </span>
+                }
+                title={region.name_uz}
+              />
+            ))}
+          </div>
+        ) : null}
+
+        {panel === 'university' && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
+          <div className="pb-2">
+            <input
+              type="search"
+              placeholder="OTM qidirish…"
+              value={uniSearch}
+              onChange={(e) => setUniSearch(e.target.value)}
+              className={ctl}
+              style={fieldStyle}
+            />
+            <div className="mt-3 grid max-h-[min(50vh,420px)] gap-2 overflow-y-auto">
+              {universities.length === 0 ? (
+                <p className="py-6 text-center text-[13px]" style={{ color: C.muted }}>
+                  OTM topilmadi
+                </p>
+              ) : (
+                universities.map((u) => (
+                  <OptionCard
+                    key={u.id}
+                    selected={form.educationUniversityId === u.id}
+                    onClick={() => selectUniversity(u)}
+                    left={
+                      <span
+                        className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase"
+                        style={{
+                          backgroundColor: u.type === 'davlat' ? `${C.blue}22` : `${C.gold}22`,
+                          color: u.type === 'davlat' ? C.blueL : C.gold,
+                        }}
+                      >
+                        {u.type === 'davlat' ? 'Davlat' : 'Nodavlat'}
+                      </span>
+                    }
+                    title={u.name}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
+
+        {panel === 'details' ? (
+          <div className="pb-2">
+            {form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
+              <p
+                className="mb-3 rounded-[12px] border px-3 py-2.5 text-[13px]"
+                style={{ borderColor: C.border, color: C.text, backgroundColor: C.card2 }}
+              >
+                {form.educationInstitutionName || '—'}
+              </p>
+            ) : (
+              <label className="mb-3 block">
+                <SectionLabel>Ta’lim muassasasi</SectionLabel>
+                <input
+                  type="text"
+                  className={ctl}
+                  style={fieldStyle}
+                  value={form.educationInstitutionName}
+                  onChange={(e) =>
+                    setForm((f) => ({
+                      ...f,
+                      educationInstitutionName: e.target.value,
+                      educationCountry: 'UZB',
+                    }))
+                  }
+                  placeholder="Maktab, kollej yoki boshqa muassasa"
+                />
+              </label>
+            )}
+            <label className="block">
+              <SectionLabel>Mutaxassislik</SectionLabel>
+              <input
+                type="text"
+                className={ctl}
+                style={fieldStyle}
+                value={form.educationSpecialty}
+                onChange={(e) => setForm((f) => ({ ...f, educationSpecialty: e.target.value }))}
+                placeholder="Masalan: Iqtisodiyot"
+              />
+            </label>
+            <label className="mt-4 block">
+              <SectionLabel>Tugatgan yili</SectionLabel>
+              <select
+                className={ctl}
+                style={fieldStyle}
+                value={form.educationGraduationYear ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    educationGraduationYear: v ? Number(v) : null,
+                  }));
+                }}
+              >
+                <option value="">Tanlang</option>
+                {GRADUATION_YEAR_OPTIONS.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        ) : null}
+      </div>
+      <div className="px-5 pb-9 pt-4">
+        {panel === 'details' ? (
+          <PrimaryButton
+            onClick={() => void Promise.resolve(onNext())}
+            disabled={!canFinish || busy}
+            loading={busy}
+          >
+            Keyingi
+          </PrimaryButton>
+        ) : (
+          <div className="h-[52px]" aria-hidden />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Screen6Work({
+  onNext,
+  onBack,
+  form,
+  setForm,
+  busy = false,
+}: {
+  onNext: () => void | Promise<void>;
+  onBack: () => void;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  busy?: boolean;
 }) {
   type Panel = 'category' | 'profession' | 'otherDetail' | 'experience';
 
@@ -1312,7 +1707,7 @@ function Screen5({
       workCustomProfessionName: '',
       workExperienceYears: null,
     }));
-    onNext();
+    void Promise.resolve(onNext());
   };
 
   const primaryDisabled =
@@ -1327,7 +1722,7 @@ function Screen5({
   return (
     <div className="flex h-full flex-col">
       <TopBar onBack={handleTopBack} />
-      <ProgressBar screen={5} />
+      <ProgressBar screen={6} />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-5">
         <h2
           className="mb-1.5"
@@ -1347,16 +1742,6 @@ function Screen5({
                 ? 'Kasb nomi'
                 : 'Ish tajribangiz'}
         </h2>
-        <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
-          {panel === 'category'
-            ? 'Kategoriyani tanlang — keyin ro‘yxatdan kasbni tanlaysiz.'
-            : panel === 'profession'
-              ? 'O‘zingizga mos kasbni tanlang yoki «Boshqa kasb».'
-              : panel === 'otherDetail'
-                ? 'Ro‘yxatda bo‘lmagan kasbingizni qisqa yozing.'
-                : 'Yillarni tanlang (faqat bittasi).'}
-        </p>
-
         {loadErr ? (
           <p className="mb-3 rounded-xl px-3 py-2.5 text-center text-[13px]" style={{ backgroundColor: `${C.red}18`, color: C.text }}>
             {loadErr}
@@ -1505,9 +1890,10 @@ function Screen5({
           </button>
           <PrimaryButton
             onClick={() => goNextWithWorkExperiences()}
-            disabled={!canFinishExperience && form.workExperienceEntries.length === 0}
+            disabled={(!canFinishExperience && form.workExperienceEntries.length === 0) || busy}
+            loading={busy}
           >
-            Keyingi bosqich
+            Keyingi
           </PrimaryButton>
         </div>
       ) : (
@@ -1517,38 +1903,105 @@ function Screen5({
   );
 }
 
+function LanguageCertificateToggle({
+  active,
+  onToggle,
+}: {
+  active: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="mt-2.5 flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 transition-all active:scale-[0.98]"
+      style={{
+        border: `1.5px solid ${active ? C.gold : C.border}`,
+        backgroundColor: active ? `${C.gold}22` : C.card,
+      }}
+      aria-pressed={active}
+    >
+      <span
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+        style={{
+          backgroundColor: active ? `${C.gold}33` : C.card2,
+          color: active ? C.gold : C.muted,
+        }}
+      >
+        <Award className="h-4 w-4" strokeWidth={2} aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1 text-left">
+        <span className="block text-[13px] font-semibold" style={{ color: active ? C.text : C.muted }}>
+          Sertifikatim bor
+        </span>
+        {active ? (
+          <span className="text-[11px] font-medium" style={{ color: C.gold }}>
+            Belgilandi
+          </span>
+        ) : null}
+      </span>
+      <span
+        className="relative flex h-6 w-11 shrink-0 items-center rounded-full px-0.5 transition-colors"
+        style={{ backgroundColor: active ? C.gold : C.border }}
+        aria-hidden
+      >
+        <span
+          className="h-5 w-5 rounded-full bg-white shadow-sm transition-transform"
+          style={{ transform: active ? 'translateX(20px)' : 'translateX(0)' }}
+        />
+      </span>
+    </button>
+  );
+}
+
 function Screen6({
   onNext,
   onBack,
   form,
   setForm,
+  busy = false,
 }: {
-  onNext: () => void;
+  onNext: () => void | Promise<void>;
   onBack: () => void;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  busy?: boolean;
 }) {
   const [showOtherLangPanel, setShowOtherLangPanel] = useState(false);
   const [otherLangDraft, setOtherLangDraft] = useState('');
   const [otherLangLevel, setOtherLangLevel] = useState<CefrLevel>('B1');
+  const [otherLangCertificate, setOtherLangCertificate] = useState(false);
 
   const langLevel = (name: string) => form.languageSelections.find((s) => s.name === name)?.level ?? null;
 
   const setPresetLangLevel = (name: string, level: CefrLevel) => {
     setForm((f) => {
       if (f.declaresNoLanguage) {
-        return { ...f, declaresNoLanguage: false, languageSelections: [{ name, level }] };
+        return {
+          ...f,
+          declaresNoLanguage: false,
+          languageSelections: [{ name, level, hasCertificate: false }],
+        };
       }
       const i = f.languageSelections.findIndex((s) => s.name === name);
       const next = [...f.languageSelections];
       if (i >= 0) {
         if (next[i].level === level) next.splice(i, 1);
-        else next[i] = { name, level };
+        else next[i] = { name, level, hasCertificate: next[i].hasCertificate };
       } else {
-        next.push({ name, level });
+        next.push({ name, level, hasCertificate: false });
       }
       return { ...f, languageSelections: next, declaresNoLanguage: false };
     });
+  };
+
+  const toggleCertificate = (name: string) => {
+    setForm((f) => ({
+      ...f,
+      languageSelections: f.languageSelections.map((s) =>
+        s.name === name ? { ...s, hasCertificate: !s.hasCertificate } : s,
+      ),
+    }));
   };
 
   const toggleNoLanguage = () => {
@@ -1566,15 +2019,23 @@ function Screen6({
     const name = normalizeCustomLangLabel(raw) ?? raw;
     setForm((f) => {
       if (f.declaresNoLanguage) {
-        return { ...f, declaresNoLanguage: false, languageSelections: [{ name, level: otherLangLevel }] };
+        return {
+          ...f,
+          declaresNoLanguage: false,
+          languageSelections: [{ name, level: otherLangLevel, hasCertificate: otherLangCertificate }],
+        };
       }
       if (f.languageSelections.some((s) => s.name.toLowerCase() === name.toLowerCase())) return f;
       return {
         ...f,
-        languageSelections: [...f.languageSelections, { name, level: otherLangLevel }],
+        languageSelections: [
+          ...f.languageSelections,
+          { name, level: otherLangLevel, hasCertificate: otherLangCertificate },
+        ],
       };
     });
     setOtherLangDraft('');
+    setOtherLangCertificate(false);
     setShowOtherLangPanel(false);
   };
 
@@ -1591,7 +2052,7 @@ function Screen6({
   return (
     <div className="flex h-full flex-col">
       <TopBar onBack={onBack} />
-      <ProgressBar screen={6} />
+      <ProgressBar screen={7} />
       <div className="flex flex-1 flex-col overflow-y-auto px-5">
         <h2
           className="mb-1.5"
@@ -1605,11 +2066,7 @@ function Screen6({
         >
           Til bilimi
         </h2>
-        <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
-          Har bir til uchun darajani belgilang. «Boshqa til» bosilganda yozish maydoni ochiladi.
-        </p>
-
-        <div className="flex flex-col gap-4 pb-2">
+        <div className="mb-4 flex flex-col gap-4 pb-2">
           {PRESET_LANGUAGE_LABELS.map((lang) => (
             <div key={lang} className="rounded-[14px] px-3 py-2.5" style={{ border: `1px solid ${C.border}`, backgroundColor: C.card2 }}>
               <p className="mb-2 font-medium" style={{ fontSize: 13, color: C.text }}>
@@ -1635,6 +2092,12 @@ function Screen6({
                   );
                 })}
               </div>
+              {langLevel(lang) ? (
+                <LanguageCertificateToggle
+                  active={!!form.languageSelections.find((s) => s.name === lang)?.hasCertificate}
+                  onToggle={() => toggleCertificate(lang)}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -1717,11 +2180,15 @@ function Screen6({
                   );
                 })}
               </div>
+              <LanguageCertificateToggle
+                active={otherLangCertificate}
+                onToggle={() => setOtherLangCertificate((v) => !v)}
+              />
               <button
                 type="button"
                 onClick={addOtherLanguage}
                 disabled={!otherLangDraft.trim()}
-                className="w-full rounded-[12px] py-2.5 text-sm font-semibold transition-opacity disabled:opacity-40"
+                className="mt-3 w-full rounded-[12px] py-2.5 text-sm font-semibold transition-opacity disabled:opacity-40"
                 style={{
                   border: `1.5px solid ${C.blue}`,
                   backgroundColor: C.blueSelected,
@@ -1735,29 +2202,39 @@ function Screen6({
         </div>
 
         {customSelections.length > 0 ? (
-          <div className="mb-4 flex flex-wrap gap-2">
+          <div className="mb-4 flex flex-col gap-2">
             {customSelections.map((s) => (
-              <button
+              <div
                 key={`${s.name}-${s.level}`}
-                type="button"
-                onClick={() => removeSelection(s.name)}
-                className="rounded-[10px] px-3 py-2 text-[13px] font-medium transition-all active:scale-95"
-                style={{
-                  border: `1.5px solid ${C.blue}`,
-                  backgroundColor: C.blueSelected,
-                  color: C.blueL,
-                }}
-                title="Olib tashlash"
+                className="rounded-[14px] px-3 py-2.5"
+                style={{ border: `1px solid ${C.border}`, backgroundColor: C.card2 }}
               >
-                {s.name} · {s.level} ×
-              </button>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <p className="font-medium" style={{ fontSize: 13, color: C.text }}>
+                    {s.name} · {s.level}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => removeSelection(s.name)}
+                    className="rounded-lg px-2 py-1 text-[12px] font-semibold"
+                    style={{ color: C.muted }}
+                    title="Olib tashlash"
+                  >
+                    Olib tashlash
+                  </button>
+                </div>
+                <LanguageCertificateToggle
+                  active={s.hasCertificate}
+                  onToggle={() => toggleCertificate(s.name)}
+                />
+              </div>
             ))}
           </div>
         ) : null}
       </div>
       <div className="px-5 pb-9 pt-4">
-        <PrimaryButton onClick={onNext} disabled={!langsOk}>
-          Davom etish
+        <PrimaryButton onClick={() => void Promise.resolve(onNext())} disabled={!langsOk || busy} loading={busy}>
+          Keyingi
         </PrimaryButton>
       </div>
     </div>
@@ -1771,23 +2248,22 @@ function Screen7Documents({
   setForm,
   busy,
 }: {
-  onNext: () => void;
+  onNext: () => void | Promise<void>;
   onBack: () => void;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   busy: boolean;
 }) {
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const requiredMissing = DOCUMENT_TYPES.filter((d) => d.required && !form.documents[d.type]);
-  const canContinue = requiredMissing.length === 0 && !uploading && !busy;
+  const canContinue = requiredMissing.length === 0 && !busy;
 
   const handleFileChange = (type: CandidateDocumentType, file: File | null) => {
     setForm((f) => ({ ...f, documents: { ...f.documents, [type]: file } }));
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (requiredMissing.length > 0) {
       setError(`Iltimos, quyidagi hujjatlarni tanlang: ${requiredMissing.map((d) => d.label).join(', ')}`);
       return;
@@ -1797,27 +2273,14 @@ function Screen7Documents({
       setError('Hech qanday hujjat tanlanmadi.');
       return;
     }
-
     setError(null);
-    setUploading(true);
-    try {
-      for (const doc of filesToUpload) {
-        const file = form.documents[doc.type];
-        if (!file) continue;
-        await candidateUploadDocument(file, doc.type);
-      }
-      onNext();
-    } catch (e) {
-      setError(candidatePortalError(e, 'Hujjatlarni yuklashda xato.')); 
-    } finally {
-      setUploading(false);
-    }
+    void Promise.resolve(onNext());
   };
 
   return (
     <div className="flex h-full flex-col">
       <TopBar onBack={onBack} />
-      <ProgressBar screen={7} />
+      <ProgressBar screen={9} />
       <div className="flex flex-1 flex-col overflow-y-auto px-5">
         <h2
           className="mb-1.5"
@@ -1831,15 +2294,17 @@ function Screen7Documents({
         >
           Hujjatlar
         </h2>
-        <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
-          Iltimos, pasport va rasmni majburiy yuklang. Boshqa hujjatlar ixtiyoriy.
-        </p>
-        <div className="flex flex-col gap-4 pb-4">
+        <div className="mb-4 flex flex-col gap-4 pb-4">
           {DOCUMENT_TYPES.map((doc) => {
             const selectedFile = form.documents[doc.type];
+            const inputId = `doc-file-${doc.type}`;
             return (
-              <label key={doc.type} className="block rounded-[16px] border border-white/10 bg-[#0f1720] p-4">
-                <div className="mb-2 flex items-center justify-between gap-2">
+              <div
+                key={doc.type}
+                className="rounded-[16px] border p-4"
+                style={{ borderColor: C.border, backgroundColor: C.card2 }}
+              >
+                <div className="mb-3 flex items-center justify-between gap-2">
                   <span className="font-semibold" style={{ color: C.text }}>
                     {doc.label}
                   </span>
@@ -1847,20 +2312,26 @@ function Screen7Documents({
                     {doc.required ? 'Majburiy' : 'Ixtiyoriy'}
                   </span>
                 </div>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <input
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={(e) => handleFileChange(doc.type, e.target.files?.[0] ?? null)}
-                    className="w-full rounded-[14px] border border-white/10 bg-[#111827] px-3 py-3 text-sm text-white outline-none transition-colors sm:w-auto"
-                  />
-                  {selectedFile ? (
-                    <div className="text-[13px] text-white/80">
-                      {selectedFile.name}
-                    </div>
-                  ) : null}
-                </div>
-              </label>
+                <input
+                  id={inputId}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="sr-only"
+                  onChange={(e) => handleFileChange(doc.type, e.target.files?.[0] ?? null)}
+                />
+                <label
+                  htmlFor={inputId}
+                  className="flex min-h-[48px] cursor-pointer items-center justify-center rounded-[14px] border px-4 py-3 text-center text-sm font-semibold transition-all active:scale-[0.98]"
+                  style={{ borderColor: C.blue, backgroundColor: C.blueSelected, color: C.blueL }}
+                >
+                  {selectedFile ? 'Boshqa fayl tanlash' : 'Fayl tanlash'}
+                </label>
+                <p className="mt-2 text-[12px]" style={{ color: C.muted }}>
+                  {selectedFile
+                    ? `Tanlangan: ${selectedFile.name}`
+                    : 'Rasm yoki PDF (maks. bir fayl)'}
+                </p>
+              </div>
             );
           })}
         </div>
@@ -1871,8 +2342,8 @@ function Screen7Documents({
         ) : null}
       </div>
       <div className="px-5 pb-9 pt-4">
-        <PrimaryButton onClick={handleSubmit} disabled={!canContinue} loading={busy || uploading}>
-          Yuklash va davom etish
+        <PrimaryButton onClick={handleSubmit} disabled={!canContinue} loading={busy}>
+          Yakunlash
         </PrimaryButton>
       </div>
     </div>
@@ -1965,7 +2436,7 @@ function DesiredSalaryRangeBlock({
 
   return (
     <div className="mb-6">
-      <SectionLabel>Kutilayotgan oylik (USD)</SectionLabel>
+      <SectionLabel>Kutilayotgan oylik (AQSh dollari)</SectionLabel>
       <div className="mb-1 mt-2 flex items-baseline justify-between gap-2">
         <div>
           <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: C.muted }}>
@@ -2024,8 +2495,8 @@ function DesiredSalaryRangeBlock({
         />
       </div>
       <p className="text-[11px]" style={{ color: C.muted }}>
-        Oraliq: {SALARY_USD_MIN_BOUND.toLocaleString('en-US')} – {SALARY_USD_MAX_BOUND.toLocaleString('en-US')} $ · qadam{' '}
-        {SALARY_USD_STEP} $
+        Oraliq: {SALARY_USD_MIN_BOUND.toLocaleString('uz-UZ')} – {SALARY_USD_MAX_BOUND.toLocaleString('uz-UZ')} $ · qadam{' '}
+        {SALARY_USD_STEP.toLocaleString('uz-UZ')} $
       </p>
     </div>
   );
@@ -2104,11 +2575,9 @@ function Screen8({
         >
           Maqsad mamlakatlar va maosh
         </h2>
-        <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
-          Qaysi davlatlarda ish qidirmoqchisiz va qaysi oylik oraliqni kutyapsiz.
-        </p>
-
-        <SectionLabel>Maqsad mamlakatlar</SectionLabel>
+        <div className="mt-2">
+          <SectionLabel>Maqsad mamlakatlar</SectionLabel>
+        </div>
         {loadingCountries ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16">
             <Loader2 className="h-8 w-8 animate-spin" style={{ color: C.blueL }} />
@@ -2159,7 +2628,7 @@ function Screen8({
       </div>
       <div className="px-5 pb-9 pt-4">
         <PrimaryButton onClick={onNext} disabled={!canSubmit || loadingCountries} loading={busy}>
-          Arizani yuborish
+          Keyingi
         </PrimaryButton>
       </div>
     </div>
@@ -2550,10 +3019,10 @@ function initialsFromName(name: string): string {
 function formatVacancySalary(v: PublicVacancyRow): string {
   const min = v.salary_min ?? v.salaryMin;
   const max = v.salary_max ?? v.salaryMax;
-  const cur = String(v.salary_currency ?? v.salaryCurrency ?? 'USD');
-  if (typeof min === 'number' && typeof max === 'number') return `${min} – ${max} ${cur}/oy`;
-  if (typeof min === 'number') return `${min}+ ${cur}/oy`;
-  return `— ${cur}`;
+  const cur = formatSalaryCurrencyLabel(String(v.salary_currency ?? v.salaryCurrency ?? 'USD'));
+  if (typeof min === 'number' && typeof max === 'number') return `${min.toLocaleString('uz-UZ')} – ${max.toLocaleString('uz-UZ')} ${cur}/oy`;
+  if (typeof min === 'number') return `${min.toLocaleString('uz-UZ')}+ ${cur}/oy`;
+  return `—`;
 }
 
 function vacancyTitle(v: PublicVacancyRow): string {
@@ -3201,7 +3670,7 @@ function CandidateProfileUnifiedForm({
             value={salCur}
             onChange={(e) => setSalCur(e.target.value.toUpperCase().slice(0, 8))}
             maxLength={8}
-            placeholder="USD"
+            placeholder="Masalan: USD yoki EUR"
           />
         </label>
         <label className="block">
@@ -3335,12 +3804,12 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const langs = languagesSummary(profile);
   const salaryMin = pickNum(profile, 'desired_salary_min', 'desiredSalaryMin');
   const salaryMax = pickNum(profile, 'desired_salary_max', 'desiredSalaryMax');
-  const salaryCur = pickStr(profile, 'salary_currency', 'salaryCurrency') || 'USD';
+  const salaryCur = formatSalaryCurrencyLabel(pickStr(profile, 'salary_currency', 'salaryCurrency') || 'USD');
   const salaryTxt =
     salaryMin != null && salaryMax != null
-      ? `${salaryMin} – ${salaryMax} ${salaryCur}`
+      ? `${salaryMin.toLocaleString('uz-UZ')} – ${salaryMax.toLocaleString('uz-UZ')} ${salaryCur}`
       : salaryMin != null
-        ? `${salaryMin}+ ${salaryCur}`
+        ? `${salaryMin.toLocaleString('uz-UZ')}+ ${salaryCur}`
         : '—';
   const availability = pickStr(profile, 'availability_status', 'availabilityStatus');
   const experience = pickStr(profile, 'experience_range', 'experienceRange');
@@ -3396,7 +3865,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
             const d = pickStr(o, 'description');
             const dur = formatWorkExperienceDuration(o);
             const bits = [dur !== '—' ? dur : '', d].filter(Boolean);
-            return bits.join(' — ') || `Band ${i + 1}`;
+            return bits.join(' — ') || `Qator ${i + 1}`;
           })
           .filter(Boolean)
           .join(' · ');
@@ -4187,7 +4656,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
         style={{ backgroundColor: C.card, borderBottom: `1px solid ${C.border}` }}
       >
         <div className="flex min-w-0 items-center gap-2">
-          <img src={LOGO_URL} alt="THE KASB" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 6 }} />
+          <img src={LOGO_URL} alt="The Kasb logotipi" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 6 }} />
           <span
             className="truncate"
             style={{
@@ -4313,6 +4782,13 @@ export default function CandidatePortal() {
     addressDistrict: '',
     addressMFY: '',
     address: '',
+    educationLevel: '',
+    educationRegionId: null,
+    educationUniversityId: null,
+    educationInstitutionName: '',
+    educationSpecialty: '',
+    educationGraduationYear: null,
+    educationCountry: 'UZB',
     documents: {},
   });
   const [smsNoticeScreen2, setSmsNoticeScreen2] = useState<SmsInlineNotice>(null);
@@ -4404,7 +4880,7 @@ export default function CandidatePortal() {
     };
   }, []);
 
-  const goNext = () => setScreen((s) => (Math.min(s + 1, 7) as Screen));
+  const goNext = () => setScreen((s) => (Math.min(s + 1, 9) as Screen));
   const goBack = () => setScreen((s) => (Math.max(s - 1, 1) as Screen));
 
   const phoneE164 = useMemo(() => phoneE164FromNationalDigits(form.phoneNational), [form.phoneNational]);
@@ -4483,7 +4959,7 @@ export default function CandidatePortal() {
     setBusy(true);
     setProfileNoticeScreen4(null);
     try {
-      await candidateUpdateMyUser({
+      const userId = await candidateUpdateMyUser({
         firstName: form.profileFirstName.trim(),
         lastName: form.profileLastName.trim(),
         genderType: form.profileGender,
@@ -4494,6 +4970,10 @@ export default function CandidatePortal() {
         addressMFY: form.addressMFY.trim() || null,
         address: form.address.trim() || null,
         telegramChatId,
+      });
+      await linkCandidateProfileAfterUserEdit(userId, {
+        ...PROFILE_STEP_DEFAULTS,
+        region_id: normalizeCandidateRegionId(form.addressRegion) ?? undefined,
       });
       goNext();
     } catch (e) {
@@ -4506,70 +4986,173 @@ export default function CandidatePortal() {
     }
   }
 
-  async function submitProfileAndLoadResults() {
+  async function saveEducationAndNext() {
+    if (!form.educationLevel) {
+      toast.error('Ta’lim darajasini tanlang.');
+      return;
+    }
+    if (!form.educationInstitutionName.trim()) {
+      toast.error(
+        educationLevelUsesOtmPicker(form.educationLevel)
+          ? 'OTM yoki muassasani tanlang.'
+          : 'Ta’lim muassasasini kiriting.',
+      );
+      return;
+    }
+    if (form.educationGraduationYear == null || form.educationGraduationYear < 1950) {
+      toast.error('Tugatgan yilni tanlang.');
+      return;
+    }
+
     setBusy(true);
     try {
-      const entries = form.workExperienceEntries;
-      if (!entries.length) {
-        throw new Error('Ish tajribasi kiritilmagan.');
-      }
-      const maxY = Math.max(...entries.map((e) => e.duration_years), 1);
-      const experience_range = maxY >= 5 ? 'YEAR_5_PLUS' : 'YEAR_1_3';
+      await ensureCandidateProfile({
+        ...PROFILE_STEP_DEFAULTS,
+        education_level: normalizeEducationLevelForApi(form.educationLevel),
+      });
+      await candidateAddEducation({
+        level: form.educationLevel,
+        institution_name: form.educationInstitutionName.trim(),
+        graduation_year: form.educationGraduationYear,
+        country: form.educationCountry,
+        ...(form.educationSpecialty.trim() ? { specialty: form.educationSpecialty.trim() } : {}),
+      });
+      await candidateUpdateProfile({
+        ...PROFILE_STEP_DEFAULTS,
+        education_level: normalizeEducationLevelForApi(form.educationLevel),
+      });
+      goNext();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Ta’lim ma’lumotlarini saqlashda xato.'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      const availability_status =
-        form.availability === 'now' ? 'READY_NOW' : form.availability === 'soon' ? 'WITHIN_1_MONTH' : 'WITHIN_3_MONTHS';
+  async function saveWorkAndNext() {
+    const entries = form.workExperienceEntries;
+    if (!entries.length) {
+      toast.error('Kamida bitta ish tajribasini kiriting.');
+      return;
+    }
+    const lead = entries[0]!;
+    const customName = lead.custom_profession_name?.trim() ?? '';
+    if (lead.profession_category_id == null || lead.profession_category_id <= 0) {
+      toast.error('Kasb toifasi aniqlanmadi.');
+      return;
+    }
+    if ((lead.profession_id == null || lead.profession_id <= 0) && !customName) {
+      toast.error('Kasb tanlanmagan yoki maxsus nomi kiritilmagan.');
+      return;
+    }
 
-      const lead = entries[0]!;
-      const customName = lead.custom_profession_name?.trim() ?? '';
-      if (lead.profession_category_id == null || lead.profession_category_id <= 0) {
-        throw new Error('Kasb toifasi aniqlanmadi. 5-qadamda ish tajribasini qayta kiriting.');
-      }
-      if (
-        (lead.profession_id == null || lead.profession_id <= 0) &&
-        !customName
-      ) {
-        throw new Error('Kasb tanlanmagan. 5-qadamda kasbni tanlang yoki «Boshqa» kasbni kiriting.');
-      }
-
-      const createdProfileId = await candidateCreateProfile({
-        marital_status: 'SINGLE',
-        education_level: 'BACHELOR',
-        data_consent: true,
-        experience_range,
-        experience_years: maxY,
-        availability_status,
-        desired_salary_min: form.desiredSalaryMin,
-        desired_salary_max: form.desiredSalaryMax,
-        salary_currency: 'USD',
+    setBusy(true);
+    try {
+      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      await candidateAddWorkExperience(entries);
+      await candidateUpdateProfile({
+        ...PROFILE_STEP_DEFAULTS,
+        experience_range: experienceRangeFromWorkEntries(entries),
         profession_id: lead.profession_id,
         profession_category_id: lead.profession_category_id,
         ...(customName ? { custom_profession_name: customName } : {}),
       });
-      if (!createdProfileId && !getCandidateProfileId()) {
-        throw new Error('Profil yaratilmadi. Internet aloqasini tekshirib, qayta urinib ko‘ring.');
+      goNext();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Ish tajribasini saqlashda xato.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveLanguagesAndNext() {
+    if (!form.declaresNoLanguage && form.languageSelections.length === 0) {
+      toast.error('Kamida bitta til tanlang yoki «Til bilmayman» ni belgilang.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      if (!form.declaresNoLanguage) {
+        for (const { name, level, hasCertificate } of form.languageSelections) {
+          const lang = toCandidateLanguageEnum(name);
+          if (!lang) continue;
+          await candidateAddLanguage({
+            language: lang,
+            level,
+            has_certificate: hasCertificate === true,
+          });
+        }
       }
+      goNext();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Til ma’lumotlarini saqlashda xato.'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      await candidateAddWorkExperience(entries);
+  async function saveCountriesAndNext() {
+    if (!form.countries.length) {
+      toast.error('Kamida bitta maqsad mamlakat tanlang.');
+      return;
+    }
+    if (!form.availability) {
+      toast.error('Bandlik tayyorgarligini tanlang.');
+      return;
+    }
 
+    setBusy(true);
+    try {
+      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
       for (let i = 0; i < form.countries.length; i++) {
         const destination_country_id = form.countries[i]!;
         await candidateAddTargetCountry({ destination_country_id, priority: i + 1 });
       }
+      const entries = form.workExperienceEntries;
+      await candidateUpdateProfile({
+        ...PROFILE_STEP_DEFAULTS,
+        availability_status: availabilityStatusFromForm(form),
+        desired_salary_min: form.desiredSalaryMin,
+        desired_salary_max: form.desiredSalaryMax,
+        salary_currency: 'USD',
+        ...(entries.length > 0
+          ? { experience_range: experienceRangeFromWorkEntries(entries) }
+          : {}),
+      });
+      goNext();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Maqsad mamlakatlarni saqlashda xato.'));
+    } finally {
+      setBusy(false);
+    }
+  }
 
-      if (!form.declaresNoLanguage) {
-        for (const { name, level } of form.languageSelections) {
-          const lang = toCandidateLanguageEnum(name);
-          if (!lang) continue;
-          await candidateAddLanguage({ language: lang, level, has_certificate: false });
-        }
+  async function finishDocumentsAndGoHome() {
+    const requiredMissing = DOCUMENT_TYPES.filter((d) => d.required && !form.documents[d.type]);
+    if (requiredMissing.length > 0) {
+      toast.error(`Majburiy hujjatlar: ${requiredMissing.map((d) => d.label).join(', ')}`);
+      return;
+    }
+    const filesToUpload = DOCUMENT_TYPES.filter((d) => !!form.documents[d.type]);
+    if (filesToUpload.length === 0) {
+      toast.error('Hech qanday hujjat tanlanmadi.');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      for (const doc of filesToUpload) {
+        const file = form.documents[doc.type];
+        if (!file) continue;
+        await candidateUploadDocument(file, doc.type);
       }
-
       await candidateSubmitProfile();
-
       setHomeInitialTab(3);
       setView('home');
     } catch (e) {
-      toast.error(candidatePortalError(e, 'Profil yuborishda xato.'));
+      toast.error(candidatePortalError(e, 'Hujjatlar yoki arizani yuborishda xato.'));
     } finally {
       setBusy(false);
     }
@@ -4613,10 +5196,51 @@ export default function CandidatePortal() {
         notice={profileNoticeScreen4}
       />
     ),
-    5: <Screen5 onNext={goNext} onBack={goBack} form={form} setForm={setForm} />,
-    6: <Screen6 onNext={goNext} onBack={goBack} form={form} setForm={setForm} />,
-    7: <Screen7Documents onNext={goNext} onBack={goBack} form={form} setForm={setForm} busy={busy} />,
-    8: <Screen8 onNext={() => void submitProfileAndLoadResults()} onBack={goBack} form={form} setForm={setForm} busy={busy} />,
+    5: (
+      <Screen5Education
+        onNext={() => saveEducationAndNext()}
+        onBack={goBack}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+      />
+    ),
+    6: (
+      <Screen6Work
+        onNext={() => saveWorkAndNext()}
+        onBack={goBack}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+      />
+    ),
+    7: (
+      <Screen6
+        onNext={() => saveLanguagesAndNext()}
+        onBack={goBack}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+      />
+    ),
+    8: (
+      <Screen8
+        onNext={() => void saveCountriesAndNext()}
+        onBack={goBack}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+      />
+    ),
+    9: (
+      <Screen7Documents
+        onNext={() => void finishDocumentsAndGoHome()}
+        onBack={goBack}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+      />
+    ),
   };
 
   if (!sessionBootstrapped) {

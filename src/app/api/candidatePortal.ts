@@ -6,6 +6,7 @@ import {
   getCandidateProfileId,
   getCandidateRefreshToken,
   getCandidateToken,
+  clearStaleCandidateProfileIdIfMatchesUser,
   getCandidateUserId,
   KASB_CANDIDATE_PROFILE_ID_KEY,
   setCachedCandidateSummary,
@@ -198,24 +199,53 @@ function pickUserIdFromRoot(root: Record<string, unknown>): number | null {
   return null;
 }
 
+function pickIdField(raw: unknown): string | null {
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  if (typeof raw === 'number' && Number.isFinite(raw)) return String(Math.trunc(raw));
+  return null;
+}
+
+const CANDIDATE_PROFILE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function looksLikeCandidateProfileRow(root: Record<string, unknown>): boolean {
+  return (
+    root.profile_status != null ||
+    root.profileStatus != null ||
+    'profile_completeness' in root ||
+    'profileCompleteness' in root ||
+    'profile_score' in root ||
+    Array.isArray(root.educations) ||
+    Array.isArray(root.languages) ||
+    Array.isArray(root.documents)
+  );
+}
+
+/** Nomzod profili id — POST/GET `object.id` (UUID) yoki `profile_id` */
 function pickProfileId(root: Record<string, unknown>): string | null {
-  const id =
-    root.profileId ??
-    root.profile_id ??
-    root.candidateProfileId ??
-    root.candidate_profile_id ??
-    root.candidateProfile?.id;
-  if (typeof id === 'string' && id) return id;
-  if (typeof id === 'number' && Number.isFinite(id)) return String(id);
+  const direct = pickIdField(
+    root.profileId ?? root.profile_id ?? root.candidateProfileId ?? root.candidate_profile_id,
+  );
+  if (direct) return direct;
+
+  const idRaw = pickIdField(root.id);
+  if (idRaw) {
+    if (CANDIDATE_PROFILE_UUID_RE.test(idRaw)) return idRaw;
+    if (looksLikeCandidateProfileRow(root)) {
+      const uid = pickUserIdFromRoot(root);
+      if (uid == null || idRaw !== String(uid)) return idRaw;
+    }
+  }
+
   const cp = root.candidate_profile ?? root.candidateProfile;
   if (cp && typeof cp === 'object' && !Array.isArray(cp)) {
     const nested = pickProfileId(cp as Record<string, unknown>);
     if (nested) return nested;
+    const cpOnly = pickIdField((cp as Record<string, unknown>).id);
+    if (cpOnly) return cpOnly;
   }
-  const uid = root.id;
-  if (typeof uid === 'string' && uid) return uid;
-  if (typeof uid === 'number' && Number.isFinite(uid)) return String(uid);
-  const inner = root.object ?? root.data ?? root.candidate_profile;
+
+  const inner = root.object ?? root.data;
   if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
     return pickProfileId(inner as Record<string, unknown>);
   }
@@ -258,7 +288,10 @@ function applyCandidateAuthFromVerifyLikePayload(data: unknown): void {
     refreshToken: refresh ?? undefined,
     accessExpiresAt: accessExpiresAt ?? undefined,
   });
-  if (userId != null) setCandidateUserId(userId);
+  if (userId != null) {
+    setCandidateUserId(userId);
+    clearStaleCandidateProfileIdIfMatchesUser(userId);
+  }
 }
 
 /** `POST …/auth/refresh` — axios to‘g‘ridan (401 interceptor zanjiri bilan aralashmasin). */
@@ -319,6 +352,9 @@ export async function candidateFetchMeSummary(): Promise<Record<string, unknown>
  * Saqlangan refresh (30 kun) + access bilan sessiyani tiklash, keyin summary.
  */
 export async function candidateTryResumeSession(): Promise<boolean> {
+  const storedUserId = getCandidateUserId();
+  if (storedUserId != null) clearStaleCandidateProfileIdIfMatchesUser(storedUserId);
+
   let access = getCandidateToken();
   const refresh = getCandidateRefreshToken();
   if (!access?.trim() && !refresh?.trim()) return false;
@@ -521,7 +557,18 @@ export type CandidateMyUserUpdateBody = {
   telegramChatId?: number | null;
 };
 
-export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Promise<void> {
+function applyUserIdFromApiResponse(data: unknown, fallback: number): number {
+  const flat = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  const inner = unwrapRecord(data);
+  const root = inner ?? flat;
+  const uid = root ? pickUserIdFromRoot(root) : null;
+  const resolved = uid ?? fallback;
+  setCandidateUserId(resolved);
+  clearStaleCandidateProfileIdIfMatchesUser(resolved);
+  return resolved;
+}
+
+export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Promise<number> {
   const token = getCandidateToken();
   if (!token) throw new Error('Avval OTP bilan kiring');
 
@@ -564,15 +611,18 @@ export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Pr
   try {
     const { data } = await authApi.patch<unknown>('/admin/users/edit', dto, { headers });
     assertApiSuccess(data);
-    return;
+    return applyUserIdFromApiResponse(data, id);
   } catch (e) {
     if (!axios.isAxiosError(e) || e.response?.status !== 404) throw e;
   }
   const { data } = await authApi.patch<unknown>('/sdg/uz/edit', dto, { headers });
   assertApiSuccess(data);
+  return applyUserIdFromApiResponse(data, id);
 }
 
 export type CandidateProfileCreateBody = {
+  /** POST /candidate/profile — bog‘langan foydalanuvchi */
+  user_id?: number;
   /** Bo‘sh bo‘lsa JSON ga kiritilmaydi (null 500 berishi mumkin) */
   region_id?: number | null;
   marital_status: string;
@@ -621,6 +671,14 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
     ...rest,
     education_level: normalizeEducationLevelForApi(education_level),
   };
+
+  const uidRaw = body.user_id ?? getCandidateUserId();
+  if (uidRaw == null || !Number.isFinite(Number(uidRaw)) || Number(uidRaw) <= 0) {
+    throw new Error('Foydalanuvchi ID kerak — POST /candidate/profile uchun user_id yuborilmadi.');
+  }
+  const uid = Math.trunc(Number(uidRaw));
+  payload.user_id = uid;
+  payload.userId = uid;
 
   const rid = normalizeCandidateRegionId(region_id);
   if (rid != null) payload.region_id = rid;
@@ -673,6 +731,75 @@ function stripNullRegionFromPayload(payload: Record<string, unknown>): Record<st
   return { ...payload, region_id: rid };
 }
 
+/** JWT dan yoki `/users/me` dan foydalanuvchi id */
+export async function resolveCandidateUserId(): Promise<number> {
+  let id = getCandidateUserId();
+  const token = getCandidateToken();
+  if (!token) throw new Error('Avval OTP bilan kiring');
+  const headers = { Authorization: `Bearer ${token}` };
+  if (id == null) {
+    id = await fetchMeUserId(headers);
+    if (id != null) setCandidateUserId(id);
+  }
+  if (id == null) throw new Error('Foydalanuvchi ID topilmadi. Qayta OTP bilan kiring.');
+  clearStaleCandidateProfileIdIfMatchesUser(id);
+  return id;
+}
+
+function storeCandidateProfileId(id: string): void {
+  try {
+    localStorage.setItem(KASB_CANDIDATE_PROFILE_ID_KEY, id.trim());
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Mavjud profil id (GET /candidate/profile/me) */
+function profileIdFromMeRecord(me: Record<string, unknown>, userId: number): string | null {
+  const pid = pickProfileId(me);
+  if (pid && pid !== String(userId)) return pid;
+  return null;
+}
+
+/**
+ * `PATCH /admin/users/edit` dan keyin — profil yo‘q bo‘lsa `POST /candidate/profile` (`user_id` bilan).
+ * localStorage dagi eski id ishonilmaydi; avval serverdan tekshiriladi.
+ */
+export async function ensureCandidateProfile(
+  extras?: Partial<CandidateProfileCreateBody>,
+): Promise<string> {
+  const user_id = extras?.user_id ?? (await resolveCandidateUserId());
+  clearStaleCandidateProfileIdIfMatchesUser(user_id);
+  setCandidateUserId(user_id);
+
+  const me = await candidateFetchProfileMe();
+  if (me) {
+    const existingId = profileIdFromMeRecord(me, user_id);
+    if (existingId) {
+      storeCandidateProfileId(existingId);
+      return existingId;
+    }
+  }
+
+  const id = await candidateCreateProfile({
+    user_id,
+    marital_status: 'SINGLE',
+    education_level: 'BACHELOR',
+    data_consent: true,
+    ...extras,
+  });
+  if (!id?.trim()) throw new Error('Profil yaratilmadi. Qayta urinib ko‘ring.');
+  return id;
+}
+
+/** Shaxsiy qadam: user tahriridan keyin profil bog‘lash (POST `user_id` bilan) */
+export async function linkCandidateProfileAfterUserEdit(
+  userId: number,
+  extras?: Partial<CandidateProfileCreateBody>,
+): Promise<string> {
+  return ensureCandidateProfile({ ...extras, user_id: userId });
+}
+
 /** 2-qadam */
 export async function candidateCreateProfile(body: CandidateProfileCreateBody): Promise<string | null> {
   const token = getCandidateToken();
@@ -684,13 +811,13 @@ export async function candidateCreateProfile(body: CandidateProfileCreateBody): 
     headers: { Authorization: `Bearer ${token}` },
   });
   const rec = unwrapRecord(data);
-  const id = rec ? pickProfileId(rec) : null;
+  const id =
+    (rec ? pickProfileId(rec) : null) ??
+    (rec && typeof rec.id === 'string' && CANDIDATE_PROFILE_UUID_RE.test(rec.id.trim())
+      ? rec.id.trim()
+      : null);
   if (id) {
-    try {
-      localStorage.setItem(KASB_CANDIDATE_PROFILE_ID_KEY, id);
-    } catch {
-      /* ignore */
-    }
+    storeCandidateProfileId(id);
   }
   return id;
 }
@@ -746,18 +873,67 @@ export async function candidateAddWorkExperience(items: CandidateWorkExperienceB
   unwrapRecord(data);
 }
 
-export async function candidateAddEducation(body: {
+/** Ta’lim `country` — 3 ta katta harf (masalan `UZB`) */
+export function normalizeEducationCountryCode(raw: string | undefined | null): string {
+  const t = (raw ?? '').trim();
+  if (!t) return 'UZB';
+  const upper = t.toUpperCase();
+  if (/^[A-Z]{3}$/.test(upper)) return upper;
+
+  const compact = upper.replace(/[^A-Z]/g, '');
+  const aliases: Record<string, string> = {
+    UZBEKISTAN: 'UZB',
+    OZBEKISTON: 'UZB',
+    UZBEK: 'UZB',
+    UZ: 'UZB',
+    RUSSIA: 'RUS',
+    RU: 'RUS',
+    KAZAKHSTAN: 'KAZ',
+    KZ: 'KAZ',
+    KYRGYZSTAN: 'KGZ',
+    KG: 'KGZ',
+    TAJIKISTAN: 'TJK',
+    TJ: 'TJK',
+    TURKMENISTAN: 'TKM',
+    TM: 'TKM',
+    USA: 'USA',
+    US: 'USA',
+    GERMANY: 'DEU',
+    DE: 'DEU',
+    KOREA: 'KOR',
+    KR: 'KOR',
+    POLAND: 'POL',
+    PL: 'POL',
+  };
+  if (aliases[compact]) return aliases[compact];
+  if (compact.length >= 3) return compact.slice(0, 3);
+  return 'UZB';
+}
+
+export type CandidateEducationBody = {
   level: string;
   institution_name: string;
   graduation_year: number;
   country?: string;
   specialty?: string;
-}): Promise<void> {
+};
+
+export async function candidateAddEducation(body: CandidateEducationBody): Promise<void> {
   const token = getCandidateToken();
   if (!token) throw new Error('Token yo‘q');
-  await authApi.post('/candidate/profile/educations', body, {
+  const payload: Record<string, unknown> = {
+    level: normalizeEducationLevelForApi(body.level),
+    institution_name: body.institution_name.trim(),
+    graduation_year: Math.trunc(Number(body.graduation_year)),
+    country: normalizeEducationCountryCode(body.country),
+  };
+  const specialty = body.specialty?.trim();
+  if (specialty) payload.specialty = specialty;
+
+  const { data } = await authApi.post<unknown>('/candidate/profile/educations', payload, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  unwrapRecord(data);
 }
 
 export async function candidateAddTargetCountry(body: {

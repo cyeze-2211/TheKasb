@@ -206,14 +206,32 @@ export const maritalStatusUz: Record<string, string> = {
 };
 
 export const documentTypeUz: Record<string, string> = {
-  WORK_PERMIT: 'Ish ruxsatnomasi',
   PASSPORT: 'Pasport',
-  VISA: 'Viza',
+  PHOTO: 'Rasm (3×4)',
   DIPLOMA: 'Diplom',
   CERTIFICATE: 'Sertifikat',
+  WORK_PERMIT: 'Ish ruxsatnomasi',
+  VISA: 'Viza',
   MEDICAL: 'Tibbiy hujjat',
-  OTHER: 'Boshqa',
+  OTHER: 'Boshqa hujjat',
 };
+
+/** Maosh valyutasi — ko‘rinish uchun */
+export const salaryCurrencyUz: Record<string, string> = {
+  USD: 'AQSh dollari',
+  EUR: 'Yevro',
+  UZS: 'So‘m',
+  RUB: 'Rubl',
+  KRW: 'Koreya voni',
+  PLN: 'Zlotiy',
+  GBP: 'Funt sterling',
+};
+
+export function formatSalaryCurrencyLabel(code: string | undefined | null): string {
+  const c = (code ?? '').trim().toUpperCase();
+  if (!c) return 'AQSh dollari';
+  return salaryCurrencyUz[c] ?? c;
+}
 
 export function uzOrCode(map: Record<string, string>, code: string): string {
   const c = (code || '').trim();

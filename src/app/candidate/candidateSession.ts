@@ -67,6 +67,20 @@ export function getCandidateProfileId(): string | null {
   }
 }
 
+/** JWT `id` (user) profil id sifatida saqlangan bo‘lsa — POST /candidate/profile o‘tkazilmay qoladi */
+export function clearStaleCandidateProfileIdIfMatchesUser(userId: number | null): void {
+  if (userId == null || !Number.isFinite(userId)) return;
+  const stored = getCandidateProfileId();
+  if (!stored?.trim()) return;
+  if (String(stored).trim() === String(Math.trunc(userId))) {
+    try {
+      localStorage.removeItem(KASB_CANDIDATE_PROFILE_ID_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 export function setCandidateUserId(id: number): void {
   try {
     localStorage.setItem(KASB_CANDIDATE_USER_ID_KEY, String(id));

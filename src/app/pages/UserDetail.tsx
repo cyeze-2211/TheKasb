@@ -15,9 +15,10 @@ import {
 import {
   axiosErrorMessage,
   fetchUserById,
+  deleteUser,
   fetchUserDeletePreview,
   getUserDisplayName,
-  purgeUser,
+  hardDeleteUser,
   type SdgUserDto,
   type UserDeletePreviewDto,
 } from '../api/users';
@@ -74,8 +75,8 @@ export function UserDetail() {
   const [preview, setPreview] = useState<UserDeletePreviewDto | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
-  const [purging, setPurging] = useState(false);
-  const [purgeErr, setPurgeErr] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState<'soft' | 'hard' | null>(null);
+  const [deleteErr, setDeleteErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(numericId)) {
@@ -120,24 +121,39 @@ export function UserDetail() {
     if (!deleteOpen) {
       setPreview(null);
       setPreviewErr(null);
-      setPurgeErr(null);
+      setDeleteErr(null);
       return;
     }
     void loadPreview();
   }, [deleteOpen, loadPreview]);
 
-  async function handlePurge() {
+  async function handleSoftDelete() {
     if (!Number.isFinite(numericId)) return;
-    setPurging(true);
-    setPurgeErr(null);
+    setDeleteBusy('soft');
+    setDeleteErr(null);
     try {
-      await purgeUser(numericId);
+      await deleteUser(numericId);
       setDeleteOpen(false);
       navigate('/admin/users', { replace: true });
     } catch (e) {
-      setPurgeErr(axiosErrorMessage(e, 'O‘chirishda xato.'));
+      setDeleteErr(axiosErrorMessage(e, 'O‘chirishda xato.'));
     } finally {
-      setPurging(false);
+      setDeleteBusy(null);
+    }
+  }
+
+  async function handleHardDelete() {
+    if (!Number.isFinite(numericId)) return;
+    setDeleteBusy('hard');
+    setDeleteErr(null);
+    try {
+      await hardDeleteUser(numericId);
+      setDeleteOpen(false);
+      navigate('/admin/users', { replace: true });
+    } catch (e) {
+      setDeleteErr(axiosErrorMessage(e, 'Butunlay o‘chirishda xato.'));
+    } finally {
+      setDeleteBusy(null);
     }
   }
 
@@ -288,7 +304,7 @@ export function UserDetail() {
         onSuccess={() => void load()}
       />
 
-      <AlertDialog open={deleteOpen} onOpenChange={(open) => !purging && setDeleteOpen(open)}>
+      <AlertDialog open={deleteOpen} onOpenChange={(open) => !deleteBusy && setDeleteOpen(open)}>
         <AlertDialogContent className="max-h-[min(92vh,800px)] max-w-xl overflow-y-auto border-border/80 p-0 shadow-2xl sm:max-w-2xl">
           <AlertDialogHeader className="space-y-0 border-b border-border/70 px-6 pb-4 pt-6">
             <AlertDialogTitle className="flex items-center gap-2 text-lg">
@@ -296,7 +312,11 @@ export function UserDetail() {
               O‘chirishni tasdiqlash
             </AlertDialogTitle>
             <AlertDialogDescription className="text-left text-sm text-text-muted">
-              Quyidagi ma’lumotlar tekshirildi. Tasdiqlasangiz, hisob butunlay o‘chiriladi.
+              <strong className="font-medium text-text-primary">O‘chirish</strong> — foydalanuvchi
+              «O‘chirilgan foydalanuvchilar» ro‘yxatiga o‘tadi, keyin tiklash mumkin.
+              <br />
+              <strong className="font-medium text-danger">Butunlay o‘chirish</strong> — barcha
+              ma’lumotlar bazadan olib tashlanadi, qaytarib bo‘lmaydi.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="px-6 py-4">
@@ -307,34 +327,61 @@ export function UserDetail() {
               </div>
             ) : null}
             {previewErr ? (
-              <p className="rounded-xl border border-danger/30 bg-danger/5 px-4 py-3 text-sm text-danger">
-                {previewErr}
+              <p className="mb-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+                Preview yuklanmadi: {previewErr}. O‘chirishni baribir davom ettirishingiz mumkin.
               </p>
             ) : null}
-            {!previewLoading && !previewErr && preview ? (
+            {!previewLoading && preview ? (
               <UserDeletePreviewPanel preview={preview} />
+            ) : null}
+            {!previewLoading && !preview ? (
+              <div className="rounded-xl border border-border/80 bg-muted/20 px-4 py-3 text-sm">
+                <p className="font-medium text-text-primary">{getUserDisplayName(user)}</p>
+                <p className="mt-1 text-text-muted">
+                  {user.phoneNumber ?? '—'}
+                  {user.email ? ` · ${user.email}` : ''}
+                </p>
+                <p className="mt-2 text-xs text-text-muted">ID: {user.id}</p>
+              </div>
             ) : null}
           </div>
           <div className="border-t border-border/70 px-6 py-4">
-            {purgeErr ? <p className="mb-3 text-sm text-danger">{purgeErr}</p> : null}
-            <AlertDialogFooter className="flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-              <AlertDialogCancel disabled={purging} className="mt-0">
-                Bekor qilish
-              </AlertDialogCancel>
-              <Button
-                variant="destructive"
-                disabled={purging || previewLoading || !!previewErr || !preview}
-                onClick={() => void handlePurge()}
-              >
-                {purging ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                    O‘chirilmoqda…
-                  </>
-                ) : (
-                  'Ha, butunlay o‘chirish'
-                )}
-              </Button>
+            {deleteErr ? <p className="mb-3 text-sm text-danger">{deleteErr}</p> : null}
+            <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <AlertDialogCancel disabled={!!deleteBusy} className="mt-0">
+                  Bekor qilish
+                </AlertDialogCancel>
+                <Button
+                  variant="outline"
+                  className="border-danger/50 text-danger hover:bg-danger/10"
+                  disabled={!!deleteBusy || previewLoading}
+                  onClick={() => void handleSoftDelete()}
+                >
+                  {deleteBusy === 'soft' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      O‘chirilmoqda…
+                    </>
+                  ) : (
+                    'O‘chirish'
+                  )}
+                </Button>
+                <Button
+                  variant="destructive"
+                  disabled={!!deleteBusy || previewLoading}
+                  onClick={() => void handleHardDelete()}
+                >
+                  {deleteBusy === 'hard' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                      O‘chirilmoqda…
+                    </>
+                  ) : (
+                    'Butunlay o‘chirish'
+                  )}
+                </Button>
+              </div>
             </AlertDialogFooter>
           </div>
         </AlertDialogContent>

@@ -397,9 +397,15 @@ export async function fetchUserById(id: number): Promise<SdgUserDto | null> {
   return normalizeAdminUserRow(o.object ?? o.data ?? o);
 }
 
-/** @deprecated Soft-delete — yangi oqimda `purgeUser` ishlating. */
+/** DELETE /api/admin/users/{id} — soft-delete */
 export async function deleteUser(id: number): Promise<void> {
   const { data } = await api.delete<unknown>(`/admin/users/${id}`);
+  assertApiSuccess(data);
+}
+
+/** DELETE /api/admin/users/{id}/hard-delete — butunlay o‘chirish */
+export async function hardDeleteUser(id: number): Promise<void> {
+  const { data } = await api.delete<unknown>(`/admin/users/${id}/hard-delete`);
   assertApiSuccess(data);
 }
 
@@ -626,7 +632,7 @@ export async function fetchUserDeletePreview(id: number): Promise<UserDeletePrev
   return parseUserDeletePreview(data);
 }
 
-/** DELETE /admin/users/{id}/purge — tasdiqlangandan keyin butunlay o‘chirish */
+/** @deprecated — `hardDeleteUser` ishlating */
 export async function purgeUser(id: number): Promise<void> {
   const { data } = await api.delete<unknown>(`/admin/users/${id}/purge`);
   assertApiSuccess(data);
