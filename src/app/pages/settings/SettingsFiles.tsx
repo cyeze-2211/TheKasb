@@ -4,12 +4,9 @@ import {
   Loader2,
   Plus,
   RefreshCw,
-  Settings as SettingsIcon,
-  SlidersHorizontal,
   Trash2,
   Upload,
 } from 'lucide-react';
-import { API_BASE_URL } from '../api/client';
 import {
   deleteUserFile,
   fetchUserFileBlob,
@@ -17,8 +14,8 @@ import {
   pickFileHashFromFileRow,
   uploadUserFile,
   type SpringPage,
-} from '../api/userFiles';
-import { getLoggedInSdgUserId } from '../auth/loginSession';
+} from '../../api/userFiles';
+import { getLoggedInSdgUserId } from '../../auth/loginSession';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -27,52 +24,35 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '../components/ui/alert-dialog';
-import { Button } from '../components/ui/button';
+} from '../../components/ui/alert-dialog';
+import { Button } from '../../components/ui/button';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from '../components/ui/dialog';
-import { cn } from '../components/ui/utils';
+} from '../../components/ui/dialog';
+import { cn } from '../../components/ui/utils';
 import {
   btnPrimary,
   btnPrimaryLg,
   btnSecondary,
   btnSecondaryLg,
-  ctlInput,
-  ctlInputLg,
   ctlSelectLg,
-  pageKicker,
   panelElite,
   rowElite,
   theadElite,
-} from '../components/pageChrome';
-import { AdminPaginationBar } from '../components/AdminPaginationBar';
+} from '../../components/pageChrome';
+import { AdminPaginationBar } from '../../components/AdminPaginationBar';
+import { USER_FILE_CATEGORIES } from '../../lib/userFileCategories';
 
-/** Backend `category` query — faqat shu qiymatlar */
-const FILE_UPLOAD_CATEGORIES = [
-  { value: 'admin_category', label: 'Admin kategoriya' },
-  { value: 'user_avatar', label: 'Foydalanuvchi avatari' },
-  { value: 'user_document', label: 'Foydalanuvchi hujjati' },
-] as const;
-
-type FileUploadCategory = (typeof FILE_UPLOAD_CATEGORIES)[number]['value'];
+type FileUploadCategory = (typeof USER_FILE_CATEGORIES)[number]['value'];
 
 function rowNumericId(row: Record<string, unknown>): number | null {
   for (const k of ['id', 'fileId']) {
     const v = row[k];
     if (typeof v === 'number' && !Number.isNaN(v)) return v;
     if (typeof v === 'string' && /^\d+$/.test(v)) return Number(v);
-  }
-  return null;
-}
-
-function rowFileHash(row: Record<string, unknown>): string | null {
-  for (const k of ['fileHashId', 'file_hash_id', 'hash', 'fileHash']) {
-    const v = row[k];
-    if (typeof v === 'string' && v.trim()) return v.trim();
   }
   return null;
 }
@@ -90,7 +70,7 @@ function rowCategory(row: Record<string, unknown>): string {
   return typeof v === 'string' && v.trim() ? v.trim() : '—';
 }
 
-export function Settings() {
+export function SettingsFiles() {
   const sessionUserId = useMemo(() => getLoggedInSdgUserId(), []);
   const [userIdInput, setUserIdInput] = useState(() => (sessionUserId != null ? String(sessionUserId) : ''));
   const effectiveUserId = useMemo(() => {
@@ -224,12 +204,12 @@ export function Settings() {
   }
 
   return (
-    <div className="space-y-6 p-6 md:space-y-8 md:p-8">
-
+    <>
       <div className={panelElite}>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
-            <h2 className="m-0 text-base font-semibold">Fayllar ro‘yxati</h2>
+            <h3 className="m-0 text-base font-semibold">Fayllar ro‘yxati</h3>
+            <p className="mt-1 text-xs text-text-muted">GET /api/file/get/all — sahifalangan ro‘yxat</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -296,7 +276,10 @@ export function Settings() {
                           {rowDisplayName(row)}
                         </td>
                         <td className="px-6 py-3 text-sm text-text-muted">{rowCategory(row)}</td>
-                        <td className="max-w-[140px] truncate px-6 py-3 font-mono text-xs text-text-muted" title={hash ?? ''}>
+                        <td
+                          className="max-w-[140px] truncate px-6 py-3 font-mono text-xs text-text-muted"
+                          title={hash ?? ''}
+                        >
                           {hash ?? '—'}
                         </td>
                         <td className="px-6 py-3 text-sm tabular-nums text-text-muted">{id ?? '—'}</td>
@@ -390,7 +373,7 @@ export function Settings() {
                   {effectiveUserId != null ? (
                     <span className="mt-1 block font-medium text-primary/90">userId: {effectiveUserId}</span>
                   ) : (
-                    <span className="mt-1 block text-warning">userId yo‘q — yuqoridagi maydonni to‘ldiring.</span>
+                    <span className="mt-1 block text-warning">userId yo‘q — tizimga kiring.</span>
                   )}
                 </DialogDescription>
               </div>
@@ -407,7 +390,7 @@ export function Settings() {
                 value={uploadCategory}
                 onChange={(e) => setUploadCategory(e.target.value as FileUploadCategory)}
               >
-                {FILE_UPLOAD_CATEGORIES.map((c) => (
+                {USER_FILE_CATEGORIES.map((c) => (
                   <option key={c.value} value={c.value}>
                     {c.label} ({c.value})
                   </option>
@@ -435,13 +418,15 @@ export function Settings() {
                     <span className="ml-2 tabular-nums">{(uploadFile.size / 1024).toFixed(1)} KB</span>
                   </p>
                 ) : (
-                  <p className="mt-2 text-center text-xs text-text-muted">Faylni tanlang yoki bu yerga torting</p>
+                  <p className="mt-2 text-center text-xs text-text-muted">Faylni tanlang</p>
                 )}
               </div>
             </div>
 
             {uploadError ? (
-              <div className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">{uploadError}</div>
+              <div className="rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-sm text-danger">
+                {uploadError}
+              </div>
             ) : null}
 
             <div className="flex flex-col-reverse gap-2 border-t border-border/80 pt-5 sm:flex-row sm:justify-end">
@@ -458,7 +443,11 @@ export function Settings() {
                 disabled={uploading || effectiveUserId == null}
                 className={`${btnPrimaryLg} inline-flex items-center justify-center gap-2`}
               >
-                {uploading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Upload className="h-4 w-4" aria-hidden />}
+                {uploading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                ) : (
+                  <Upload className="h-4 w-4" aria-hidden />
+                )}
                 Yuklash
               </button>
             </div>
@@ -471,7 +460,7 @@ export function Settings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Faylni o‘chirish?</AlertDialogTitle>
             <AlertDialogDescription>
-              DELETE /sdg/uz/delete — fileHashId va userId yuboriladi. Bu amalni qaytarib bo‘lmaydi.
+              DELETE /api/file/delete — fileHashId va userId yuboriladi. Bu amalni qaytarib bo‘lmaydi.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteRow ? (
@@ -485,13 +474,17 @@ export function Settings() {
           {deleteError ? <p className="text-sm text-danger">{deleteError}</p> : null}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Bekor</AlertDialogCancel>
-            <Button variant="destructive" disabled={deleting || effectiveUserId == null} onClick={() => void confirmDelete()}>
+            <Button
+              variant="destructive"
+              disabled={deleting || effectiveUserId == null}
+              onClick={() => void confirmDelete()}
+            >
               {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
               O‘chirish
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

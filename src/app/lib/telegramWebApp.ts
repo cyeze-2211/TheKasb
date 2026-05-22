@@ -89,3 +89,19 @@ export function readTelegramStartParamNumeric(): string {
 export function readTelegramMiniAppChatId(): string {
   return readTelegramWebAppUserId() || readTelegramStartParamNumeric();
 }
+
+export type TelegramEntryContext = 'telegram_mini_app' | 'web_browser';
+
+/** Mini App (Telegram WebApp SDK) yoki oddiy brauzer */
+export function getTelegramEntryContext(): TelegramEntryContext {
+  return isTelegramMiniApp() ? 'telegram_mini_app' : 'web_browser';
+}
+
+export function isTelegramMiniAppEntry(): boolean {
+  return getTelegramEntryContext() === 'telegram_mini_app';
+}
+
+/** UI / log uchun qisqa yorliq */
+export function telegramEntryContextLabel(ctx: TelegramEntryContext): string {
+  return ctx === 'telegram_mini_app' ? 'Telegram Mini App' : 'Veb-brauzer';
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
+import type { LucideIcon } from 'lucide-react';
 import {
   Home,
   Users,
@@ -14,9 +15,11 @@ import {
   Globe,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
 import { ctlInput } from './pageChrome';
+import { SETTINGS_BASE, SETTINGS_NAV, settingsPageTitle } from '../lib/settingsNav';
 
 const SIDEBAR_COLLAPSED_KEY = 'kasb_sidebar_collapsed';
 
@@ -30,6 +33,35 @@ const TITLE_MAP: Record<string, string> = {
   'destination-countries': 'Maqsad mamlakatlar',
   settings: 'Sozlamalar',
 };
+
+type NavChild = { path: string; label: string };
+type NavItem = {
+  path: string;
+  label: string;
+  icon: LucideIcon;
+  children?: NavChild[];
+};
+
+const SETTINGS_CHILDREN: NavChild[] = SETTINGS_NAV.map((item) => ({
+  path: item.path,
+  label: item.label,
+}));
+
+const navItems: NavItem[] = [
+  { path: '/admin/dashboard', label: 'Dashboard', icon: Home },
+  { path: '/admin/users', label: 'Foydalanuvchilar', icon: Users },
+  { path: '/admin/candidates', label: 'Nomzodlar', icon: Target },
+  { path: '/admin/vacancies', label: 'Vakansiyalar', icon: FileText },
+  { path: '/admin/professions', label: 'Kasblar', icon: Wrench },
+  { path: '/admin/custom-professions', label: 'Maxsus kasblar', icon: AlertCircle },
+  { path: '/admin/destination-countries', label: 'Maqsad mamlakatlar', icon: Globe },
+  {
+    path: SETTINGS_BASE,
+    label: 'Sozlamalar',
+    icon: Settings,
+    children: SETTINGS_CHILDREN,
+  },
+];
 
 function initials(name: string) {
   return name
@@ -51,6 +83,9 @@ export function AppLayout() {
       return false;
     }
   });
+  const [settingsOpen, setSettingsOpen] = useState(() =>
+    location.pathname.startsWith(SETTINGS_BASE),
+  );
 
   const isDashboard = location.pathname === '/admin/dashboard';
 
@@ -63,26 +98,26 @@ export function AppLayout() {
   }, [collapsed]);
 
   useEffect(() => {
+    if (location.pathname.startsWith(SETTINGS_BASE)) {
+      setSettingsOpen(true);
+    }
+  }, [location.pathname]);
+
+  useEffect(() => {
     const seg = location.pathname.replace(/^\/admin\/?/, '') || 'dashboard';
-    const key = seg.split('/')[0] ?? 'dashboard';
-    const label = TITLE_MAP[key] ?? 'Admin';
+    let label: string;
+    if (seg.startsWith('settings')) {
+      label = `${settingsPageTitle(location.pathname)} · Sozlamalar`;
+    } else {
+      const key = seg.split('/')[0] ?? 'dashboard';
+      label = TITLE_MAP[key] ?? 'Admin';
+    }
     document.title = `${label} | The Kasb`;
   }, [location.pathname]);
 
   const isActive = (path: string) => {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
-
-  const navItems = [
-    { path: '/admin/dashboard', label: 'Dashboard', icon: Home },
-    { path: '/admin/users', label: 'Foydalanuvchilar', icon: Users },
-    { path: '/admin/candidates', label: 'Nomzodlar', icon: Target },
-    { path: '/admin/vacancies', label: 'Vakansiyalar', icon: FileText },
-    { path: '/admin/professions', label: 'Kasblar', icon: Wrench },
-    { path: '/admin/custom-professions', label: 'Maxsus kasblar', icon: AlertCircle },
-    { path: '/admin/destination-countries', label: 'Maqsad mamlakatlar', icon: Globe },
-    { path: '/admin/settings', label: 'Sozlamalar', icon: Settings },
-  ];
 
   const onLogout = () => {
     logout();
@@ -132,6 +167,73 @@ export function AppLayout() {
         <nav className="flex-1 space-y-1 overflow-y-auto overflow-x-hidden px-2 py-4">
           {navItems.map((item) => {
             const Icon = item.icon;
+            const hasChildren = (item.children?.length ?? 0) > 0;
+            const groupActive = isActive(item.path);
+
+            if (hasChildren && item.children) {
+              return (
+                <div key={item.path} className="space-y-0.5">
+                  <button
+                    type="button"
+                    title={item.label}
+                    onClick={() => {
+                      if (collapsed) {
+                        navigate(item.children![0].path);
+                        return;
+                      }
+                      const next = !settingsOpen;
+                      setSettingsOpen(next);
+                      if (next && !groupActive) {
+                        navigate(item.children![0].path);
+                      }
+                    }}
+                    className={`flex h-10 w-full items-center rounded-lg transition-all duration-200 ease-out active:scale-[0.98] ${
+                      collapsed ? 'justify-center px-0' : 'gap-3 px-3'
+                    } ${
+                      groupActive
+                        ? 'border-l-[3px] border-primary bg-primary/20 text-white shadow-sm shadow-black/10'
+                        : 'border-l-[3px] border-transparent text-slate-400 hover:bg-white/5 hover:text-white'
+                    }`}
+                    aria-expanded={settingsOpen}
+                  >
+                    <Icon size={16} className="flex-shrink-0 opacity-90" />
+                    {!collapsed ? (
+                      <>
+                        <span className="truncate text-sm">{item.label}</span>
+                        <ChevronDown
+                          size={16}
+                          className={`ml-auto flex-shrink-0 opacity-80 transition-transform duration-200 ${
+                            settingsOpen ? 'rotate-180' : ''
+                          }`}
+                          aria-hidden
+                        />
+                      </>
+                    ) : null}
+                  </button>
+                  {!collapsed && settingsOpen ? (
+                    <div className="ml-3 space-y-0.5 border-l border-white/10 pl-2">
+                      {item.children.map((child) => {
+                        const childActive = location.pathname === child.path;
+                        return (
+                          <Link
+                            key={child.path}
+                            to={child.path}
+                            className={`flex h-9 items-center rounded-lg px-3 text-sm transition-colors ${
+                              childActive
+                                ? 'bg-white/10 font-medium text-white'
+                                : 'text-slate-400 hover:bg-white/5 hover:text-white'
+                            }`}
+                          >
+                            <span className="truncate">{child.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            }
+
             const active = isActive(item.path);
             return (
               <Link

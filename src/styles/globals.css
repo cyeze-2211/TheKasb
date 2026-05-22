@@ -87,3 +87,38 @@
   border-color: rgba(255,255,255,0.07);
 }
 
+/* Nomzod portali — to‘liq ekran, admin `html { 14px }` dan mustaqil */
+.kasb-candidate-portal {
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.kasb-candidate-portal .text-\[10px\] {
+  font-size: 11px;
+}
+
+.kasb-candidate-portal .text-\[11px\] {
+  font-size: 12px;
+}
+
+.kasb-candidate-portal .text-\[12px\] {
+  font-size: 13px;
+}
+
+.kasb-candidate-portal .text-\[13px\] {
+  font-size: 14px;
+}
+
+.kasb-candidate-portal .text-\[14px\] {
+  font-size: 15px;
+}
+
+.kasb-candidate-portal .text-\[15px\] {
+  font-size: 16px;
+}
+
+.kasb-candidate-portal .text-sm {
+  font-size: 0.9375rem;
+}
+

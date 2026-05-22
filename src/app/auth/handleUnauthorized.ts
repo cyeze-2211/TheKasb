@@ -34,7 +34,8 @@ function isAuthHandshakeUrl(url: string): boolean {
     url.includes('/sdg/uz/login') ||
     url.includes('/auth/send-otp') ||
     url.includes('/auth/verify-otp') ||
-    url.includes('/auth/refresh')
+    url.includes('/auth/refresh') ||
+    url.includes('/admin/users/by-tg')
   );
 }
 

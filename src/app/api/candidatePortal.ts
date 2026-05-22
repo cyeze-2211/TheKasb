@@ -2,14 +2,17 @@ import axios from 'axios';
 import { authApi } from '../../services/authApi';
 import {
   clearCandidateSession,
+  getCandidateAccessExpiresAt,
   getCandidateProfileId,
   getCandidateRefreshToken,
   getCandidateToken,
   getCandidateUserId,
   KASB_CANDIDATE_PROFILE_ID_KEY,
+  setCachedCandidateSummary,
   setCandidateSession,
   setCandidateUserId,
 } from '../candidate/candidateSession';
+import { isTelegramMiniAppEntry } from '../lib/telegramWebApp';
 import type { ProfessionCategoryDto, ProfessionDto } from './professions';
 import { API_BASE_URL } from './client';
 import { normalizeEducationLevelForApi } from '../lib/adminUiUz';
@@ -279,51 +282,91 @@ export async function candidateRefreshWithStoredRefresh(): Promise<boolean> {
   return false;
 }
 
+function buildProfileViewFromSummary(data: unknown): Record<string, unknown> {
+  const root = unwrapRecord(data);
+  if (!root) return {};
+  const user =
+    root.user && typeof root.user === 'object' && !Array.isArray(root.user)
+      ? (root.user as Record<string, unknown>)
+      : null;
+  const profileRaw = root.candidateProfile ?? root.candidate_profile ?? root.profile;
+  const profile =
+    profileRaw && typeof profileRaw === 'object' && !Array.isArray(profileRaw)
+      ? (profileRaw as Record<string, unknown>)
+      : null;
+  const view: Record<string, unknown> = { ...root };
+  if (user) Object.assign(view, user);
+  if (profile) Object.assign(view, profile);
+  return view;
+}
+
 /**
- * Saqlangan access yoki refresh bilan `/users/me`.
- * Access 401 bo‘lsa refresh, keyin qayta `/users/me`.
+ * `GET /api/users/me/summary` — user + nomzod profili va bog‘liq ma’lumotlar bittada.
+ */
+export async function candidateFetchMeSummary(): Promise<Record<string, unknown>> {
+  const token = getCandidateToken();
+  if (!token?.trim()) throw new Error('Token yo‘q');
+  const { data } = await authApi.get<unknown>('/users/me/summary', {
+    headers: { Authorization: `Bearer ${token.trim()}` },
+  });
+  assertApiSuccess(data);
+  const view = buildProfileViewFromSummary(data);
+  setCachedCandidateSummary(view);
+  return view;
+}
+
+/**
+ * Saqlangan refresh (30 kun) + access bilan sessiyani tiklash, keyin summary.
  */
 export async function candidateTryResumeSession(): Promise<boolean> {
-  const access = getCandidateToken();
+  let access = getCandidateToken();
   const refresh = getCandidateRefreshToken();
   if (!access?.trim() && !refresh?.trim()) return false;
 
-  const authHeader = (tok: string) => ({ Authorization: `Bearer ${tok.trim()}` });
+  if (!access?.trim() && refresh?.trim()) {
+    const ok = await candidateRefreshWithStoredRefresh();
+    if (!ok) {
+      clearCandidateSession();
+      return false;
+    }
+    access = getCandidateToken();
+  }
 
-  if (access?.trim()) {
+  try {
+    await candidateFetchMeSummary();
+    return true;
+  } catch (e) {
+    if (!axios.isAxiosError(e) || e.response?.status !== 401) {
+      if (!refresh?.trim()) clearCandidateSession();
+      return false;
+    }
+    const ok = await candidateRefreshWithStoredRefresh();
+    if (!ok) {
+      clearCandidateSession();
+      return false;
+    }
     try {
-      const { data } = await authApi.get<unknown>('/users/me', { headers: authHeader(access) });
-      assertApiSuccess(data);
+      await candidateFetchMeSummary();
       return true;
-    } catch (e) {
-      if (!axios.isAxiosError(e) || e.response?.status !== 401) return false;
+    } catch {
+      clearCandidateSession();
+      return false;
     }
   }
+}
 
-  if (!refresh?.trim()) {
-    clearCandidateSession();
-    return false;
+/** Portal ochilganda: refresh → Mini App’da by-tg → aks holda intro */
+export async function bootstrapCandidatePortalSession(options: {
+  telegramChatId?: string;
+}): Promise<'home' | 'onboarding'> {
+  if (await candidateTryResumeSession()) return 'home';
+
+  const cid = String(options.telegramChatId ?? '').trim();
+  if (isTelegramMiniAppEntry() && cid && /^-?\d+$/.test(cid)) {
+    if (await candidateTrySessionFromTelegramChatId(cid)) return 'home';
   }
 
-  const refreshed = await candidateRefreshWithStoredRefresh();
-  if (!refreshed) {
-    clearCandidateSession();
-    return false;
-  }
-
-  const next = getCandidateToken();
-  if (!next?.trim()) {
-    clearCandidateSession();
-    return false;
-  }
-  try {
-    const { data } = await authApi.get<unknown>('/users/me', { headers: authHeader(next) });
-    assertApiSuccess(data);
-    return true;
-  } catch {
-    clearCandidateSession();
-    return false;
-  }
+  return 'onboarding';
 }
 
 /** Spring: `400 Bad Request: [{"message":"SMSC not found",...}]` kabi ichki JSON */
@@ -416,6 +459,11 @@ export async function candidateTrySessionFromTelegramChatId(chatId: string | num
   try {
     const { data } = await authApi.get<unknown>(`/admin/users/by-tg/${encodeURIComponent(id)}`);
     applyCandidateAuthFromVerifyLikePayload(data);
+    try {
+      await candidateFetchMeSummary();
+    } catch {
+      /* JWT yetarli — summary keyin yuklanadi */
+    }
     return true;
   } catch {
     return false;
@@ -438,6 +486,11 @@ export async function candidateVerifyOtp(params: {
 
   const { data } = await authApi.post<unknown>('/auth/verify-otp', body);
   applyCandidateAuthFromVerifyLikePayload(data);
+  try {
+    await candidateFetchMeSummary();
+  } catch {
+    /* profil hali to‘liq bo‘lmasa ham davom etiladi */
+  }
 }
 
 async function fetchMeUserId(headers: { Authorization: string }): Promise<number | null> {
@@ -461,6 +514,10 @@ export type CandidateMyUserUpdateBody = {
   dateBirth: string;
   /** OTP qadami bilan bir xil E.164, masalan `+998901234567` */
   phoneNumber: string;
+  address?: string | null;
+  addressRegion?: string | number | null;
+  addressDistrict?: string | number | null;
+  addressMFY?: string | null;
   telegramChatId?: number | null;
 };
 
@@ -487,6 +544,18 @@ export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Pr
     dateBirth: body.dateBirth,
     phoneNumber: body.phoneNumber.trim(),
   };
+  const address = body.address?.trim();
+  if (address) dto.address = address;
+  const addressMFY = body.addressMFY?.trim();
+  if (addressMFY) dto.addressMFY = addressMFY;
+  const addressRegion = body.addressRegion;
+  if (addressRegion != null && String(addressRegion).trim() !== '') {
+    dto.addressRegion = String(addressRegion).trim();
+  }
+  const addressDistrict = body.addressDistrict;
+  if (addressDistrict != null && String(addressDistrict).trim() !== '') {
+    dto.addressDistrict = String(addressDistrict).trim();
+  }
   const tg = body.telegramChatId;
   if (tg != null && Number.isFinite(Number(tg))) {
     dto.telegramChatId = Number(tg);
@@ -709,18 +778,53 @@ function candidateMultipartUrl(path: string): string {
   return `${base}${p}`;
 }
 
+async function tryRefreshCandidateTokenIfExpired(): Promise<boolean> {
+  const expiresAt = getCandidateAccessExpiresAt();
+  if (!expiresAt) return false;
+  const expiresMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresMs) || Date.now() < expiresMs) return false;
+  return candidateRefreshWithStoredRefresh();
+}
+
 /** Multipart — axios default JSON Content-Type buzmasligi uchun fetch */
 export async function candidateUploadDocument(file: File, documentType: string): Promise<void> {
   const token = getCandidateToken();
   if (!token) throw new Error('Token yo‘q');
+
   const fd = new FormData();
   fd.append('file', file);
   fd.append('document_type', documentType);
-  const res = await fetch(candidateMultipartUrl('/candidate/documents'), {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body: fd,
-  });
+  const userId = getCandidateUserId();
+  if (userId != null) {
+    fd.append('authorities[0].authority', String(userId));
+  }
+
+  let authToken = token;
+  if (await tryRefreshCandidateTokenIfExpired()) {
+    const refreshedToken = getCandidateToken();
+    if (refreshedToken) authToken = refreshedToken;
+  }
+
+  const makeRequest = () =>
+    fetch(candidateMultipartUrl('/candidate/profile/documents'), {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authToken}` },
+      body: fd,
+    });
+
+  let res = await makeRequest();
+  if (res.status === 401) {
+    const refreshed = await candidateRefreshWithStoredRefresh();
+    const refreshedToken = refreshed ? getCandidateToken() : null;
+    if (refreshedToken) {
+      res = await fetch(candidateMultipartUrl('/candidate/profile/documents'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${refreshedToken}` },
+        body: fd,
+      });
+    }
+  }
+
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {

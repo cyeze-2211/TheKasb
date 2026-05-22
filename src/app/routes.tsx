@@ -6,7 +6,14 @@ const LoginPage = lazy(() => import('../pages/LoginPage'));
 const CandidatePortal = lazy(() => import('../pages/CandidatePortal'));
 const DashboardPage = lazy(() => import('../pages/Dashboard'));
 const Users = lazy(() => import('./pages/Users').then((m) => ({ default: m.Users })));
+const DeletedUsers = lazy(() => import('./pages/DeletedUsers').then((m) => ({ default: m.DeletedUsers })));
 const UserDetail = lazy(() => import('./pages/UserDetail').then((m) => ({ default: m.UserDetail })));
+const SettingsLayout = lazy(() =>
+  import('./pages/settings/SettingsLayout').then((m) => ({ default: m.SettingsLayout })),
+);
+const SettingsFiles = lazy(() =>
+  import('./pages/settings/SettingsFiles').then((m) => ({ default: m.SettingsFiles })),
+);
 const Candidates = lazy(() => import('./pages/Candidates').then((m) => ({ default: m.Candidates })));
 const CandidateDetail = lazy(() =>
   import('./pages/CandidateDetail').then((m) => ({ default: m.CandidateDetail })),
@@ -18,7 +25,6 @@ const CustomProfessions = lazy(() =>
   import('./pages/CustomProfessions').then((m) => ({ default: m.CustomProfessions })),
 );
 const Professions = lazy(() => import('./pages/Professions').then((m) => ({ default: m.Professions })));
-const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
 const DestinationCountries = lazy(() =>
   import('./pages/DestinationCountries').then((m) => ({ default: m.DestinationCountries })),
 );
@@ -78,6 +84,14 @@ export const router = createBrowserRouter([
             element: (
               <LazyBoundary>
                 <Users />
+              </LazyBoundary>
+            ),
+          },
+          {
+            path: 'users/deleted',
+            element: (
+              <LazyBoundary>
+                <DeletedUsers />
               </LazyBoundary>
             ),
           },
@@ -165,9 +179,27 @@ export const router = createBrowserRouter([
             path: 'settings',
             element: (
               <LazyBoundary>
-                <Settings />
+                <SettingsLayout />
               </LazyBoundary>
             ),
+            children: [
+              {
+                index: true,
+                element: <Navigate to="/admin/settings/files" replace />,
+              },
+              {
+                path: 'files',
+                element: (
+                  <LazyBoundary>
+                    <SettingsFiles />
+                  </LazyBoundary>
+                ),
+              },
+            ],
+          },
+          {
+            path: 'settings/deleted-users',
+            element: <Navigate to="/admin/users/deleted" replace />,
           },
         ],
       },

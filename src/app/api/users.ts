@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { userFileCategoryLabel } from '../lib/userFileCategories';
 import { api, API_BASE_URL } from './client';
 
 export type AccountType = 'ADMIN' | 'AGENT' | 'CANDIDATE' | 'SUPER_ADMIN';
@@ -396,9 +397,269 @@ export async function fetchUserById(id: number): Promise<SdgUserDto | null> {
   return normalizeAdminUserRow(o.object ?? o.data ?? o);
 }
 
+/** @deprecated Soft-delete — yangi oqimda `purgeUser` ishlating. */
 export async function deleteUser(id: number): Promise<void> {
   const { data } = await api.delete<unknown>(`/admin/users/${id}`);
   assertApiSuccess(data);
+}
+
+export type UserDeletePreviewFile = {
+  displayName: string;
+  sizeBytes: number | null;
+  fileHashId: string | null;
+  id: number | string | null;
+};
+
+export type UserDeletePreviewFileSection = {
+  id: string;
+  label: string;
+  files: UserDeletePreviewFile[];
+};
+
+export type UserDeletePreviewDto = {
+  userId: number | null;
+  fullName: string;
+  phoneNumber: string;
+  hasCandidateProfile: boolean;
+  sections: UserDeletePreviewFileSection[];
+  totalFileCount: number;
+  totalSizeBytes: number;
+};
+
+const PREVIEW_FILE_SECTION_KEYS = [
+  { key: 'document_files', id: 'document', label: 'Hujjatlar' },
+  { key: 'certificate_files', id: 'certificate', label: 'Sertifikatlar' },
+  { key: 'other_files', id: 'other', label: 'Boshqa fayllar' },
+] as const;
+
+export function formatPreviewBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'] as const;
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = value >= 100 || unit === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toLocaleString('uz-UZ', { maximumFractionDigits: digits })} ${units[unit]}`;
+}
+
+function previewEnvelope(data: unknown): Record<string, unknown> | null {
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  const inner = d.object ?? d.data;
+  if (inner && typeof inner === 'object' && !Array.isArray(inner)) {
+    return inner as Record<string, unknown>;
+  }
+  return d;
+}
+
+function previewFileRows(raw: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object');
+}
+
+function categoryFromFileRow(row: Record<string, unknown>): string {
+  const v = row.category ?? row.fileCategory ?? row.file_category;
+  return typeof v === 'string' && v.trim() ? v.trim() : 'other';
+}
+
+function mergePreviewGroups(
+  map: Map<string, Record<string, unknown>[]>,
+  category: string,
+  files: Record<string, unknown>[],
+): void {
+  if (!files.length) return;
+  const key = category.trim() || 'other';
+  const prev = map.get(key) ?? [];
+  map.set(key, [...prev, ...files]);
+}
+
+function previewBool(raw: unknown): boolean {
+  return raw === true || raw === 'true' || raw === 1;
+}
+
+function previewStr(raw: unknown): string {
+  return typeof raw === 'string' ? raw.trim() : raw != null ? String(raw).trim() : '';
+}
+
+function previewId(raw: unknown): number | string | null {
+  if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+  if (typeof raw === 'string' && raw.trim()) return raw.trim();
+  return null;
+}
+
+function previewFileHash(row: Record<string, unknown>): string | null {
+  for (const k of ['fileHashId', 'file_hash_id', 'fileHash', 'hash']) {
+    const v = row[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+function parsePreviewFileRow(row: Record<string, unknown>): UserDeletePreviewFile {
+  const sizeRaw = row.sizeBytes ?? row.size_bytes ?? row.fileSize ?? row.file_size ?? row.size;
+  let sizeBytes: number | null = null;
+  if (typeof sizeRaw === 'number' && Number.isFinite(sizeRaw)) sizeBytes = sizeRaw;
+  else if (typeof sizeRaw === 'string' && sizeRaw.trim() && Number.isFinite(Number(sizeRaw))) {
+    sizeBytes = Number(sizeRaw);
+  }
+  return {
+    displayName: previewFileDisplayName(row),
+    sizeBytes,
+    fileHashId: previewFileHash(row),
+    id: previewId(row.id ?? row.fileId ?? row.file_id),
+  };
+}
+
+function emptyDeletePreview(): UserDeletePreviewDto {
+  return {
+    userId: null,
+    fullName: '',
+    phoneNumber: '',
+    hasCandidateProfile: false,
+    sections: PREVIEW_FILE_SECTION_KEYS.map((s) => ({ id: s.id, label: s.label, files: [] })),
+    totalFileCount: 0,
+    totalSizeBytes: 0,
+  };
+}
+
+function buildLegacyPreviewSections(root: Record<string, unknown>): UserDeletePreviewFileSection[] {
+  const map = new Map<string, Record<string, unknown>[]>();
+
+  const byCat = root.filesByCategory ?? root.files_by_category;
+  if (byCat && typeof byCat === 'object' && !Array.isArray(byCat)) {
+    for (const [cat, rows] of Object.entries(byCat as Record<string, unknown>)) {
+      mergePreviewGroups(map, cat, previewFileRows(rows));
+    }
+  }
+
+  const categories = root.categories ?? root.fileCategories ?? root.file_categories;
+  if (Array.isArray(categories)) {
+    for (const item of categories) {
+      if (!item || typeof item !== 'object') continue;
+      const o = item as Record<string, unknown>;
+      const cat = String(o.category ?? o.name ?? o.key ?? 'other');
+      const rows = previewFileRows(o.files ?? o.fileList ?? o.items ?? o.content);
+      mergePreviewGroups(map, cat, rows);
+    }
+  }
+
+  const flat = previewFileRows(
+    root.files ?? root.fileList ?? root.file_list ?? root.userFiles ?? root.user_files,
+  );
+  if (flat.length) {
+    const uncategorized: Record<string, unknown>[] = [];
+    for (const row of flat) {
+      const cat = categoryFromFileRow(row);
+      if (cat === 'other' && !(row.category ?? row.fileCategory ?? row.file_category)) {
+        uncategorized.push(row);
+      } else {
+        mergePreviewGroups(map, cat, [row]);
+      }
+    }
+    if (uncategorized.length) mergePreviewGroups(map, 'other', uncategorized);
+  }
+
+  return Array.from(map.entries())
+    .map(([category, files]) => ({
+      id: category,
+      label: userFileCategoryLabel(category),
+      files: files.map(parsePreviewFileRow),
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, 'uz'));
+}
+
+function parseUserDeletePreview(data: unknown): UserDeletePreviewDto {
+  const root = previewEnvelope(data);
+  if (!root) return emptyDeletePreview();
+
+  const knownIds = new Set(PREVIEW_FILE_SECTION_KEYS.map((s) => s.id));
+  const sections: UserDeletePreviewFileSection[] = PREVIEW_FILE_SECTION_KEYS.map((s) => ({
+    id: s.id,
+    label: s.label,
+    files: previewFileRows(root[s.key]).map(parsePreviewFileRow),
+  }));
+
+  for (const legacy of buildLegacyPreviewSections(root)) {
+    if (knownIds.has(legacy.id)) {
+      const slot = sections.find((x) => x.id === legacy.id);
+      if (slot && slot.files.length === 0 && legacy.files.length > 0) slot.files = legacy.files;
+    } else if (legacy.files.length > 0) {
+      sections.push(legacy);
+    }
+  }
+
+  const countedFiles = sections.reduce((n, s) => n + s.files.length, 0);
+  const summedBytes = sections.reduce(
+    (n, s) => n + s.files.reduce((m, f) => m + (f.sizeBytes ?? 0), 0),
+    0,
+  );
+
+  const userIdRaw = root.user_id ?? root.userId ?? root.id;
+  const userId =
+    typeof userIdRaw === 'number' && Number.isFinite(userIdRaw)
+      ? userIdRaw
+      : typeof userIdRaw === 'string' && /^\d+$/.test(userIdRaw)
+        ? Number(userIdRaw)
+        : null;
+
+  const totalFileCount = numField(root.total_file_count ?? root.totalFileCount, countedFiles);
+  const totalSizeBytes = numField(root.total_size_bytes ?? root.totalSizeBytes, summedBytes);
+
+  return {
+    userId,
+    fullName: previewStr(root.full_name ?? root.fullName) || previewStr(root.name),
+    phoneNumber: previewStr(root.phone_number ?? root.phoneNumber ?? root.phone),
+    hasCandidateProfile: previewBool(root.has_candidate_profile ?? root.hasCandidateProfile),
+    sections,
+    totalFileCount,
+    totalSizeBytes,
+  };
+}
+
+/** GET /admin/users/{id}/delete-preview — o‘chirishdan oldin fayllar va bog‘liq ma’lumot */
+export async function fetchUserDeletePreview(id: number): Promise<UserDeletePreviewDto> {
+  const { data } = await api.get<unknown>(`/admin/users/${id}/delete-preview`);
+  assertApiSuccess(data);
+  return parseUserDeletePreview(data);
+}
+
+/** DELETE /admin/users/{id}/purge — tasdiqlangandan keyin butunlay o‘chirish */
+export async function purgeUser(id: number): Promise<void> {
+  const { data } = await api.delete<unknown>(`/admin/users/${id}/purge`);
+  assertApiSuccess(data);
+}
+
+export type FetchDeletedUsersQuery = {
+  page?: number;
+  size?: number;
+};
+
+/** GET /admin/users/deleted — soft-delete qilingan foydalanuvchilar */
+export async function fetchDeletedUsersWithMeta(
+  query: FetchDeletedUsersQuery = {},
+): Promise<{ users: SdgUserDto[]; meta: AdminUsersPageMeta | null }> {
+  const { data } = await api.get<unknown>('/admin/users/deleted', {
+    params: { page: query.page ?? 0, size: query.size ?? 50 },
+  });
+  assertApiSuccess(data);
+  return parseAdminUsersListResponse(data);
+}
+
+/** PATCH /admin/users/{id}/restore — soft-delete bekor qilish */
+export async function restoreUser(id: number): Promise<void> {
+  const { data } = await api.patch<unknown>(`/admin/users/${id}/restore`);
+  assertApiSuccess(data);
+}
+
+export function previewFileDisplayName(row: Record<string, unknown>): string {
+  for (const k of ['fileName', 'originalFileName', 'name', 'title']) {
+    const v = row[k];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '—';
 }
 
 function buildUserCreateBody(dto: SdgUserDto): Record<string, unknown> {

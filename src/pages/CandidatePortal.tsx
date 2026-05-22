@@ -2,6 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
+import FotonLogo from '../Img/e9ee15f1-3bc8-490d-941f-3b6a5ee4ce9c_removalai_preview.png';
+import { getUzRegionGroups, UzRegionGroup } from '../app/lib/uzRegionsCodeSystem'; // adjust import path
 import type { LucideIcon } from 'lucide-react';
 import {
   Bell,
@@ -53,7 +55,9 @@ import {
   candidateAddWorkExperience,
   candidateCreateProfile,
   type CandidateWorkExperienceBody,
+  bootstrapCandidatePortalSession,
   candidateFetchDestinationCountries,
+  candidateFetchMeSummary,
   candidateFetchProfessionCategories,
   candidateFetchProfessionsByCategory,
   candidateFetchProfileMe,
@@ -61,10 +65,9 @@ import {
   candidatePortalError,
   candidateSendOtp,
   candidateSubmitProfile,
-  candidateTryResumeSession,
-  candidateTrySessionFromTelegramChatId,
   candidateUpdateMyUser,
   candidateUpdateProfile,
+  candidateUploadDocument,
   candidateVerifyOtp,
   normalizeCandidateRegionId,
   type CandidateProfileUpdateBody,
@@ -86,12 +89,18 @@ import {
 } from '../app/lib/adminUiUz';
 import { REGIONS } from '../app/data/mockData';
 import { countryFlagEmoji, countryNameUz } from '../app/lib/regionFlags';
-import { getCandidateProfileId, getCandidateToken } from '../app/candidate/candidateSession';
+import {
+  getCachedCandidateSummary,
+  getCandidateProfileId,
+  getCandidateToken,
+} from '../app/candidate/candidateSession';
 import { syntheticTelegramChatId } from '../app/lib/syntheticTelegramChatId';
 import {
+  getTelegramEntryContext,
   initTelegramMiniApp,
   isTelegramMiniApp,
   readTelegramMiniAppChatId,
+  telegramEntryContextLabel,
 } from '../app/lib/telegramWebApp';
 
 /** `mockData` REGIONS — "1-Toshkent..." → id */
@@ -122,15 +131,58 @@ const C = {
 
 const LOGO_URL = 'https://thekasb.uz/icones/new-main-logo.png';
 
+/** To‘liq ekran (Telegram / mobil); katta telefonlarda markazda cheklanadi */
+const PORTAL_MAX_WIDTH_PX = 480;
+const PORTAL_FRAME_STYLE: CSSProperties = {
+  width: '100%',
+  maxWidth: PORTAL_MAX_WIDTH_PX,
+  height: '100dvh',
+  minHeight: '100svh',
+  backgroundColor: C.bg,
+};
+
+function CandidatePortalShell({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="kasb-candidate-portal flex min-h-[100dvh] min-h-[100svh] w-full justify-center"
+      style={{
+        backgroundColor: C.bg,
+        fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+      }}
+    >
+      <div className="relative flex overflow-hidden" style={PORTAL_FRAME_STYLE}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Screen = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Screen = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 type View = 'onboarding' | 'home';
 
 /** Til darajasi (CEFR) — backend `level` bilan mos */
 type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
 type LanguageSelection = { name: string; level: CefrLevel };
+
+type CandidateDocumentType =
+  | 'PASSPORT'
+  | 'DIPLOMA'
+  | 'CERTIFICATE'
+  | 'PHOTO'
+  | 'WORK_PERMIT'
+  | 'OTHER';
+
+const DOCUMENT_TYPES: Array<{ type: CandidateDocumentType; label: string; required: boolean }> = [
+  { type: 'PASSPORT', label: 'Passport', required: true },
+  { type: 'PHOTO', label: 'Photo', required: true },
+  { type: 'DIPLOMA', label: 'Diploma', required: false },
+  { type: 'CERTIFICATE', label: 'Certificate', required: false },
+  { type: 'WORK_PERMIT', label: 'Ish ruxsatnomasi', required: false },
+  { type: 'OTHER', label: 'Other', required: false },
+];
 
 interface FormState {
   phoneNational: string;
@@ -153,15 +205,20 @@ interface FormState {
   languageSelections: LanguageSelection[];
   /** «Til bilmayman» tanlangan bo‘lsa */
   declaresNoLanguage: boolean;
-  /** EUR, `desired_salary_min` */
+  /** USD, `desired_salary_min` */
   desiredSalaryMin: number;
-  /** EUR, `desired_salary_max` */
+  /** USD, `desired_salary_max` */
   desiredSalaryMax: number;
   profileFirstName: string;
   profileLastName: string;
   profileGender: 'ERKAK' | 'AYOL';
   /** YYYY-MM-DD */
   profileDateBirth: string;
+  addressRegion: string;
+  addressDistrict: string;
+  addressMFY: string;
+  address: string;
+  documents: Partial<Record<CandidateDocumentType, File>>;
 }
 
 /** Joriy forma bo‘yicha bitta work-experience obyekti (slug API bilan mos) */
@@ -224,14 +281,14 @@ const NO_LANGUAGE_LABEL = 'Til bilmayman';
 
 const CEFR_LEVELS: CefrLevel[] = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'];
 
-/** Kutilayotgan oylik (EUR) — suriladigan diapazon */
-const SALARY_EUR_MIN_BOUND = 600;
-const SALARY_EUR_MAX_BOUND = 8000;
-const SALARY_EUR_STEP = 50;
-const SALARY_EUR_DEFAULT_MIN = 600;
-const SALARY_EUR_DEFAULT_MAX = 3500;
+/** Kutilayotgan oylik (USD) — suriladigan diapazon */
+const SALARY_USD_MIN_BOUND = 600;
+const SALARY_USD_MAX_BOUND = 8000;
+const SALARY_USD_STEP = 50;
+const SALARY_USD_DEFAULT_MIN = 600;
+const SALARY_USD_DEFAULT_MAX = 3500;
 
-const TOTAL_SCREENS = 7;
+const TOTAL_SCREENS = 8;
 /** Backend SMS kodi uzunligi */
 const OTP_SLOT_COUNT = 5;
 /** Qayta yuborishgacha kutish (sekund) */
@@ -259,7 +316,7 @@ function InlineNoticeBar({ notice }: { notice: SmsInlineNotice }) {
   return (
     <p
       role={notice.variant === 'error' ? 'alert' : 'status'}
-      className="mb-3 rounded-xl px-3 py-2.5 text-center text-[13px] leading-snug"
+      className="mb-3 rounded-xl px-3 py-2.5 text-center text-[14px] leading-snug"
       style={{
         backgroundColor: `${accent}18`,
         border: `1px solid ${accent}44`,
@@ -276,8 +333,9 @@ const PROGRESS_BY_SCREEN: Record<number, number> = {
   3: 28,
   4: 42,
   5: 55,
-  6: 72,
-  7: 100,
+  6: 70,
+  7: 85,
+  8: 100,
 };
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -302,7 +360,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p
       style={{
-        fontSize: 11,
+        fontSize: 12,
         fontWeight: 600,
         color: C.muted,
         letterSpacing: '0.8px',
@@ -329,9 +387,9 @@ function PrimaryButton({
     <button
       onClick={onClick}
       disabled={disabled || loading}
-      className="h-14 w-full rounded-2xl font-semibold transition-all active:scale-[0.98] disabled:active:scale-100"
+      className="h-[3.25rem] min-h-[52px] w-full rounded-2xl font-semibold transition-all active:scale-[0.98] disabled:active:scale-100"
       style={{
-        fontSize: 16,
+        fontSize: 17,
         letterSpacing: '-0.2px',
         backgroundColor: disabled || loading ? C.blueGlow : C.blue,
         color: disabled || loading ? `${C.blue}44` : '#fff',
@@ -508,8 +566,9 @@ function stepLabel(screen: Screen): string {
     3: 'SMS Tasdiqlash',
     4: 'Shaxsiy ma’lumotlar',
     5: 'Kasb tanlash',
-    6: 'Davlat tanlash',
-    7: 'Tayyorlik & Til',
+    6: 'Til bilimi',
+    7: 'Hujjatlar',
+    8: 'Davlat va maosh',
   };
   return labels[screen] ?? '';
 }
@@ -568,30 +627,32 @@ function phoneE164FromNationalDigits(nationalDigits: string): string | null {
 
 // ─── Screens ─────────────────────────────────────────────────────────────────
 
-function Screen1({ onNext, lookupBusy = false }: { onNext: () => void; lookupBusy?: boolean }) {
+function Screen1({
+  onNext,
+  lookupBusy = false,
+  entryLabel,
+}: {
+  onNext: () => void;
+  lookupBusy?: boolean;
+  entryLabel?: string;
+}) {
   return (
     <div className="flex h-full flex-col">
       <div className="flex flex-1 flex-col items-center justify-center px-6 pt-[52px]">
         <div
           className="mb-3 flex items-center justify-center"
-          style={{
-            width: 80,
-            height: 80,
-            borderRadius: 20,
-            backgroundColor: C.blueSelected,
-            border: `1px solid ${C.blue}`,
-          }}
+          
         >
-          <img src={LOGO_URL} alt="THE KASB logo" style={{ objectFit: 'contain', width: 72, height: 72 }} />
+          <img className='' src={FotonLogo} alt="THE KASB logo" style={{ objectFit: 'contain', width: 100, height: 100 }} />
         </div>
-        <p className="mb-10 font-semibold" style={{ fontSize: 11, color: C.blue, letterSpacing: '1px' }}>
+        <p className="mb-10 font-semibold" style={{ fontSize: 12, color: C.blue, letterSpacing: '1px' }}>
           THE KASB
         </p>
 
         <h1
           className="mb-3 w-full text-center"
           style={{
-            fontSize: 30,
+            fontSize: 32,
             fontWeight: 800,
             color: C.text,
             lineHeight: 1.15,
@@ -601,9 +662,14 @@ function Screen1({ onNext, lookupBusy = false }: { onNext: () => void; lookupBus
         >
           Xorijda yuqori maoshli ish toping
         </h1>
-        <p className="mb-8 text-center" style={{ fontSize: 14, color: C.muted, lineHeight: 1.7 }}>
+        <p className="mb-8 text-center" style={{ fontSize: 15, color: C.muted, lineHeight: 1.7 }}>
           Atigi 1 daqiqada ma&apos;lumotlaringizni kiriting — biz eng mos ishni topamiz
         </p>
+        {entryLabel ? (
+          <p className="mb-4 text-center text-[13px]" style={{ color: C.muted }}>
+            {entryLabel}
+          </p>
+        ) : null}
 
         <div className="mb-8 flex w-full flex-col gap-[10px]">
           {[
@@ -613,7 +679,7 @@ function Screen1({ onNext, lookupBusy = false }: { onNext: () => void; lookupBus
           ].map((item) => (
             <div key={item} className="flex items-start gap-2.5">
               <BlueDot />
-              <span style={{ fontSize: 13, color: C.muted }}>{item}</span>
+              <span style={{ fontSize: 14, color: C.muted }}>{item}</span>
             </div>
           ))}
         </div>
@@ -623,7 +689,7 @@ function Screen1({ onNext, lookupBusy = false }: { onNext: () => void; lookupBus
           style={{ backgroundColor: C.blueGlow, border: `1px solid ${C.blue}22` }}
         >
           <PulseDot />
-          <p style={{ fontSize: 13, color: C.muted }}>
+          <p style={{ fontSize: 14, color: C.muted }}>
             <span className="font-bold" style={{ color: C.text }}>
               127 ta
             </span>{' '}
@@ -634,14 +700,14 @@ function Screen1({ onNext, lookupBusy = false }: { onNext: () => void; lookupBus
 
       <div className="flex flex-col gap-2 px-5 pb-9 pt-6">
         {lookupBusy ? (
-          <p className="mb-1 text-center text-[13px] leading-snug" style={{ color: C.muted }}>
+          <p className="mb-1 text-center text-[14px] leading-snug" style={{ color: C.muted }}>
             Mavjud akkaunt tekshirilmoqda…
           </p>
         ) : null}
         <PrimaryButton onClick={onNext} disabled={lookupBusy} loading={lookupBusy}>
           Boshlash — 1 daqiqa
         </PrimaryButton>
-        <p className="text-center" style={{ fontSize: 13, color: C.muted }}>
+        <p className="text-center" style={{ fontSize: 14, color: C.muted }}>
           Allaqachon akkauntim bor →
         </p>
       </div>
@@ -673,7 +739,7 @@ function Screen2({
         <h2
           className="mb-1.5"
           style={{
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: 700,
             color: C.text,
             letterSpacing: '-0.5px',
@@ -805,7 +871,7 @@ function Screen3({
         <h2
           className="mb-1.5"
           style={{
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: 700,
             color: C.text,
             letterSpacing: '-0.5px',
@@ -967,6 +1033,91 @@ function Screen4Personal({
               fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
             }}
             aria-label="Tug‘ilgan sana"
+          />
+        </div>
+
+        <div className="mt-4 min-w-0">
+          <SectionLabel>Viloyat</SectionLabel>
+          <select
+            value={form.addressRegion}
+            onChange={(e) => setForm((f) => ({ ...f, addressRegion: e.target.value, addressDistrict: '' }))}
+            className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
+            style={{
+              border: `1.5px solid ${form.addressRegion ? C.blue : C.border}`,
+              backgroundColor: C.card,
+              color: C.text,
+              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+            }}
+            aria-label="Viloyat"
+          >
+            <option value="">Viloyatni tanlang</option>
+            {getUzRegionGroups().map((group) => (
+              <option key={group.viloyatCode} value={group.viloyatCode}>
+                {group.viloyatNameUz}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="mt-4 min-w-0">
+          <SectionLabel>Tuman</SectionLabel>
+          <select
+            value={form.addressDistrict}
+            onChange={(e) => setForm((f) => ({ ...f, addressDistrict: e.target.value }))}
+            disabled={!form.addressRegion}
+            className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
+            style={{
+              border: `1.5px solid ${form.addressDistrict ? C.blue : C.border}`,
+              backgroundColor: C.card,
+              color: C.text,
+              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+            }}
+            aria-label="Tuman"
+          >
+            <option value="">Tumanni tanlang</option>
+            {getUzRegionGroups()
+              .find((group) => group.viloyatCode === form.addressRegion)
+              ?.tumanlar.map((t) => (
+                <option key={t.code} value={t.code}>
+                  {t.display}
+                </option>
+              ))}
+          </select>
+        </div>
+
+        <div className="mt-4 min-w-0">
+          <SectionLabel>MFY</SectionLabel>
+          <input
+            type="text"
+            placeholder="Masalan: Furqat MFY"
+            value={form.addressMFY}
+            onChange={(e) => setForm((f) => ({ ...f, addressMFY: e.target.value }))}
+            className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
+            style={{
+              border: `1.5px solid ${form.addressMFY ? C.blue : C.border}`,
+              backgroundColor: C.card,
+              color: C.text,
+              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+            }}
+            aria-label="MFY"
+          />
+        </div>
+
+        <div className="mt-4 min-w-0">
+          <SectionLabel>Manzil</SectionLabel>
+          <input
+            type="text"
+            placeholder="Ko‘cha, uy raqami"
+            value={form.address}
+            onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+            className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
+            style={{
+              border: `1.5px solid ${form.address ? C.blue : C.border}`,
+              backgroundColor: C.card,
+              color: C.text,
+              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+            }}
+            aria-label="Manzil"
           />
         </div>
       </div>
@@ -1181,7 +1332,7 @@ function Screen5({
         <h2
           className="mb-1.5"
           style={{
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: 700,
             color: C.text,
             letterSpacing: '-0.5px',
@@ -1377,267 +1528,6 @@ function Screen6({
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
 }) {
-  const [destinations, setDestinations] = useState<DestinationCountryDto[]>([]);
-  const [destLoading, setDestLoading] = useState(true);
-  const [destErr, setDestErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setDestLoading(true);
-    setDestErr(null);
-    void candidateFetchDestinationCountries()
-      .then((rows) => {
-        if (!cancelled) setDestinations(rows);
-      })
-      .catch((e) => {
-        if (!cancelled) setDestErr(candidatePortalError(e, 'Mamlakatlar ro‘yxati yuklanmadi.'));
-      })
-      .finally(() => {
-        if (!cancelled) setDestLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const toggle = (id: string) =>
-    setForm((f) => ({
-      ...f,
-      countries: f.countries.includes(id) ? f.countries.filter((c) => c !== id) : [...f.countries, id],
-    }));
-
-  return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={6} />
-      <div className="flex flex-1 flex-col overflow-y-auto px-5">
-        <h2
-          className="mb-1.5"
-          style={{
-            fontSize: 26,
-            fontWeight: 700,
-            color: C.text,
-            letterSpacing: '-0.5px',
-            fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
-          }}
-        >
-          Qaysi davlatda ishlamoqchisiz?
-        </h2>
-        <p className="mb-5" style={{ fontSize: 14, color: C.muted }}>
-          Bir necha tanlash mumkin
-        </p>
-        <div className="flex flex-col gap-2.5 pb-4">
-          {destLoading ? (
-            <div className="flex flex-col items-center justify-center gap-3 py-10">
-              <Loader2 className="h-8 w-8 animate-spin" color={C.blue} strokeWidth={2} aria-hidden />
-              <p style={{ fontSize: 14, color: C.muted }}>Mamlakatlar yuklanmoqda…</p>
-            </div>
-          ) : destErr ? (
-            <p
-              className="rounded-xl px-3 py-2.5 text-center text-[13px] leading-snug"
-              style={{ backgroundColor: `${C.red}18`, border: `1px solid ${C.red}44`, color: C.text }}
-              role="alert"
-            >
-              {destErr}
-            </p>
-          ) : destinations.length === 0 ? (
-            <p style={{ fontSize: 14, color: C.muted }}>Hozircha tanlash uchun mamlakat katalogi bo‘sh.</p>
-          ) : (
-            destinations.map((d) => {
-              const title = d.name_uz || d.name_ru || d.country_code;
-              const flag = d.flag_emoji || countryFlagEmoji(d.country_code);
-              return (
-                <OptionCard
-                  key={d.id}
-                  selected={form.countries.includes(d.id)}
-                  onClick={() => toggle(d.id)}
-                  left={
-                    <span className="shrink-0" style={{ fontSize: 22 }}>
-                      {flag}
-                    </span>
-                  }
-                  title={title}
-                  desc={destinationCountryCardDesc(d)}
-                />
-              );
-            })
-          )}
-        </div>
-      </div>
-      <div className="px-5 pb-9 pt-4">
-        <PrimaryButton onClick={onNext} disabled={form.countries.length === 0 || destLoading || !!destErr}>
-          Davom etish
-        </PrimaryButton>
-      </div>
-    </div>
-  );
-}
-
-function DesiredSalaryRangeBlock({
-  form,
-  setForm,
-}: {
-  form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
-}) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<'min' | 'max' | null>(null);
-
-  const span = SALARY_EUR_MAX_BOUND - SALARY_EUR_MIN_BOUND;
-  const leftPct = ((form.desiredSalaryMin - SALARY_EUR_MIN_BOUND) / span) * 100;
-  const rightPct = ((form.desiredSalaryMax - SALARY_EUR_MIN_BOUND) / span) * 100;
-  const widthPct = Math.max(0, rightPct - leftPct);
-
-  const valueFromClientX = (clientX: number) => {
-    const el = trackRef.current;
-    if (!el) return SALARY_EUR_MIN_BOUND;
-    const r = el.getBoundingClientRect();
-    const t = r.width <= 0 ? 0 : Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-    const raw = SALARY_EUR_MIN_BOUND + t * span;
-    const stepped = Math.round(raw / SALARY_EUR_STEP) * SALARY_EUR_STEP;
-    return Math.max(SALARY_EUR_MIN_BOUND, Math.min(SALARY_EUR_MAX_BOUND, stepped));
-  };
-
-  const closestThumb = (clientX: number): 'min' | 'max' => {
-    const el = trackRef.current;
-    if (!el) return 'min';
-    const r = el.getBoundingClientRect();
-    const xMin = r.left + (leftPct / 100) * r.width;
-    const xMax = r.left + (rightPct / 100) * r.width;
-    return Math.abs(clientX - xMin) <= Math.abs(clientX - xMax) ? 'min' : 'max';
-  };
-
-  const applyDrag = (v: number, which: 'min' | 'max') => {
-    const stepped = Math.round(v / SALARY_EUR_STEP) * SALARY_EUR_STEP;
-    if (which === 'min') {
-      setForm((f) => {
-        const cap = f.desiredSalaryMax - SALARY_EUR_STEP;
-        const next = Math.min(Math.max(SALARY_EUR_MIN_BOUND, stepped), cap);
-        return { ...f, desiredSalaryMin: next };
-      });
-    } else {
-      setForm((f) => {
-        const floor = f.desiredSalaryMin + SALARY_EUR_STEP;
-        const next = Math.max(Math.min(SALARY_EUR_MAX_BOUND, stepped), floor);
-        return { ...f, desiredSalaryMax: next };
-      });
-    }
-  };
-
-  const handlePointerDown = (e: React.PointerEvent) => {
-    const thumb = (e.target as HTMLElement).closest('[data-salary-thumb]') as HTMLElement | null;
-    let which: 'min' | 'max';
-    if (thumb?.dataset.salaryThumb === 'min') which = 'min';
-    else if (thumb?.dataset.salaryThumb === 'max') which = 'max';
-    else which = closestThumb(e.clientX);
-
-    dragRef.current = which;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    e.preventDefault();
-    applyDrag(valueFromClientX(e.clientX), which);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent) => {
-    if (!dragRef.current) return;
-    applyDrag(valueFromClientX(e.clientX), dragRef.current);
-  };
-
-  const endDrag = (e: React.PointerEvent) => {
-    dragRef.current = null;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      /* already released */
-    }
-  };
-
-  const thumbStyle = {
-    boxShadow: `0 1px 4px ${C.border}, 0 0 0 2px #fff`,
-    backgroundColor: C.blue,
-    borderColor: '#fff',
-  };
-
-  return (
-    <div className="mb-6">
-      <SectionLabel>Kutilayotgan oylik (EUR)</SectionLabel>
-      <div className="mb-1 mt-2 flex items-baseline justify-between gap-2">
-        <div>
-          <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: C.muted }}>
-            Minimum
-          </p>
-          <p className="text-lg font-bold tabular-nums" style={{ color: C.blueL }}>
-            {form.desiredSalaryMin.toLocaleString('de-DE')} €
-          </p>
-        </div>
-        <div className="text-right">
-          <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: C.muted }}>
-            Maksimum
-          </p>
-          <p className="text-lg font-bold tabular-nums" style={{ color: C.blueL }}>
-            {form.desiredSalaryMax.toLocaleString('de-DE')} €
-          </p>
-        </div>
-      </div>
-      <div
-        ref={trackRef}
-        role="group"
-        aria-label="Kutilayotgan oylik oralig'i"
-        className="relative mb-3 mt-1 h-11 w-full cursor-grab touch-none select-none active:cursor-grabbing"
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-      >
-        <div
-          className="pointer-events-none absolute left-0 right-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full"
-          style={{ backgroundColor: C.border }}
-        />
-        <div
-          className="pointer-events-none absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full transition-[left,width] duration-75 ease-out"
-          style={{
-            left: `${leftPct}%`,
-            width: `${widthPct}%`,
-            minWidth: widthPct > 0 ? 4 : 0,
-            backgroundColor: C.blue,
-            boxShadow: `0 0 12px ${C.blue}55`,
-          }}
-        />
-        <button
-          type="button"
-          data-salary-thumb="min"
-          aria-label={`Minimal oylik: ${form.desiredSalaryMin} evro`}
-          className="absolute top-1/2 z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
-          style={{ left: `${leftPct}%`, ...thumbStyle }}
-        />
-        <button
-          type="button"
-          data-salary-thumb="max"
-          aria-label={`Maksimal oylik: ${form.desiredSalaryMax} evro`}
-          className="absolute top-1/2 z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
-          style={{ left: `${rightPct}%`, ...thumbStyle }}
-        />
-      </div>
-      <p className="text-[11px]" style={{ color: C.muted }}>
-        Oraliq: {SALARY_EUR_MIN_BOUND.toLocaleString('de-DE')} – {SALARY_EUR_MAX_BOUND.toLocaleString('de-DE')} € · qadam{' '}
-        {SALARY_EUR_STEP} €
-      </p>
-    </div>
-  );
-}
-
-function Screen7({
-  onNext,
-  onBack,
-  form,
-  setForm,
-  busy,
-}: {
-  onNext: () => void;
-  onBack: () => void;
-  form: FormState;
-  setForm: React.Dispatch<React.SetStateAction<FormState>>;
-  busy: boolean;
-}) {
   const [showOtherLangPanel, setShowOtherLangPanel] = useState(false);
   const [otherLangDraft, setOtherLangDraft] = useState('');
   const [otherLangLevel, setOtherLangLevel] = useState<CefrLevel>('B1');
@@ -1701,43 +1591,21 @@ function Screen7({
   return (
     <div className="flex h-full flex-col">
       <TopBar onBack={onBack} />
-      <ProgressBar screen={7} />
+      <ProgressBar screen={6} />
       <div className="flex flex-1 flex-col overflow-y-auto px-5">
         <h2
           className="mb-1.5"
           style={{
-            fontSize: 26,
+            fontSize: 28,
             fontWeight: 700,
             color: C.text,
             letterSpacing: '-0.5px',
             fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
           }}
         >
-          Qachon ishlashga tayyorsiz?
+          Til bilimi
         </h2>
         <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
-          Ish boshlash vaqtingizni tanlang — bu ma&apos;lumot profilingizga yoziladi.
-        </p>
-        <SectionLabel>Bandlik tayyorgarligi</SectionLabel>
-        <div className="mb-6 mt-2 flex flex-col gap-2.5">
-          {AVAILABILITY.map((a) => (
-            <OptionCard
-              key={a.id}
-              selected={form.availability === (a.id as any)}
-              onClick={() => setForm((f) => ({ ...f, availability: a.id as any }))}
-              left={<span className="shrink-0 text-lg">{a.icon}</span>}
-              title={a.name}
-              desc={a.desc}
-            />
-          ))}
-        </div>
-
-        <DesiredSalaryRangeBlock form={form} setForm={setForm} />
-
-        <div className="mb-5 h-px w-full" style={{ backgroundColor: C.border }} aria-hidden />
-
-        <SectionLabel>Til bilimi</SectionLabel>
-        <p className="mb-3 mt-2 text-[13px] leading-relaxed" style={{ color: C.muted }}>
           Har bir til uchun darajani belgilang. «Boshqa til» bosilganda yozish maydoni ochiladi.
         </p>
 
@@ -1888,7 +1756,409 @@ function Screen7({
         ) : null}
       </div>
       <div className="px-5 pb-9 pt-4">
-        <PrimaryButton onClick={onNext} disabled={!form.availability || !langsOk} loading={busy}>
+        <PrimaryButton onClick={onNext} disabled={!langsOk}>
+          Davom etish
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+function Screen7Documents({
+  onNext,
+  onBack,
+  form,
+  setForm,
+  busy,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  busy: boolean;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const requiredMissing = DOCUMENT_TYPES.filter((d) => d.required && !form.documents[d.type]);
+  const canContinue = requiredMissing.length === 0 && !uploading && !busy;
+
+  const handleFileChange = (type: CandidateDocumentType, file: File | null) => {
+    setForm((f) => ({ ...f, documents: { ...f.documents, [type]: file } }));
+  };
+
+  const handleSubmit = async () => {
+    if (requiredMissing.length > 0) {
+      setError(`Iltimos, quyidagi hujjatlarni tanlang: ${requiredMissing.map((d) => d.label).join(', ')}`);
+      return;
+    }
+    const filesToUpload = DOCUMENT_TYPES.filter((d) => !!form.documents[d.type]);
+    if (filesToUpload.length === 0) {
+      setError('Hech qanday hujjat tanlanmadi.');
+      return;
+    }
+
+    setError(null);
+    setUploading(true);
+    try {
+      for (const doc of filesToUpload) {
+        const file = form.documents[doc.type];
+        if (!file) continue;
+        await candidateUploadDocument(file, doc.type);
+      }
+      onNext();
+    } catch (e) {
+      setError(candidatePortalError(e, 'Hujjatlarni yuklashda xato.')); 
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <TopBar onBack={onBack} />
+      <ProgressBar screen={7} />
+      <div className="flex flex-1 flex-col overflow-y-auto px-5">
+        <h2
+          className="mb-1.5"
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            color: C.text,
+            letterSpacing: '-0.5px',
+            fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+          }}
+        >
+          Hujjatlar
+        </h2>
+        <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
+          Iltimos, pasport va rasmni majburiy yuklang. Boshqa hujjatlar ixtiyoriy.
+        </p>
+        <div className="flex flex-col gap-4 pb-4">
+          {DOCUMENT_TYPES.map((doc) => {
+            const selectedFile = form.documents[doc.type];
+            return (
+              <label key={doc.type} className="block rounded-[16px] border border-white/10 bg-[#0f1720] p-4">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="font-semibold" style={{ color: C.text }}>
+                    {doc.label}
+                  </span>
+                  <span className="text-[11px] font-semibold uppercase" style={{ color: doc.required ? C.blue : C.muted }}>
+                    {doc.required ? 'Majburiy' : 'Ixtiyoriy'}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <input
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => handleFileChange(doc.type, e.target.files?.[0] ?? null)}
+                    className="w-full rounded-[14px] border border-white/10 bg-[#111827] px-3 py-3 text-sm text-white outline-none transition-colors sm:w-auto"
+                  />
+                  {selectedFile ? (
+                    <div className="text-[13px] text-white/80">
+                      {selectedFile.name}
+                    </div>
+                  ) : null}
+                </div>
+              </label>
+            );
+          })}
+        </div>
+        {error ? (
+          <p className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-100" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+      <div className="px-5 pb-9 pt-4">
+        <PrimaryButton onClick={handleSubmit} disabled={!canContinue} loading={busy || uploading}>
+          Yuklash va davom etish
+        </PrimaryButton>
+      </div>
+    </div>
+  );
+}
+
+function DesiredSalaryRangeBlock({
+  form,
+  setForm,
+}: {
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+}) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<'min' | 'max' | null>(null);
+
+  const span = SALARY_USD_MAX_BOUND - SALARY_USD_MIN_BOUND;
+  const leftPct = ((form.desiredSalaryMin - SALARY_USD_MIN_BOUND) / span) * 100;
+  const rightPct = ((form.desiredSalaryMax - SALARY_USD_MIN_BOUND) / span) * 100;
+  const widthPct = Math.max(0, rightPct - leftPct);
+
+  const valueFromClientX = (clientX: number) => {
+    const el = trackRef.current;
+    if (!el) return SALARY_USD_MIN_BOUND;
+    const r = el.getBoundingClientRect();
+    const t = r.width <= 0 ? 0 : Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+    const raw = SALARY_USD_MIN_BOUND + t * span;
+    const stepped = Math.round(raw / SALARY_USD_STEP) * SALARY_USD_STEP;
+    return Math.max(SALARY_USD_MIN_BOUND, Math.min(SALARY_USD_MAX_BOUND, stepped));
+  };
+
+  const closestThumb = (clientX: number): 'min' | 'max' => {
+    const el = trackRef.current;
+    if (!el) return 'min';
+    const r = el.getBoundingClientRect();
+    const xMin = r.left + (leftPct / 100) * r.width;
+    const xMax = r.left + (rightPct / 100) * r.width;
+    return Math.abs(clientX - xMin) <= Math.abs(clientX - xMax) ? 'min' : 'max';
+  };
+
+  const applyDrag = (v: number, which: 'min' | 'max') => {
+    const stepped = Math.round(v / SALARY_USD_STEP) * SALARY_USD_STEP;
+    if (which === 'min') {
+      setForm((f) => {
+        const cap = f.desiredSalaryMax - SALARY_USD_STEP;
+        const next = Math.min(Math.max(SALARY_USD_MIN_BOUND, stepped), cap);
+        return { ...f, desiredSalaryMin: next };
+      });
+    } else {
+      setForm((f) => {
+        const floor = f.desiredSalaryMin + SALARY_USD_STEP;
+        const next = Math.max(Math.min(SALARY_USD_MAX_BOUND, stepped), floor);
+        return { ...f, desiredSalaryMax: next };
+      });
+    }
+  };
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const thumb = (e.target as HTMLElement).closest('[data-salary-thumb]') as HTMLElement | null;
+    let which: 'min' | 'max';
+    if (thumb?.dataset.salaryThumb === 'min') which = 'min';
+    else if (thumb?.dataset.salaryThumb === 'max') which = 'max';
+    else which = closestThumb(e.clientX);
+
+    dragRef.current = which;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    e.preventDefault();
+    applyDrag(valueFromClientX(e.clientX), which);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!dragRef.current) return;
+    applyDrag(valueFromClientX(e.clientX), dragRef.current);
+  };
+
+  const endDrag = (e: React.PointerEvent) => {
+    dragRef.current = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* already released */
+    }
+  };
+
+  const thumbStyle = {
+    boxShadow: `0 1px 4px ${C.border}, 0 0 0 2px #fff`,
+    backgroundColor: C.blue,
+    borderColor: '#fff',
+  };
+
+  return (
+    <div className="mb-6">
+      <SectionLabel>Kutilayotgan oylik (USD)</SectionLabel>
+      <div className="mb-1 mt-2 flex items-baseline justify-between gap-2">
+        <div>
+          <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: C.muted }}>
+            Minimum
+          </p>
+          <p className="text-lg font-bold tabular-nums" style={{ color: C.blueL }}>
+            {form.desiredSalaryMin.toLocaleString('en-US')} $
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="text-[10px] font-medium uppercase tracking-wide" style={{ color: C.muted }}>
+            Maksimum
+          </p>
+          <p className="text-lg font-bold tabular-nums" style={{ color: C.blueL }}>
+            {form.desiredSalaryMax.toLocaleString('en-US')} $
+          </p>
+        </div>
+      </div>
+      <div
+        ref={trackRef}
+        role="group"
+        aria-label="Kutilayotgan oylik oralig'i"
+        className="relative mb-3 mt-1 h-11 w-full cursor-grab touch-none select-none active:cursor-grabbing"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={endDrag}
+        onPointerCancel={endDrag}
+      >
+        <div
+          className="pointer-events-none absolute left-0 right-0 top-1/2 h-2.5 -translate-y-1/2 rounded-full"
+          style={{ backgroundColor: C.border }}
+        />
+        <div
+          className="pointer-events-none absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full transition-[left,width] duration-75 ease-out"
+          style={{
+            left: `${leftPct}%`,
+            width: `${widthPct}%`,
+            minWidth: widthPct > 0 ? 4 : 0,
+            backgroundColor: C.blue,
+            boxShadow: `0 0 12px ${C.blue}55`,
+          }}
+        />
+        <button
+          type="button"
+          data-salary-thumb="min"
+          aria-label={`Minimal oylik: ${form.desiredSalaryMin} dollar`}
+          className="absolute top-1/2 z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
+          style={{ left: `${leftPct}%`, ...thumbStyle }}
+        />
+        <button
+          type="button"
+          data-salary-thumb="max"
+          aria-label={`Maksimal oylik: ${form.desiredSalaryMax} dollar`}
+          className="absolute top-1/2 z-10 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2"
+          style={{ left: `${rightPct}%`, ...thumbStyle }}
+        />
+      </div>
+      <p className="text-[11px]" style={{ color: C.muted }}>
+        Oraliq: {SALARY_USD_MIN_BOUND.toLocaleString('en-US')} – {SALARY_USD_MAX_BOUND.toLocaleString('en-US')} $ · qadam{' '}
+        {SALARY_USD_STEP} $
+      </p>
+    </div>
+  );
+}
+
+function Screen8({
+  onNext,
+  onBack,
+  form,
+  setForm,
+  busy,
+}: {
+  onNext: () => void;
+  onBack: () => void;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  busy: boolean;
+}) {
+  const [destinationCountries, setDestinationCountries] = useState<DestinationCountryDto[]>([]);
+  const [loadingCountries, setLoadingCountries] = useState(true);
+  const [destinationError, setDestinationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCountries(true);
+    setDestinationError(null);
+
+    void candidateFetchDestinationCountries()
+      .then((list) => {
+        if (!cancelled) setDestinationCountries(list);
+      })
+      .catch((e) => {
+        if (!cancelled) setDestinationError(candidatePortalError(e, 'Maqsad mamlakatlar yuklanmadi.'));
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCountries(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toggleCountry = (id: string) => {
+    setForm((f) => {
+      if (f.countries.includes(id)) {
+        return { ...f, countries: f.countries.filter((value) => value !== id) };
+      }
+      return { ...f, countries: [...f.countries, id] };
+    });
+  };
+
+  const countryTitle = (country: DestinationCountryDto) => {
+    return (
+      country.name_uz || country.name_ru || country.country_code || country.id || 'Davlat'
+    );
+  };
+
+  const countriesOk = form.countries.length > 0;
+  const canSubmit = !!form.availability && countriesOk;
+
+  return (
+    <div className="flex h-full flex-col">
+      <TopBar onBack={onBack} />
+      <ProgressBar screen={8} />
+      <div className="flex flex-1 flex-col overflow-y-auto px-5">
+        <h2
+          className="mb-1.5"
+          style={{
+            fontSize: 28,
+            fontWeight: 700,
+            color: C.text,
+            letterSpacing: '-0.5px',
+            fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+          }}
+        >
+          Maqsad mamlakatlar va maosh
+        </h2>
+        <p className="mb-4" style={{ fontSize: 14, color: C.muted }}>
+          Qaysi davlatlarda ish qidirmoqchisiz va qaysi oylik oraliqni kutyapsiz.
+        </p>
+
+        <SectionLabel>Maqsad mamlakatlar</SectionLabel>
+        {loadingCountries ? (
+          <div className="flex flex-1 flex-col items-center justify-center py-16">
+            <Loader2 className="h-8 w-8 animate-spin" style={{ color: C.blueL }} />
+            <p className="mt-3 text-sm" style={{ color: C.muted }}>
+              Maqsad mamlakatlar yuklanmoqda…
+            </p>
+          </div>
+        ) : destinationError ? (
+          <div className="rounded-[14px] border border-red-500 bg-[#4B1F1F] px-4 py-3 text-sm" style={{ color: C.text }}>
+            {destinationError}
+          </div>
+        ) : (
+          <div className="grid gap-2.5 pb-3">
+            {destinationCountries.map((country) => {
+              const selected = form.countries.includes(country.id);
+              const flag = countryFlagEmoji(country.country_code);
+              return (
+                <OptionCard
+                  key={country.id}
+                  selected={selected}
+                  onClick={() => toggleCountry(country.id)}
+                  left={<span className="shrink-0 text-lg">{flag}</span>}
+                  title={countryTitle(country)}
+                  desc={country.note || country.language_req || 'Tanlash'}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mb-5 h-px w-full" style={{ backgroundColor: C.border }} aria-hidden />
+
+        <SectionLabel>Bandlik tayyorgarligi</SectionLabel>
+        <div className="mb-6 mt-2 flex flex-col gap-2.5">
+          {AVAILABILITY.map((a) => (
+            <OptionCard
+              key={a.id}
+              selected={form.availability === (a.id as any)}
+              onClick={() => setForm((f) => ({ ...f, availability: a.id as any }))}
+              left={<span className="shrink-0 text-lg">{a.icon}</span>}
+              title={a.name}
+              desc={a.desc}
+            />
+          ))}
+        </div>
+
+        <DesiredSalaryRangeBlock form={form} setForm={setForm} />
+      </div>
+      <div className="px-5 pb-9 pt-4">
+        <PrimaryButton onClick={onNext} disabled={!canSubmit || loadingCountries} loading={busy}>
           Arizani yuborish
         </PrimaryButton>
       </div>
@@ -2280,7 +2550,7 @@ function initialsFromName(name: string): string {
 function formatVacancySalary(v: PublicVacancyRow): string {
   const min = v.salary_min ?? v.salaryMin;
   const max = v.salary_max ?? v.salaryMax;
-  const cur = String(v.salary_currency ?? v.salaryCurrency ?? 'EUR');
+  const cur = String(v.salary_currency ?? v.salaryCurrency ?? 'USD');
   if (typeof min === 'number' && typeof max === 'number') return `${min} – ${max} ${cur}/oy`;
   if (typeof min === 'number') return `${min}+ ${cur}/oy`;
   return `— ${cur}`;
@@ -2395,12 +2665,12 @@ function ProfileInfoRow({ label, value }: { label: string; value: string }) {
       className="flex flex-col gap-1 border-b py-3 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
       style={{ borderColor: C.border }}
     >
-      <span className="shrink-0" style={{ fontSize: 12, color: C.muted }}>
+      <span className="shrink-0" style={{ fontSize: 13, color: C.muted }}>
         {label}
       </span>
       <span
         className="min-w-0 break-words sm:max-w-[70%] sm:text-right"
-        style={{ fontSize: 14, fontWeight: 600, color: C.text }}
+        style={{ fontSize: 15, fontWeight: 600, color: C.text }}
       >
         {value || '—'}
       </span>
@@ -2604,9 +2874,9 @@ function CandidateProfileUnifiedForm({
   const [edu, setEdu] = useState('BACHELOR');
   const [avail, setAvail] = useState('WITHIN_3_MONTHS');
   const [exp, setExp] = useState('YEAR_1_3');
-  const [salMin, setSalMin] = useState(SALARY_EUR_DEFAULT_MIN);
-  const [salMax, setSalMax] = useState(SALARY_EUR_DEFAULT_MAX);
-  const [salCur, setSalCur] = useState('EUR');
+  const [salMin, setSalMin] = useState(SALARY_USD_DEFAULT_MIN);
+  const [salMax, setSalMax] = useState(SALARY_USD_DEFAULT_MAX);
+  const [salCur, setSalCur] = useState('USD');
   const [consent, setConsent] = useState(true);
   const [regionSelect, setRegionSelect] = useState<number | ''>('');
   const [customProf, setCustomProf] = useState('');
@@ -2617,9 +2887,9 @@ function CandidateProfileUnifiedForm({
     setEdu(educationLevelToFormValue(pickStr(profile, 'education_level', 'educationLevel')));
     setAvail(pickStr(profile, 'availability_status', 'availabilityStatus') || 'WITHIN_3_MONTHS');
     setExp(pickStr(profile, 'experience_range', 'experienceRange') || 'YEAR_1_3');
-    setSalMin(pickNum(profile, 'desired_salary_min', 'desiredSalaryMin') ?? SALARY_EUR_DEFAULT_MIN);
-    setSalMax(pickNum(profile, 'desired_salary_max', 'desiredSalaryMax') ?? SALARY_EUR_DEFAULT_MAX);
-    setSalCur(pickStr(profile, 'salary_currency', 'salaryCurrency') || 'EUR');
+    setSalMin(pickNum(profile, 'desired_salary_min', 'desiredSalaryMin') ?? SALARY_USD_DEFAULT_MIN);
+    setSalMax(pickNum(profile, 'desired_salary_max', 'desiredSalaryMax') ?? SALARY_USD_DEFAULT_MAX);
+    setSalCur(pickStr(profile, 'salary_currency', 'salaryCurrency') || 'USD');
     setConsent(profile.data_consent === true || profile.dataConsent === true);
     const rid = normalizeCandidateRegionId(pickNum(profile, 'region_id', 'regionId'));
     setRegionSelect(rid ?? '');
@@ -2898,9 +3168,9 @@ function CandidateProfileUnifiedForm({
               className={ctl}
               style={fieldStyle}
               value={salMin}
-              min={SALARY_EUR_MIN_BOUND}
-              max={SALARY_EUR_MAX_BOUND}
-              step={SALARY_EUR_STEP}
+              min={SALARY_USD_MIN_BOUND}
+              max={SALARY_USD_MAX_BOUND}
+              step={SALARY_USD_STEP}
               onChange={(e) => setSalMin(Number(e.target.value) || 0)}
             />
           </label>
@@ -2913,9 +3183,9 @@ function CandidateProfileUnifiedForm({
               className={ctl}
               style={fieldStyle}
               value={salMax}
-              min={SALARY_EUR_MIN_BOUND}
-              max={SALARY_EUR_MAX_BOUND}
-              step={SALARY_EUR_STEP}
+              min={SALARY_USD_MIN_BOUND}
+              max={SALARY_USD_MAX_BOUND}
+              step={SALARY_USD_STEP}
               onChange={(e) => setSalMax(Number(e.target.value) || 0)}
             />
           </label>
@@ -2931,7 +3201,7 @@ function CandidateProfileUnifiedForm({
             value={salCur}
             onChange={(e) => setSalCur(e.target.value.toUpperCase().slice(0, 8))}
             maxLength={8}
-            placeholder="EUR"
+            placeholder="USD"
           />
         </label>
         <label className="block">
@@ -3014,11 +3284,20 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
       setSoftWarn(null);
       return;
     }
-    setLoading(true);
+    const cached = getCachedCandidateSummary();
+    if (cached) {
+      setProfile(cached);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
     setLoadErr(null);
     setSoftWarn(null);
     try {
-      const [me, vac] = await Promise.all([candidateFetchProfileMe(), candidateFetchVacancies({})]);
+      const [me, vac] = await Promise.all([
+        candidateFetchMeSummary().catch(() => candidateFetchProfileMe()),
+        candidateFetchVacancies({}),
+      ]);
       setProfile(me);
       setVacancies(Array.isArray(vac) ? vac : []);
       if (!me) setSoftWarn('Profil ma’lumotlari hozircha yuklanmadi yoki bo‘sh.');
@@ -3056,7 +3335,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const langs = languagesSummary(profile);
   const salaryMin = pickNum(profile, 'desired_salary_min', 'desiredSalaryMin');
   const salaryMax = pickNum(profile, 'desired_salary_max', 'desiredSalaryMax');
-  const salaryCur = pickStr(profile, 'salary_currency', 'salaryCurrency') || 'EUR';
+  const salaryCur = pickStr(profile, 'salary_currency', 'salaryCurrency') || 'USD';
   const salaryTxt =
     salaryMin != null && salaryMax != null
       ? `${salaryMin} – ${salaryMax} ${salaryCur}`
@@ -3912,7 +4191,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
           <span
             className="truncate"
             style={{
-              fontSize: 14,
+              fontSize: 15,
               fontWeight: 700,
               color: C.text,
               letterSpacing: '-0.3px',
@@ -3937,7 +4216,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
             <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: C.red }} />
           </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: C.blue }}>
-            <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{initials}</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{initials}</span>
           </div>
         </div>
       </div>
@@ -3978,7 +4257,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
                 />
               ) : null}
               <span style={{ color: active ? C.blue : C.muted }}>{item.icon}</span>
-              <span style={{ fontSize: 10, fontWeight: 500, color: active ? C.blue : C.muted }}>{item.label}</span>
+              <span style={{ fontSize: 12, fontWeight: 500, color: active ? C.blue : C.muted }}>{item.label}</span>
             </button>
           );
         })}
@@ -4001,9 +4280,12 @@ export default function CandidatePortal() {
   const [view, setView] = useState<View>('onboarding');
   const [homeInitialTab, setHomeInitialTab] = useState(0);
   const [miniAppChatId, setMiniAppChatId] = useState('');
-  const [screen1ByTgBusy, setScreen1ByTgBusy] = useState(false);
-  const byTgCheckedForChatIdRef = useRef<string | null>(null);
+  const [tgBootstrapBusy, setTgBootstrapBusy] = useState(false);
   const telegramUiInitedRef = useRef(false);
+  const entryContextLabel = useMemo(
+    () => telegramEntryContextLabel(getTelegramEntryContext()),
+    [],
+  );
   const [screen, setScreen] = useState<Screen>(1);
   const [busy, setBusy] = useState(false);
   const [sessionBootstrapped, setSessionBootstrapped] = useState(false);
@@ -4021,12 +4303,17 @@ export default function CandidatePortal() {
     availability: null,
     languageSelections: [],
     declaresNoLanguage: false,
-    desiredSalaryMin: SALARY_EUR_DEFAULT_MIN,
-    desiredSalaryMax: SALARY_EUR_DEFAULT_MAX,
+    desiredSalaryMin: SALARY_USD_DEFAULT_MIN,
+    desiredSalaryMax: SALARY_USD_DEFAULT_MAX,
     profileFirstName: '',
     profileLastName: '',
     profileGender: 'ERKAK',
     profileDateBirth: '2000-01-01',
+    addressRegion: '',
+    addressDistrict: '',
+    addressMFY: '',
+    address: '',
+    documents: {},
   });
   const [smsNoticeScreen2, setSmsNoticeScreen2] = useState<SmsInlineNotice>(null);
   const [smsNoticeScreen3, setSmsNoticeScreen3] = useState<SmsInlineNotice>(null);
@@ -4042,25 +4329,56 @@ export default function CandidatePortal() {
 
   useEffect(() => {
     setProfileNoticeScreen4((prev) => (prev?.variant === 'error' ? null : prev));
-  }, [form.profileFirstName, form.profileLastName, form.profileGender, form.profileDateBirth]);
+  }, [
+    form.profileFirstName,
+    form.profileLastName,
+    form.profileGender,
+    form.profileDateBirth,
+    form.addressRegion,
+    form.addressDistrict,
+    form.addressMFY,
+    form.address,
+  ]);
+
+  const clearTelegramUrlParams = useCallback(() => {
+    setSearchParams(
+      (p) => {
+        const n = new URLSearchParams(p);
+        n.delete('tg');
+        n.delete('chatId');
+        n.delete('chat_id');
+        return n;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
 
   useLayoutEffect(() => {
     let cancelled = false;
+    setTgBootstrapBusy(true);
     void (async () => {
       try {
-        const ok = await candidateTryResumeSession();
-        if (!cancelled && ok) {
+        if (isTelegramMiniApp()) initTelegramMiniApp();
+        const tgCid = isTelegramMiniApp()
+          ? (trimmedTg || miniAppChatId || readTelegramMiniAppChatId()).trim()
+          : '';
+        const dest = await bootstrapCandidatePortalSession({ telegramChatId: tgCid });
+        if (!cancelled && dest === 'home') {
           setHomeInitialTab(3);
           setView('home');
+          clearTelegramUrlParams();
         }
       } finally {
-        if (!cancelled) setSessionBootstrapped(true);
+        if (!cancelled) {
+          setSessionBootstrapped(true);
+          setTgBootstrapBusy(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [trimmedTg, miniAppChatId, clearTelegramUrlParams]);
 
   useEffect(() => {
     const run = () => {
@@ -4085,49 +4403,6 @@ export default function CandidatePortal() {
       window.clearTimeout(t2);
     };
   }, []);
-
-  useEffect(() => {
-    if (view !== 'onboarding' || screen !== 1) return;
-    const fromTg = isTelegramMiniApp() ? miniAppChatId : '';
-    const cid = (trimmedTg || fromTg).trim();
-    if (!cid) {
-      setScreen1ByTgBusy(false);
-      return;
-    }
-    if (byTgCheckedForChatIdRef.current === cid) {
-      setScreen1ByTgBusy(false);
-      return;
-    }
-
-    let cancelled = false;
-    setScreen1ByTgBusy(true);
-    void (async () => {
-      try {
-        const ok = await candidateTrySessionFromTelegramChatId(cid);
-        if (cancelled) return;
-        byTgCheckedForChatIdRef.current = cid;
-        if (ok) {
-          setHomeInitialTab(3);
-          setView('home');
-          setSearchParams(
-            (p) => {
-              const n = new URLSearchParams(p);
-              n.delete('tg');
-              n.delete('chatId');
-              n.delete('chat_id');
-              return n;
-            },
-            { replace: true },
-          );
-        }
-      } finally {
-        if (!cancelled) setScreen1ByTgBusy(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [view, screen, trimmedTg, miniAppChatId, setSearchParams]);
 
   const goNext = () => setScreen((s) => (Math.min(s + 1, 7) as Screen));
   const goBack = () => setScreen((s) => (Math.max(s - 1, 1) as Screen));
@@ -4214,6 +4489,10 @@ export default function CandidatePortal() {
         genderType: form.profileGender,
         dateBirth: form.profileDateBirth,
         phoneNumber: phoneE164,
+        addressRegion: form.addressRegion.trim() || null,
+        addressDistrict: form.addressDistrict.trim() || null,
+        addressMFY: form.addressMFY.trim() || null,
+        address: form.address.trim() || null,
         telegramChatId,
       });
       goNext();
@@ -4261,7 +4540,7 @@ export default function CandidatePortal() {
         availability_status,
         desired_salary_min: form.desiredSalaryMin,
         desired_salary_max: form.desiredSalaryMax,
-        salary_currency: 'EUR',
+        salary_currency: 'USD',
         profession_id: lead.profession_id,
         profession_category_id: lead.profession_category_id,
         ...(customName ? { custom_profession_name: customName } : {}),
@@ -4297,7 +4576,13 @@ export default function CandidatePortal() {
   }
 
   const screenMap: Record<Screen, React.ReactNode> = {
-    1: <Screen1 onNext={() => setScreen(2)} lookupBusy={screen1ByTgBusy} />,
+    1: (
+      <Screen1
+        onNext={() => setScreen(2)}
+        lookupBusy={tgBootstrapBusy && view === 'onboarding' && screen === 1}
+        entryLabel={entryContextLabel}
+      />
+    ),
     2: (
       <Screen2
         onNext={() => void sendOtpAndNext()}
@@ -4330,25 +4615,22 @@ export default function CandidatePortal() {
     ),
     5: <Screen5 onNext={goNext} onBack={goBack} form={form} setForm={setForm} />,
     6: <Screen6 onNext={goNext} onBack={goBack} form={form} setForm={setForm} />,
-    7: <Screen7 onNext={() => void submitProfileAndLoadResults()} onBack={goBack} form={form} setForm={setForm} busy={busy} />,
+    7: <Screen7Documents onNext={goNext} onBack={goBack} form={form} setForm={setForm} busy={busy} />,
+    8: <Screen8 onNext={() => void submitProfileAndLoadResults()} onBack={goBack} form={form} setForm={setForm} busy={busy} />,
   };
 
   if (!sessionBootstrapped) {
     return (
-      <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#040a12' }}>
-        <div
-          className="relative flex items-center justify-center overflow-hidden"
-          style={{ width: 'min(390px, 100vw)', height: 'min(844px, 100svh)', backgroundColor: C.bg }}
-        >
-          <Loader2 className="h-10 w-10 animate-spin" style={{ color: C.blueL }} strokeWidth={2} aria-hidden />
+      <CandidatePortalShell>
+        <div className="flex h-full w-full items-center justify-center">
+          <Loader2 className="h-11 w-11 animate-spin" style={{ color: C.blueL }} strokeWidth={2} aria-hidden />
         </div>
-      </div>
+      </CandidatePortalShell>
     );
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center" style={{ backgroundColor: '#040a12', fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui" }}>
-      <div className="relative flex overflow-hidden" style={{ width: 'min(390px, 100vw)', height: 'min(844px, 100svh)', backgroundColor: C.bg }}>
+    <CandidatePortalShell>
         <AnimatePresence mode="wait" initial={false}>
           {view === 'home' ? (
             <motion.div key="home" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.25, ease: 'easeInOut' }} className="absolute inset-0">
@@ -4387,7 +4669,6 @@ export default function CandidatePortal() {
             </div>
           </div>
         ) : null}
-      </div>
-    </div>
+    </CandidatePortalShell>
   );
 }

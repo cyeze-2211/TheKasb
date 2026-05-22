@@ -111,6 +111,12 @@ export default defineConfig(({ mode }) => {
         secure: false,
         configure: ngrokProxyConfigure,
       },
+      '/api/auth': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
+      },
       '/api/professions': {
         target: apiProxyTarget,
         changeOrigin: true,
@@ -118,9 +124,15 @@ export default defineConfig(({ mode }) => {
         configure: ngrokProxyConfigure,
         // /api/professions/* prefiksi saqlanadi (Swagger: /api/professions/categories)
       },
+      '/api/file': {
+        target: apiProxyTarget,
+        changeOrigin: true,
+        secure: false,
+        configure: ngrokProxyConfigure,
+        // /api/file/* prefiksi saqlanadi (get/all, upload, delete, get/one)
+      },
       /**
-       * /api/sdg/uz ro‘yxat va CRUD — backend `/api/sdg/uz` (404 oldini olish).
-       * Fayl va login: `/sdg/uz/...` (prefiks /api olib tashlanadi).
+       * Login va boshqa SDG yo‘llari — `/sdg/uz/...` (prefiks /api olib tashlanadi).
        */
       '/api/sdg': {
         target: apiProxyTarget,
@@ -129,12 +141,7 @@ export default defineConfig(({ mode }) => {
         configure: ngrokProxyConfigure,
         rewrite: (path) => {
           const pathname = path.split('?')[0] ?? path
-          if (
-            pathname.startsWith('/api/sdg/uz/get') ||
-            pathname.startsWith('/api/sdg/uz/upload') ||
-            pathname.startsWith('/api/sdg/uz/delete') ||
-            pathname.startsWith('/api/sdg/uz/login')
-          ) {
+          if (pathname.startsWith('/api/sdg/uz/login')) {
             return path.replace(/^\/api/, '')
           }
           return path

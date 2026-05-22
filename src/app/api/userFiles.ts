@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { apiSdgPublic } from './client';
+import { api } from './client';
 import { assertApiSuccess } from './users';
 
 const FILE_HASH_KEYS = [
@@ -92,21 +92,18 @@ function unwrapSpringPage<T>(data: unknown): SpringPage<T> {
   };
 }
 
-/** GET /sdg/uz/get/all */
+/** GET /api/file/get/all */
 export async function fetchUserFilesList(
   query: UserFilesListQuery,
 ): Promise<SpringPage<Record<string, unknown>>> {
-  const { data } = await apiSdgPublic.get<unknown>('/sdg/uz/get/all', { params: cleanQuery(query) });
+  const { data } = await api.get<unknown>('/file/get/all', { params: cleanQuery(query) });
   assertApiSuccess(data);
   return unwrapSpringPage<Record<string, unknown>>(data);
 }
 
-/**
- * GET /sdg/uz/get/one — query `id` (Swagger: int64).
- * Agar backend yo‘l `/sdg/uz/get/one/{fileName}` bo‘lsa, `userFiles.ts` ni moslang.
- */
+/** GET /api/file/get/one — query `id` */
 export async function fetchUserFileBlob(id: number): Promise<{ blob: Blob; fileName?: string }> {
-  const res = await apiSdgPublic.get<Blob>(`/sdg/uz/get/one`, {
+  const res = await api.get<Blob>(`/file/get/one`, {
     params: { id },
     responseType: 'blob',
   });
@@ -130,7 +127,7 @@ export async function fetchUserFileBlob(id: number): Promise<{ blob: Blob; fileN
   return { blob, fileName };
 }
 
-/** POST /sdg/uz/upload — multipart/form-data */
+/** POST /api/file/upload — multipart/form-data */
 export async function uploadUserFile(params: {
   category: string;
   userId: number;
@@ -138,7 +135,7 @@ export async function uploadUserFile(params: {
 }): Promise<unknown> {
   const body = new FormData();
   body.append('file', params.file);
-  const { data } = await apiSdgPublic.post<unknown>('/sdg/uz/upload', body, {
+  const { data } = await api.post<unknown>('/file/upload', body, {
     params: {
       category: params.category.trim(),
       userId: params.userId,
@@ -149,8 +146,8 @@ export async function uploadUserFile(params: {
 }
 
 /**
- * `/sdg/uz/delete?fileHashId=&userId=`
- * Avval DELETE (Swagger); 405 bo‘lsa POST (ba’zi serverlar).
+ * DELETE /api/file/delete — query: fileHashId, userId.
+ * 405 bo‘lsa POST fallback (ba’zi serverlar).
  */
 export async function deleteUserFile(params: { fileHashId: string; userId: number }): Promise<void> {
   const query = {
@@ -159,11 +156,11 @@ export async function deleteUserFile(params: { fileHashId: string; userId: numbe
   };
 
   try {
-    const { data } = await apiSdgPublic.delete<unknown>('/sdg/uz/delete', { params: query });
+    const { data } = await api.delete<unknown>('/file/delete', { params: query });
     assertApiSuccess(data);
   } catch (e) {
     if (!axios.isAxiosError(e) || e.response?.status !== 405) throw e;
-    const { data } = await apiSdgPublic.post<unknown>('/sdg/uz/delete', null, { params: query });
+    const { data } = await api.post<unknown>('/file/delete', null, { params: query });
     assertApiSuccess(data);
   }
 }
