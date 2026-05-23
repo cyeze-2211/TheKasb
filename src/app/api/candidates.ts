@@ -15,6 +15,7 @@ export type CandidatesListQuery = {
   availabilityStatus?: AvailabilityStatus | '';
   categoryId?: number;
   countryCode?: string;
+  educationLevel?: string;
   experienceRange?: ExperienceRange | '';
   language?: AdminLanguage | '';
   languageLevel?: LanguageLevel | '';
@@ -22,6 +23,8 @@ export type CandidatesListQuery = {
   professionId?: number;
   profileStatus?: AdminProfileStatus | '';
   regionId?: number;
+  /** Hudud nomi bo‘yicha qidiruv (qisman moslash) */
+  regionName?: string;
   salaryMax?: number;
   salaryMin?: number;
   size?: number;
@@ -46,6 +49,16 @@ function cleanQuery(q: CandidatesListQuery): Record<string, string | number> {
   if (q.categoryId != null && q.categoryId > 0) out.categoryId = q.categoryId;
   if (q.professionId != null && q.professionId > 0) out.professionId = q.professionId;
   if (q.regionId != null && q.regionId > 0) out.regionId = q.regionId;
+  const regionName = q.regionName?.trim();
+  if (regionName) {
+    out.regionName = regionName;
+    out.region_name_uz = regionName;
+  }
+  const educationLevel = q.educationLevel?.trim();
+  if (educationLevel) {
+    out.educationLevel = educationLevel;
+    out.education_level = educationLevel;
+  }
   if (q.salaryMin != null && q.salaryMin > 0) out.salaryMin = q.salaryMin;
   if (q.salaryMax != null && q.salaryMax > 0) out.salaryMax = q.salaryMax;
   if (q.countryCode?.trim()) out.countryCode = q.countryCode.trim();

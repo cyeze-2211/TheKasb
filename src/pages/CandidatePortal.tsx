@@ -41,6 +41,8 @@ import {
   Truck,
   Undo2,
   User,
+  Eye,
+  Trash2,
   Wrench,
   Zap,
 } from 'lucide-react';
@@ -53,6 +55,7 @@ import {
 import {
   candidateAddEducation,
   candidateAddLanguage,
+  candidateDeleteDocument,
   candidateAddTargetCountry,
   candidateAddWorkExperience,
   ensureCandidateProfile,
@@ -73,11 +76,14 @@ import {
   candidateUploadDocument,
   candidateVerifyOtp,
   normalizeCandidateRegionId,
+  candidateLocationFieldsFromForm,
+  candidateRegionFieldsFromInputs,
   type CandidateProfileUpdateBody,
   type DestinationCountryDto,
   type PublicVacancyRow,
 } from '../app/api/candidatePortal';
 import type { ProfessionCategoryDto, ProfessionDto } from '../app/api/professions';
+import { API_BASE_URL } from '../app/api/client';
 import {
   adminLanguageUz,
   candidateProfileStatusUz,
@@ -150,6 +156,31 @@ const FIELD_EMPTY = 'Berilmagan';
 /** Qiziqishlar (target countries) — maksimal tanlov */
 const MAX_TARGET_COUNTRIES = 5;
 
+const PREVIEWABLE_FILE_RE = /\.(png|jpe?g|gif|webp|bmp|svg|pdf)(\?.*)?$/i;
+
+function apiOriginForAssets(): string {
+  if (import.meta.env.DEV) return window.location.origin;
+  return API_BASE_URL.replace(/\/api\/?$/, '');
+}
+
+/** Server `file_url` — ko‘rish uchun brauzer URL */
+function resolveCandidateFileUrl(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '';
+  if (/^https?:\/\//i.test(t)) return t;
+  const origin = apiOriginForAssets();
+  if (t.startsWith('/')) return `${origin}${t}`;
+  return `${origin}/${t}`;
+}
+
+function canPreviewCandidateFile(url: string, fileName?: string): boolean {
+  const probe = `${url} ${fileName ?? ''}`.toLowerCase();
+  if (!probe.trim()) return false;
+  if (PREVIEWABLE_FILE_RE.test(probe)) return true;
+  if (/\.(png|jpe?g|gif|webp|bmp|svg|pdf)$/i.test(fileName ?? '')) return true;
+  return false;
+}
+
 function displayField(value: string | null | undefined): string {
   const s = (value ?? '').trim();
   if (!s || s === '—') return FIELD_EMPTY;
@@ -190,7 +221,12 @@ type View = 'onboarding' | 'home';
 /** Til darajasi (CEFR) — backend `level` bilan mos */
 type CefrLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
 
-type LanguageSelection = { name: string; level: CefrLevel; hasCertificate: boolean };
+type LanguageSelection = {
+  name: string;
+  level: CefrLevel;
+  hasCertificate: boolean;
+  certificateFile?: File | null;
+};
 
 type CandidateDocumentType =
   | 'PASSPORT'
@@ -1909,6 +1945,44 @@ function Screen6Work({
   );
 }
 
+function LanguageCertificateFileInput({
+  inputId,
+  file,
+  onChange,
+}: {
+  inputId: string;
+  file: File | null | undefined;
+  onChange: (file: File | null) => void;
+}) {
+  return (
+    <div className="mt-2">
+      <input
+        id={inputId}
+        type="file"
+        accept="image/*,.pdf"
+        className="sr-only"
+        onChange={(e) => onChange(e.target.files?.[0] ?? null)}
+      />
+      <label
+        htmlFor={inputId}
+        className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-[12px] border px-3 py-2.5 text-center text-[13px] font-semibold transition-all active:scale-[0.98]"
+        style={{ borderColor: C.gold, backgroundColor: `${C.gold}18`, color: C.gold }}
+      >
+        {file ? 'Boshqa sertifikat tanlash' : 'Sertifikat faylini yuklash'}
+      </label>
+      {file ? (
+        <p className="mt-1.5 truncate text-[12px]" style={{ color: C.muted }}>
+          Tanlangan: {file.name}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-[11px]" style={{ color: C.muted }}>
+          Rasm yoki PDF
+        </p>
+      )}
+    </div>
+  );
+}
+
 function LanguageCertificateToggle({
   active,
   onToggle,
@@ -1977,6 +2051,7 @@ function Screen6({
   const [otherLangDraft, setOtherLangDraft] = useState('');
   const [otherLangLevel, setOtherLangLevel] = useState<CefrLevel>('B1');
   const [otherLangCertificate, setOtherLangCertificate] = useState(false);
+  const [otherLangCertFile, setOtherLangCertFile] = useState<File | null>(null);
 
   const langLevel = (name: string) => form.languageSelections.find((s) => s.name === name)?.level ?? null;
 
@@ -1986,16 +2061,16 @@ function Screen6({
         return {
           ...f,
           declaresNoLanguage: false,
-          languageSelections: [{ name, level, hasCertificate: false }],
+          languageSelections: [{ name, level, hasCertificate: false, certificateFile: null }],
         };
       }
       const i = f.languageSelections.findIndex((s) => s.name === name);
       const next = [...f.languageSelections];
       if (i >= 0) {
         if (next[i].level === level) next.splice(i, 1);
-        else next[i] = { name, level, hasCertificate: next[i].hasCertificate };
+        else next[i] = { name, level, hasCertificate: next[i].hasCertificate, certificateFile: next[i].certificateFile };
       } else {
-        next.push({ name, level, hasCertificate: false });
+        next.push({ name, level, hasCertificate: false, certificateFile: null });
       }
       return { ...f, languageSelections: next, declaresNoLanguage: false };
     });
@@ -2004,8 +2079,19 @@ function Screen6({
   const toggleCertificate = (name: string) => {
     setForm((f) => ({
       ...f,
+      languageSelections: f.languageSelections.map((s) => {
+        if (s.name !== name) return s;
+        const nextCert = !s.hasCertificate;
+        return { ...s, hasCertificate: nextCert, certificateFile: nextCert ? s.certificateFile : null };
+      }),
+    }));
+  };
+
+  const setLanguageCertificateFile = (name: string, file: File | null) => {
+    setForm((f) => ({
+      ...f,
       languageSelections: f.languageSelections.map((s) =>
-        s.name === name ? { ...s, hasCertificate: !s.hasCertificate } : s,
+        s.name === name ? { ...s, certificateFile: file } : s,
       ),
     }));
   };
@@ -2022,13 +2108,20 @@ function Screen6({
   const addOtherLanguage = () => {
     const raw = otherLangDraft.trim();
     if (!raw) return;
+    if (otherLangCertificate && !otherLangCertFile) {
+      toast.error('Boshqa til uchun sertifikat faylini yuklang.');
+      return;
+    }
     const name = normalizeCustomLangLabel(raw) ?? raw;
+    const certFile = otherLangCertificate ? otherLangCertFile : null;
     setForm((f) => {
       if (f.declaresNoLanguage) {
         return {
           ...f,
           declaresNoLanguage: false,
-          languageSelections: [{ name, level: otherLangLevel, hasCertificate: otherLangCertificate }],
+          languageSelections: [
+            { name, level: otherLangLevel, hasCertificate: otherLangCertificate, certificateFile: certFile },
+          ],
         };
       }
       if (f.languageSelections.some((s) => s.name.toLowerCase() === name.toLowerCase())) return f;
@@ -2036,11 +2129,12 @@ function Screen6({
         ...f,
         languageSelections: [
           ...f.languageSelections,
-          { name, level: otherLangLevel, hasCertificate: otherLangCertificate },
+          { name, level: otherLangLevel, hasCertificate: otherLangCertificate, certificateFile: certFile },
         ],
       };
     });
     setOtherLangDraft('');
+    setOtherLangCertFile(null);
     setOtherLangCertificate(false);
     setShowOtherLangPanel(false);
   };
@@ -2053,7 +2147,10 @@ function Screen6({
     (s) => !(PRESET_LANGUAGE_LABELS as readonly string[]).includes(s.name),
   );
 
-  const langsOk = form.declaresNoLanguage || form.languageSelections.length > 0;
+  const langsNeedingCert = form.languageSelections.filter((s) => s.hasCertificate);
+  const langsCertMissing = langsNeedingCert.filter((s) => !s.certificateFile);
+  const langsOk =
+    (form.declaresNoLanguage || form.languageSelections.length > 0) && langsCertMissing.length === 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -2099,10 +2196,19 @@ function Screen6({
                 })}
               </div>
               {langLevel(lang) ? (
-                <LanguageCertificateToggle
-                  active={!!form.languageSelections.find((s) => s.name === lang)?.hasCertificate}
-                  onToggle={() => toggleCertificate(lang)}
-                />
+                <>
+                  <LanguageCertificateToggle
+                    active={!!form.languageSelections.find((s) => s.name === lang)?.hasCertificate}
+                    onToggle={() => toggleCertificate(lang)}
+                  />
+                  {form.languageSelections.find((s) => s.name === lang)?.hasCertificate ? (
+                    <LanguageCertificateFileInput
+                      inputId={`lang-cert-${lang.replace(/\s+/g, '-')}`}
+                      file={form.languageSelections.find((s) => s.name === lang)?.certificateFile}
+                      onChange={(file) => setLanguageCertificateFile(lang, file)}
+                    />
+                  ) : null}
+                </>
               ) : null}
             </div>
           ))}
@@ -2188,8 +2294,21 @@ function Screen6({
               </div>
               <LanguageCertificateToggle
                 active={otherLangCertificate}
-                onToggle={() => setOtherLangCertificate((v) => !v)}
+                onToggle={() => {
+                  setOtherLangCertificate((v) => {
+                    const next = !v;
+                    if (!next) setOtherLangCertFile(null);
+                    return next;
+                  });
+                }}
               />
+              {otherLangCertificate ? (
+                <LanguageCertificateFileInput
+                  inputId="lang-cert-other-draft"
+                  file={otherLangCertFile}
+                  onChange={setOtherLangCertFile}
+                />
+              ) : null}
               <button
                 type="button"
                 onClick={addOtherLanguage}
@@ -2233,6 +2352,13 @@ function Screen6({
                   active={s.hasCertificate}
                   onToggle={() => toggleCertificate(s.name)}
                 />
+                {s.hasCertificate ? (
+                  <LanguageCertificateFileInput
+                    inputId={`lang-cert-custom-${s.name.replace(/\s+/g, '-')}`}
+                    file={s.certificateFile}
+                    onChange={(file) => setLanguageCertificateFile(s.name, file)}
+                  />
+                ) : null}
               </div>
             ))}
           </div>
@@ -2263,7 +2389,18 @@ function Screen7Documents({
   const [error, setError] = useState<string | null>(null);
 
   const requiredMissing = DOCUMENT_TYPES.filter((d) => d.required && !form.documents[d.type]);
-  const canContinue = requiredMissing.length === 0 && !busy;
+  const langsNeedingCert = form.languageSelections.filter((s) => s.hasCertificate);
+  const langsCertMissing = langsNeedingCert.filter((s) => !s.certificateFile);
+  const canContinue = requiredMissing.length === 0 && langsCertMissing.length === 0 && !busy;
+
+  const setLanguageCertificateFile = (name: string, file: File | null) => {
+    setForm((f) => ({
+      ...f,
+      languageSelections: f.languageSelections.map((s) =>
+        s.name === name ? { ...s, certificateFile: file } : s,
+      ),
+    }));
+  };
 
   const handleFileChange = (type: CandidateDocumentType, file: File | null) => {
     setForm((f) => ({ ...f, documents: { ...f.documents, [type]: file } }));
@@ -2301,6 +2438,27 @@ function Screen7Documents({
           Hujjatlar
         </h2>
         <div className="mb-4 flex flex-col gap-4 pb-4">
+          {langsNeedingCert.length > 0 ? (
+            <div className="rounded-[16px] border p-4" style={{ borderColor: C.border, backgroundColor: C.card2 }}>
+              <p className="mb-3 font-semibold" style={{ color: C.text }}>
+                Til sertifikatlari
+              </p>
+              <div className="flex flex-col gap-3">
+                {langsNeedingCert.map((s) => (
+                  <div key={`doc-lang-${s.name}`}>
+                    <p className="mb-1 text-[13px] font-medium" style={{ color: C.text }}>
+                      {s.name} · {s.level}
+                    </p>
+                    <LanguageCertificateFileInput
+                      inputId={`doc-step-lang-cert-${s.name.replace(/\s+/g, '-')}`}
+                      file={s.certificateFile}
+                      onChange={(file) => setLanguageCertificateFile(s.name, file)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
           {DOCUMENT_TYPES.map((doc) => {
             const selectedFile = form.documents[doc.type];
             const inputId = `doc-file-${doc.type}`;
@@ -3310,6 +3468,482 @@ function ProfileCompletenessPanel({ profile }: { profile: Record<string, unknown
   );
 }
 
+function ProfileFileActions({
+  fileUrl,
+  fileName,
+  onDelete,
+  deleting,
+  allowPreview,
+}: {
+  fileUrl: string;
+  fileName?: string;
+  onDelete?: () => void | Promise<void>;
+  deleting?: boolean;
+  /** Masalan PHOTO — rasm bo‘lsa ko‘rishga urinish */
+  allowPreview?: boolean;
+}) {
+  const resolved = resolveCandidateFileUrl(fileUrl);
+  const canPreview =
+    !!resolved && (allowPreview === true || canPreviewCandidateFile(resolved, fileName));
+
+  const handleView = () => {
+    if (!resolved) {
+      toast.error('Fayl manzili topilmadi.');
+      return;
+    }
+    if (!canPreview) {
+      toast.error('Bu faylni ko‘rib bo‘lmaydi.');
+      return;
+    }
+    window.open(resolved, '_blank', 'noopener,noreferrer');
+  };
+
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      {fileUrl ? (
+        <button
+          type="button"
+          onClick={handleView}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border transition-all active:scale-95 disabled:opacity-50"
+          style={{ borderColor: C.border, color: canPreview ? C.blueL : C.muted }}
+          aria-label="Ko‘rish"
+        >
+          <Eye size={18} strokeWidth={2} aria-hidden />
+        </button>
+      ) : null}
+      {onDelete ? (
+        <button
+          type="button"
+          onClick={() => void onDelete()}
+          disabled={deleting}
+          className="flex h-9 w-9 items-center justify-center rounded-lg border transition-all active:scale-95 disabled:opacity-50"
+          style={{ borderColor: `${C.red}66`, color: C.red }}
+          aria-label="O‘chirish"
+        >
+          <Trash2 size={18} strokeWidth={2} aria-hidden />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+type ProfileDocType =
+  | 'PASSPORT'
+  | 'DIPLOMA'
+  | 'CERTIFICATE'
+  | 'PHOTO'
+  | 'WORK_PERMIT'
+  | 'OTHER';
+
+const PROFILE_DOCUMENT_SLOTS: Array<{ type: ProfileDocType; label: string }> = [
+  { type: 'PASSPORT', label: documentTypeUz.PASSPORT },
+  { type: 'PHOTO', label: documentTypeUz.PHOTO },
+  { type: 'DIPLOMA', label: documentTypeUz.DIPLOMA },
+  { type: 'CERTIFICATE', label: documentTypeUz.CERTIFICATE },
+  { type: 'WORK_PERMIT', label: documentTypeUz.WORK_PERMIT },
+  { type: 'OTHER', label: documentTypeUz.OTHER },
+];
+
+function ProfileDocumentUploadSlot({
+  docType,
+  label,
+  onUploaded,
+}: {
+  docType: ProfileDocType;
+  label: string;
+  onUploaded: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const inputId = `profile-doc-reupload-${docType}`;
+
+  const upload = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      await candidateUploadDocument(file, docType);
+      toast.success('Hujjat yuklandi.');
+      onUploaded();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Hujjatni yuklashda xato.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      className="rounded-xl border border-dashed px-3 py-2.5"
+      style={{ borderColor: C.border, backgroundColor: C.card2 }}
+    >
+      <p className="mb-2 text-[13px] font-semibold" style={{ color: C.text }}>
+        {label}
+      </p>
+      <input
+        id={inputId}
+        type="file"
+        accept="image/*,.pdf"
+        className="sr-only"
+        disabled={busy}
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          e.target.value = '';
+          void upload(f);
+        }}
+      />
+      <label
+        htmlFor={inputId}
+        className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-[12px] border px-3 py-2.5 text-center text-[13px] font-semibold transition-all active:scale-[0.98] disabled:opacity-50"
+        style={{
+          borderColor: C.blue,
+          backgroundColor: C.blueSelected,
+          color: C.blueL,
+          pointerEvents: busy ? 'none' : undefined,
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        {busy ? 'Yuklanmoqda…' : 'Fayl yuklash'}
+      </label>
+      <p className="mt-1.5 text-[11px]" style={{ color: C.muted }}>
+        Rasm yoki PDF
+      </p>
+    </div>
+  );
+}
+
+/** Profil — qiziqishlar, tajriba, tillar va h.k. */
+function ProfileDetailSections({
+  profile,
+  onRefresh,
+}: {
+  profile: Record<string, unknown> | null;
+  onRefresh?: () => void;
+}) {
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  if (!profile) return null;
+  const tcRows = targetCountryRows(profile);
+  const weList = workExperiencesArray(profile);
+  const langsArr = profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages;
+  const educations = profile.educations;
+  const documents = profile.documents;
+  const skills = profile.skills;
+
+  const presentDocTypes = new Set<string>();
+  if (Array.isArray(documents)) {
+    for (const doc of documents) {
+      if (!doc || typeof doc !== 'object') continue;
+      const t = pickStr(doc as Record<string, unknown>, 'document_type', 'documentType').toUpperCase();
+      if (t) presentDocTypes.add(t);
+    }
+  }
+  const missingDocSlots = PROFILE_DOCUMENT_SLOTS.filter((d) => !presentDocTypes.has(d.type));
+
+  const deleteDocument = async (docId: string) => {
+    setDeletingId(docId);
+    try {
+      await candidateDeleteDocument(docId);
+      toast.success('Hujjat o‘chirildi.');
+      onRefresh?.();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Hujjatni o‘chirishda xato.'));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const sectionTitle = (title: string) => (
+    <p
+      className="mb-3"
+      style={{
+        fontSize: 11,
+        fontWeight: 600,
+        color: C.muted,
+        letterSpacing: '0.06em',
+        textTransform: 'uppercase',
+      }}
+    >
+      {title}
+    </p>
+  );
+
+  const card = (children: ReactNode) => (
+    <div
+      className="mt-4 rounded-[18px] border p-4"
+      style={{ backgroundColor: C.card, borderColor: C.border }}
+    >
+      {children}
+    </div>
+  );
+
+  return (
+    <>
+      {card(
+        <>
+          {sectionTitle('Qiziqishlar')}
+          {tcRows.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {tcRows.map((r) => {
+                const name = countryNameUz(r.code);
+                const flag = countryFlagEmoji(r.code);
+                const label = name ? `${flag} ${name}` : flag || r.code;
+                return (
+                  <span
+                    key={`${r.code}-${r.pr}`}
+                    className="rounded-full px-3 py-1.5 text-[12px] font-semibold"
+                    style={{ backgroundColor: C.blueGlow, border: `1px solid ${C.border}`, color: C.text }}
+                  >
+                    <span style={{ color: C.muted }} className="mr-1.5 text-[10px]">
+                      #{r.pr}
+                    </span>
+                    {label}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
+              {FIELD_EMPTY}
+            </p>
+          )}
+        </>,
+      )}
+      {card(
+        <>
+          {sectionTitle('Ish tajribasi')}
+          {weList.length > 0 ? (
+            <div className="flex flex-col gap-2.5">
+              {weList.map((row, i) => {
+                if (!row || typeof row !== 'object') return null;
+                const o = row as Record<string, unknown>;
+                const desc = pickStr(o, 'description');
+                const dur = formatWorkExperienceDuration(o);
+                return (
+                  <div
+                    key={pickStr(o, 'id') || `we-${i}`}
+                    className="rounded-xl border px-3 py-2.5"
+                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
+                  >
+                    <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{dur}</p>
+                    {desc ? (
+                      <p className="mt-1 text-[13px] leading-snug" style={{ color: C.text }}>
+                        {desc}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
+              {FIELD_EMPTY}
+            </p>
+          )}
+        </>,
+      )}
+      {card(
+        <>
+          {sectionTitle('Tillar')}
+          {Array.isArray(langsArr) && langsArr.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              {langsArr.map((item, i) => {
+                if (!item || typeof item !== 'object') return null;
+                const o = item as Record<string, unknown>;
+                const code = pickStr(o, 'language', 'language_code', 'languageCode', 'name');
+                const level = pickStr(o, 'level', 'language_level', 'languageLevel');
+                const cert =
+                  o.has_certificate === true ||
+                  o.hasCertificate === true ||
+                  pickStr(o, 'certificate', 'has_certificate') === 'true';
+                const label = code ? uzOrCode(adminLanguageUz, code.toUpperCase()) || code : 'Til';
+                const levelUz = level ? uzOrCode(cefrLevelUz, level) || level : '';
+                const certUrl = pickStr(
+                  o,
+                  'certificate_file_url',
+                  'certificateFileUrl',
+                  'certificate_url',
+                  'certificateUrl',
+                );
+                return (
+                  <div
+                    key={pickStr(o, 'id') || `lang-${i}`}
+                    className="flex flex-col gap-2 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{label}</p>
+                      {levelUz ? (
+                        <p className="text-[12px]" style={{ color: C.muted }}>
+                          Daraja: {levelUz}
+                        </p>
+                      ) : null}
+                      <p className="mt-1 text-[11px]" style={{ color: cert ? C.gold : C.muted }}>
+                        {cert
+                          ? certUrl
+                            ? 'Sertifikat yuklangan'
+                            : 'Sertifikat kerak — hujjatlar qadamida yuklang'
+                          : 'Sertifikat yo‘q'}
+                      </p>
+                    </div>
+                    {cert && certUrl ? (
+                      <ProfileFileActions fileUrl={certUrl} fileName={pickStr(o, 'certificate_file_name', 'fileName')} />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
+              {FIELD_EMPTY}
+            </p>
+          )}
+        </>,
+      )}
+      {card(
+        <>
+          {sectionTitle('Ta’lim')}
+          {Array.isArray(educations) && educations.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {educations.map((ed, i) => {
+                const E = ed as Record<string, unknown>;
+                const spec = pickStr(E, 'specialty');
+                const inst = pickStr(E, 'institution_name', 'institutionName');
+                const yr = pickNum(E, 'graduation_year', 'graduationYear');
+                const lv = pickStr(E, 'level');
+                const ctry = pickStr(E, 'country');
+                const title = spec || inst || 'Ta’lim';
+                const bits: string[] = [];
+                if (inst && inst !== spec) bits.push(inst);
+                if (lv) bits.push(uzOrCode(educationLevelUz, lv));
+                if (yr != null) bits.push(String(yr));
+                if (ctry) {
+                  const fl = countryFlagEmoji(ctry);
+                  const nm = countryNameUz(ctry) ?? '';
+                  bits.push(nm ? `${fl} ${nm}` : fl);
+                }
+                const sub = bits.join(' · ');
+                return (
+                  <div
+                    key={`ed-${i}`}
+                    className="rounded-xl border px-3 py-2.5"
+                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
+                  >
+                    <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{title}</p>
+                    {sub ? (
+                      <p className="mt-1 text-[13px] leading-snug" style={{ color: C.muted }}>
+                        {sub}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
+              {FIELD_EMPTY}
+            </p>
+          )}
+        </>,
+      )}
+      {card(
+        <>
+          {sectionTitle('Hujjatlar')}
+          {Array.isArray(documents) && documents.length > 0 ? (
+            <div className="mb-3 flex flex-col gap-2">
+              {documents.map((doc, i) => {
+                const D = doc as Record<string, unknown>;
+                const dtype = pickStr(D, 'document_type', 'documentType');
+                const fname = pickStr(D, 'file_name', 'fileName');
+                const url = pickStr(D, 'file_url', 'fileUrl');
+                const verified =
+                  D.is_verified === true ||
+                  D.verified === true ||
+                  pickStr(D, 'status').toUpperCase() === 'VERIFIED';
+                const typeUz = dtype ? uzOrCode(documentTypeUz, dtype) : '';
+                const line = typeUz || fname || 'Hujjat';
+                const docId = pickStr(D, 'id');
+                return (
+                  <div
+                    key={`doc-${i}`}
+                    className="flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{line}</p>
+                      {fname ? (
+                        <p className="truncate text-[12px]" style={{ color: C.muted }}>
+                          {fname}
+                        </p>
+                      ) : null}
+                      <p className="text-[11px]" style={{ color: verified ? C.green : C.muted }}>
+                        {verified ? 'Tasdiqlangan' : 'Tekshiruvda / tasdiqlanmagan'}
+                      </p>
+                    </div>
+                    {url || docId ? (
+                      <ProfileFileActions
+                        fileUrl={url}
+                        fileName={fname}
+                        allowPreview={dtype === 'PHOTO'}
+                        onDelete={docId ? () => deleteDocument(docId) : undefined}
+                        deleting={docId ? deletingId === docId : false}
+                      />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="mb-3 text-[13px] leading-relaxed" style={{ color: C.muted }}>
+              {FIELD_EMPTY}
+            </p>
+          )}
+          {missingDocSlots.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-[12px] font-medium" style={{ color: C.muted }}>
+                Yuklash uchun turini tanlang
+              </p>
+              {missingDocSlots.map((slot) => (
+                <ProfileDocumentUploadSlot
+                  key={`upload-${slot.type}`}
+                  docType={slot.type}
+                  label={slot.label}
+                  onUploaded={() => onRefresh?.()}
+                />
+              ))}
+            </div>
+          ) : null}
+        </>,
+      )}
+      {card(
+        <>
+          {sectionTitle('Ko‘nikmalar')}
+          {Array.isArray(skills) && skills.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {skills.map((sk, i) => {
+                const S = sk as Record<string, unknown>;
+                const nm = pickStr(S, 'skill_name', 'skillName', 'name');
+                if (!nm) return null;
+                return (
+                  <span
+                    key={`sk-${i}`}
+                    className="rounded-full px-3 py-1 text-[12px] font-medium"
+                    style={{ backgroundColor: C.blueGlow, border: `1px solid ${C.border}`, color: C.text }}
+                  >
+                    {nm}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
+              {FIELD_EMPTY}
+            </p>
+          )}
+        </>,
+      )}
+    </>
+  );
+}
+
 function CandidateProfileUnifiedForm({
   profile,
   onSaved,
@@ -3327,6 +3961,7 @@ function CandidateProfileUnifiedForm({
   const [consent, setConsent] = useState(true);
   const [regionSelect, setRegionSelect] = useState<number | ''>('');
   const [customProf, setCustomProf] = useState('');
+  const [photoDeleting, setPhotoDeleting] = useState(false);
 
   const applyServerToDraft = useCallback(() => {
     if (!profile) return;
@@ -3337,7 +3972,16 @@ function CandidateProfileUnifiedForm({
     setSalMin(pickNum(profile, 'desired_salary_min', 'desiredSalaryMin') ?? SALARY_USD_DEFAULT_MIN);
     setSalMax(pickNum(profile, 'desired_salary_max', 'desiredSalaryMax') ?? SALARY_USD_DEFAULT_MAX);
     setConsent(profile.data_consent === true || profile.dataConsent === true);
-    const rid = normalizeCandidateRegionId(pickNum(profile, 'region_id', 'regionId'));
+    let rid =
+      normalizeCandidateRegionId(pickNum(profile, 'region_id', 'regionId')) ??
+      normalizeCandidateRegionId(pickStr(profile, 'region_id', 'regionId'));
+    if (rid == null) {
+      const fromAddr = candidateRegionFieldsFromInputs({
+        addressRegion: pickStr(profile, 'addressRegion', 'address_region'),
+        regionLabelUz: pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region'),
+      });
+      rid = fromAddr?.region_id;
+    }
     setRegionSelect(rid ?? '');
     setCustomProf(pickStr(profile, 'custom_profession_name', 'customProfessionName'));
   }, [profile]);
@@ -3369,14 +4013,6 @@ function CandidateProfileUnifiedForm({
   const birthLocal = formatProfileDateOnly(
     pickStr(profile, 'date_birth', 'dateBirth', 'birth_date', 'birthDate'),
   );
-  const regionLocal = displayField(
-    pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region'),
-  );
-  const countriesLocal = targetCountriesSummary(profile);
-  const langsLocal = languagesSummary(profile);
-  const professionLocal = displayField(professionDisplayFromProfile(profile));
-  const consentRo =
-    profile.data_consent === true || profile.dataConsent === true ? 'Berilgan' : FIELD_EMPTY;
   const consentTime = formatPortalDateTime(pickStr(profile, 'data_consent_at', 'dataConsentAt'));
   const createdLocal = formatPortalDateTime(pickStr(profile, 'created_at', 'createdAt', 'created'));
   const updatedLocal = formatPortalDateTime(pickStr(profile, 'updated_at', 'updatedAt', 'updated'));
@@ -3390,6 +4026,37 @@ function CandidateProfileUnifiedForm({
     fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
   };
   const roStyle: CSSProperties = { ...fieldStyle, opacity: 0.92, cursor: 'default' };
+
+  const photoDoc = (() => {
+    const docs = profile.documents;
+    if (!Array.isArray(docs)) return null;
+    for (const d of docs) {
+      if (!d || typeof d !== 'object') continue;
+      const o = d as Record<string, unknown>;
+      if (pickStr(o, 'document_type', 'documentType').toUpperCase() === 'PHOTO') return o;
+    }
+    return null;
+  })();
+  const photoUrl = photoDoc ? pickStr(photoDoc, 'file_url', 'fileUrl') : '';
+  const photoFname = photoDoc ? pickStr(photoDoc, 'file_name', 'fileName') : '';
+  const photoDocId = photoDoc ? pickStr(photoDoc, 'id') : '';
+  const photoResolved = photoUrl ? resolveCandidateFileUrl(photoUrl) : '';
+  const photoCanShow =
+    !!photoResolved && canPreviewCandidateFile(photoResolved, photoFname);
+
+  const deleteProfilePhoto = async () => {
+    if (!photoDocId) return;
+    setPhotoDeleting(true);
+    try {
+      await candidateDeleteDocument(photoDocId);
+      toast.success('Profil rasmi o‘chirildi.');
+      onSaved();
+    } catch (e) {
+      toast.error(candidatePortalError(e, 'Rasmni o‘chirishda xato.'));
+    } finally {
+      setPhotoDeleting(false);
+    }
+  };
 
   const save = async () => {
     if (salMin > salMax) {
@@ -3415,8 +4082,16 @@ function CandidateProfileUnifiedForm({
           setBusy(false);
           return;
         }
-        body.region_id = rid;
-        body.region_name_uz = REGION_OPTIONS.find((r) => r.id === rid)?.label ?? '';
+        const selected = REGION_OPTIONS.find((r) => r.id === rid);
+        const locationFields = candidateLocationFieldsFromForm({
+          regionId: rid,
+          regionLabelUz: selected?.label,
+          addressRegion: pickStr(profile, 'addressRegion', 'address_region'),
+          addressDistrict: pickStr(profile, 'addressDistrict', 'address_district'),
+          addressMFY: pickStr(profile, 'addressMFY', 'address_mfy', 'mfy_name_uz'),
+          address: pickStr(profile, 'address', 'address_uz', 'address_line'),
+        });
+        Object.assign(body, locationFields);
       } else {
         body.region_id = '';
         body.region_name_uz = '';
@@ -3470,6 +4145,43 @@ function CandidateProfileUnifiedForm({
         </div>
       </div>
 
+      {photoUrl || photoDocId ? (
+        <div
+          className="mb-4 flex items-center gap-3 rounded-xl border p-3"
+          style={{ borderColor: C.border, backgroundColor: C.card2 }}
+        >
+          <div
+            className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full"
+            style={{ backgroundColor: C.blue, border: `1px solid ${C.border}` }}
+          >
+            {photoCanShow ? (
+              <img src={photoResolved} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span style={{ fontSize: 18, fontWeight: 700, color: '#fff' }}>
+                {initialsFromName(displayNameLocal)}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold" style={{ color: C.text }}>
+              Profil rasmi
+            </p>
+            {photoFname ? (
+              <p className="truncate text-[11px]" style={{ color: C.muted }}>
+                {photoFname}
+              </p>
+            ) : null}
+          </div>
+          <ProfileFileActions
+            fileUrl={photoUrl}
+            fileName={photoFname}
+            allowPreview
+            onDelete={photoDocId ? () => void deleteProfilePhoto() : undefined}
+            deleting={photoDeleting}
+          />
+        </div>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
@@ -3495,63 +4207,6 @@ function CandidateProfileUnifiedForm({
           </span>
           <input readOnly className={ctl} style={roStyle} value={birthLocal} />
         </label>
-        <label className="block sm:col-span-2">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Hudud (nom)
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={regionLocal} />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Kasb / ish tajribasi (qisqa)
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={professionLocal} />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Qiziqishlar
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={countriesLocal} />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Tillar
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={langsLocal} />
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Rozilik
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={consentRo} />
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Rozilik vaqti
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={consentTime} />
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Yaratilgan
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={createdLocal} />
-        </label>
-        <label className="block">
-          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Yangilangan
-          </span>
-          <input readOnly className={ctl} style={roStyle} value={updatedLocal} />
-        </label>
-      </div>
-
-      <div
-        className="my-5 h-px w-full"
-        style={{ background: `linear-gradient(90deg, transparent, ${C.border}, transparent)` }}
-        aria-hidden
-      />
-
-      <div className="flex flex-col gap-3.5">
         <label className="block">
           <span className="mb-0.5 block text-[12px] font-medium" style={{ color: C.muted }}>
             Oilaviy holat
@@ -3649,7 +4304,7 @@ function CandidateProfileUnifiedForm({
               setRegionSelect(v ? Number(v) : '');
             }}
           >
-            <option value="">Tanlang (ixtiyoriy)</option>
+            <option value="">{FIELD_EMPTY}</option>
             {REGION_OPTIONS.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.label}
@@ -3678,6 +4333,29 @@ function CandidateProfileUnifiedForm({
         </label>
       </div>
 
+      <div className="mt-4 grid grid-cols-1 gap-3 border-t pt-4 sm:grid-cols-3" style={{ borderColor: C.border }}>
+        <label className="block">
+          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+            Rozilik vaqti
+          </span>
+          <input readOnly className={ctl} style={roStyle} value={consentTime} />
+        </label>
+        <label className="block">
+          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+            Yaratilgan
+          </span>
+          <input readOnly className={ctl} style={roStyle} value={createdLocal} />
+        </label>
+        <label className="block">
+          <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
+            Yangilangan
+          </span>
+          <input readOnly className={ctl} style={roStyle} value={updatedLocal} />
+        </label>
+      </div>
+
+      <ProfileDetailSections profile={profile} onRefresh={onSaved} />
+
       <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:items-stretch sm:justify-end sm:gap-3">
         <button
           type="button"
@@ -3691,7 +4369,7 @@ function CandidateProfileUnifiedForm({
         </button>
         <div className="min-w-0 flex-1 sm:max-w-[280px]">
           <PrimaryButton loading={busy} onClick={() => void save()} disabled={busy}>
-            O‘zgarishlarni saqlash
+            Saqlash
           </PrimaryButton>
         </div>
       </div>
@@ -3802,7 +4480,8 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const hasLangsArr = Array.isArray(langsArr) && langsArr.length > 0;
   const hasRegionField =
     (pickNum(profile, 'region_id', 'regionId') ?? 0) > 0 ||
-    !!pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region');
+    !!pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region') ||
+    !!pickStr(profile, 'addressRegion', 'address_region');
 
   const agentRaw = profile?.assigned_agent ?? profile?.agent ?? profile?.assignedAgent;
   let agentName = '';
@@ -4265,344 +4944,6 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
           </div>
         </div>
         <CandidateProfileUnifiedForm profile={profile} onSaved={() => void refresh()} />
-
-        <div
-          className="mt-4 rounded-[18px] border p-4"
-          style={{ backgroundColor: C.card, borderColor: C.border }}
-        >
-          <p
-            className="mb-3"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Qiziqishlar
-          </p>
-          {tcRows.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {tcRows.map((r) => {
-                const name = countryNameUz(r.code);
-                const flag = countryFlagEmoji(r.code);
-                const label = name ? `${flag} ${name}` : flag || r.code;
-                return (
-                  <span
-                    key={`${r.code}-${r.pr}`}
-                    className="rounded-full px-3 py-1.5 text-[12px] font-semibold"
-                    style={{ backgroundColor: C.blueGlow, border: `1px solid ${C.border}`, color: C.text }}
-                  >
-                    <span style={{ color: C.muted }} className="mr-1.5 text-[10px]">
-                      #{r.pr}
-                    </span>
-                    {label}
-                  </span>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha qiziqish (davlat) tanlanmagan.
-            </p>
-          )}
-        </div>
-
-        <div
-          className="mt-4 rounded-[18px] border p-4"
-          style={{ backgroundColor: C.card, borderColor: C.border }}
-        >
-          <p
-            className="mb-3"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Ish tajribasi bandlari
-          </p>
-          {weList.length > 0 ? (
-            <div className="flex flex-col gap-2.5">
-              {weList.map((row, i) => {
-                if (!row || typeof row !== 'object') return null;
-                const o = row as Record<string, unknown>;
-                const desc = pickStr(o, 'description');
-                const dur = formatWorkExperienceDuration(o);
-                const pid = pickNum(o, 'profession_id', 'professionId');
-                const cid = pickNum(o, 'profession_category_id', 'professionCategoryId');
-                const metaBits: string[] = [];
-                if (cid != null) metaBits.push(`Kategoriya #${cid}`);
-                if (pid != null) metaBits.push(`Kasb #${pid}`);
-                const meta = metaBits.join(' · ');
-                return (
-                  <div
-                    key={pickStr(o, 'id') || `we-${i}`}
-                    className="rounded-xl border px-3 py-2.5"
-                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
-                  >
-                    <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{dur}</p>
-                    {desc ? (
-                      <p className="mt-1 text-[13px] leading-snug" style={{ color: C.text }}>
-                        {desc}
-                      </p>
-                    ) : null}
-                    {meta ? (
-                      <p className="mt-1 text-[11px]" style={{ color: C.muted }}>
-                        {meta}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha ish joylari kiritilmagan.
-            </p>
-          )}
-        </div>
-
-        <div
-          className="mt-4 rounded-[18px] border p-4"
-          style={{ backgroundColor: C.card, borderColor: C.border }}
-        >
-          <p
-            className="mb-3"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Tillar
-          </p>
-          {profile &&
-          Array.isArray(profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages) &&
-          (profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages) &&
-          ((profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages) as unknown[]).length >
-            0 ? (
-            <div className="flex flex-col gap-2">
-              {(
-                (profile.languages ??
-                  profile.candidate_languages ??
-                  profile.candidateLanguages) as unknown[]
-              ).map((item, i) => {
-                if (!item || typeof item !== 'object') return null;
-                const o = item as Record<string, unknown>;
-                const code = pickStr(o, 'language', 'language_code', 'languageCode', 'name');
-                const level = pickStr(o, 'level', 'language_level', 'languageLevel');
-                const cert =
-                  o.has_certificate === true ||
-                  o.hasCertificate === true ||
-                  pickStr(o, 'certificate', 'has_certificate') === 'true';
-                const label = code ? uzOrCode(adminLanguageUz, code.toUpperCase()) || code : 'Til';
-                const levelUz = level ? uzOrCode(cefrLevelUz, level) || level : '';
-                return (
-                  <div
-                    key={pickStr(o, 'id') || `lang-${i}`}
-                    className="flex flex-col gap-1 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
-                  >
-                    <div>
-                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{label}</p>
-                      {levelUz ? (
-                        <p className="text-[12px]" style={{ color: C.muted }}>
-                          Daraja: {levelUz}
-                        </p>
-                      ) : null}
-                    </div>
-                    <span
-                      className="shrink-0 rounded-lg px-2 py-1 text-[11px] font-semibold"
-                      style={{
-                        backgroundColor: cert ? `${C.green}22` : C.border,
-                        color: cert ? C.green : C.muted,
-                      }}
-                    >
-                      {cert ? 'Sertifikat bor' : 'Sertifikat yo‘q'}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha tillar ro‘yxati bo‘sh.
-            </p>
-          )}
-        </div>
-
-        <div
-          className="mt-4 rounded-[18px] border p-4"
-          style={{ backgroundColor: C.card, borderColor: C.border }}
-        >
-          <p
-            className="mb-3"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Ta’lim
-          </p>
-          {profile && Array.isArray(profile.educations) && (profile.educations as unknown[]).length > 0 ? (
-            <div className="flex flex-col gap-3">
-              {(profile.educations as unknown[]).map((ed, i) => {
-                const E = ed as Record<string, unknown>;
-                const spec = pickStr(E, 'specialty');
-                const inst = pickStr(E, 'institution_name', 'institutionName');
-                const yr = pickNum(E, 'graduation_year', 'graduationYear');
-                const lv = pickStr(E, 'level');
-                const ctry = pickStr(E, 'country');
-                const title = spec || inst || 'Ta’lim';
-                const bits: string[] = [];
-                if (inst && inst !== spec) bits.push(inst);
-                if (lv) bits.push(uzOrCode(educationLevelUz, lv));
-                if (yr != null) bits.push(String(yr));
-                if (ctry) {
-                  const fl = countryFlagEmoji(ctry);
-                  const nm = countryNameUz(ctry) ?? '';
-                  bits.push(nm ? `${fl} ${nm}` : fl);
-                }
-                const sub = bits.join(' · ');
-                return (
-                  <div
-                    key={`ed-${i}`}
-                    className="rounded-xl border px-3 py-2.5"
-                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
-                  >
-                    <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{title}</p>
-                    {sub ? (
-                      <p className="mt-1 text-[13px] leading-snug" style={{ color: C.muted }}>
-                        {sub}
-                      </p>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha ta’limlar ro‘yxati bo‘sh.
-            </p>
-          )}
-        </div>
-
-        <div
-          className="mt-4 rounded-[18px] border p-4"
-          style={{ backgroundColor: C.card, borderColor: C.border }}
-        >
-          <p
-            className="mb-3"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Hujjatlar
-          </p>
-          {profile && Array.isArray(profile.documents) && (profile.documents as unknown[]).length > 0 ? (
-            <div className="flex flex-col gap-2">
-              {(profile.documents as unknown[]).map((doc, i) => {
-                const D = doc as Record<string, unknown>;
-                const dtype = pickStr(D, 'document_type', 'documentType');
-                const fname = pickStr(D, 'file_name', 'fileName');
-                const url = pickStr(D, 'file_url', 'fileUrl');
-                const verified =
-                  D.is_verified === true ||
-                  D.verified === true ||
-                  pickStr(D, 'status').toUpperCase() === 'VERIFIED';
-                const typeUz = dtype ? uzOrCode(documentTypeUz, dtype) : '';
-                const line = typeUz || fname || 'Hujjat';
-                return (
-                  <div
-                    key={`doc-${i}`}
-                    className="flex flex-col gap-1.5 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
-                    style={{ borderColor: C.border, backgroundColor: C.card2 }}
-                  >
-                    <div className="min-w-0">
-                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{line}</p>
-                      {fname && typeUz ? (
-                        <p className="truncate text-[12px]" style={{ color: C.muted }}>
-                          {fname}
-                        </p>
-                      ) : null}
-                      <p className="text-[11px]" style={{ color: verified ? C.green : C.muted }}>
-                        {verified ? 'Tasdiqlangan' : 'Tekshiruvda / tasdiqlanmagan'}
-                      </p>
-                    </div>
-                    {url ? (
-                      <a
-                        href={url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="shrink-0 rounded-lg px-3 py-1.5 text-center text-[12px] font-semibold"
-                        style={{ border: `1px solid ${C.blue}`, color: C.blue }}
-                      >
-                        Ochish
-                      </a>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha yuklangan hujjat yo‘q.
-            </p>
-          )}
-        </div>
-
-        <div
-          className="mt-4 rounded-[18px] border p-4"
-          style={{ backgroundColor: C.card, borderColor: C.border }}
-        >
-          <p
-            className="mb-3"
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: '0.06em',
-              textTransform: 'uppercase',
-            }}
-          >
-            Ko‘nikmalar
-          </p>
-          {profile && Array.isArray(profile.skills) && (profile.skills as unknown[]).length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {(profile.skills as unknown[]).map((sk, i) => {
-                const S = sk as Record<string, unknown>;
-                const nm = pickStr(S, 'skill_name', 'skillName', 'name');
-                if (!nm) return null;
-                return (
-                  <span
-                    key={`sk-${i}`}
-                    className="rounded-full px-3 py-1 text-[12px] font-medium"
-                    style={{ backgroundColor: C.blueGlow, border: `1px solid ${C.border}`, color: C.text }}
-                  >
-                    {nm}
-                  </span>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha ko‘nikmalar kiritilmagan.
-            </p>
-          )}
-        </div>
         <ProfileCompletenessPanel profile={profile} />
       </div>
     );
@@ -4930,7 +5271,23 @@ export default function CandidatePortal() {
         address: form.address.trim() || null,
         telegramChatId,
       });
-      await linkCandidateProfileAfterUserEdit(userId, { ...PROFILE_ENSURE_BASE });
+      const locationFields = candidateLocationFieldsFromForm({
+        addressRegion: form.addressRegion,
+        addressDistrict: form.addressDistrict,
+        addressMFY: form.addressMFY,
+        address: form.address,
+      });
+      await linkCandidateProfileAfterUserEdit(userId, {
+        ...PROFILE_ENSURE_BASE,
+        ...locationFields,
+      });
+      if (
+        locationFields.region_id != null ||
+        locationFields.region_name_uz ||
+        locationFields.district_name_uz
+      ) {
+        await candidateUpdateProfile(locationFields);
+      }
       goNext();
     } catch (e) {
       setProfileNoticeScreen4({
@@ -5030,13 +5387,21 @@ export default function CandidatePortal() {
     try {
       await ensureCandidateProfile({ ...PROFILE_ENSURE_BASE });
       if (!form.declaresNoLanguage) {
-        for (const { name, level, hasCertificate } of form.languageSelections) {
-          const lang = toCandidateLanguageEnum(name);
+        for (const sel of form.languageSelections) {
+          if (sel.hasCertificate && !sel.certificateFile) {
+            toast.error(`${sel.name} uchun sertifikat faylini yuklang.`);
+            setBusy(false);
+            return;
+          }
+        }
+        for (const sel of form.languageSelections) {
+          const lang = toCandidateLanguageEnum(sel.name);
           if (!lang) continue;
           await candidateAddLanguage({
             language: lang,
-            level,
-            has_certificate: hasCertificate === true,
+            level: sel.level,
+            has_certificate: sel.hasCertificate === true,
+            certificateFile: sel.hasCertificate ? sel.certificateFile : null,
           });
         }
       }
@@ -5107,6 +5472,14 @@ export default function CandidatePortal() {
         const file = form.documents[doc.type];
         if (!file) continue;
         await candidateUploadDocument(file, doc.type);
+      }
+      if (!form.declaresNoLanguage) {
+        for (const sel of form.languageSelections) {
+          if (!sel.hasCertificate || !sel.certificateFile) continue;
+          const language = toCandidateLanguageEnum(sel.name);
+          if (!language) continue;
+          await candidateUploadDocument(sel.certificateFile, 'CERTIFICATE', { language });
+        }
       }
       await candidateSubmitProfile();
       setHomeInitialTab(3);

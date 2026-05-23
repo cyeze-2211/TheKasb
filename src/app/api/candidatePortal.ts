@@ -17,7 +17,15 @@ import { isTelegramMiniAppEntry } from '../lib/telegramWebApp';
 import type { ProfessionCategoryDto, ProfessionDto } from './professions';
 import { API_BASE_URL } from './client';
 import { CANDIDATE_SALARY_CURRENCY, normalizeEducationLevelForApi } from '../lib/adminUiUz';
-import { resolveTumanLabelUz, resolveViloyatLabelUz } from '../lib/uzRegionsCodeSystem';
+import {
+  findGroupByViloyatName,
+  findTumanInGroup,
+  getUzRegionGroups,
+  resolveTumanLabelUz,
+  resolveViloyatLabelUz,
+} from '../lib/uzRegionsCodeSystem';
+import { REGIONS } from '../data/mockData';
+import { normalizeUserFileCategory, type UserFileCategory } from '../lib/userFileCategories';
 import { assertApiSuccess } from './users';
 
 function extractObjectArray<T>(data: unknown): T[] {
@@ -623,12 +631,22 @@ export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Pr
   return applyUserIdFromApiResponse(data, id);
 }
 
-export type CandidateProfileCreateBody = {
-  /** POST /candidate/profile — bog‘langan foydalanuvchi */
-  user_id?: number;
-  /** Bo‘sh bo‘lsa JSON ga kiritilmaydi (null 500 berishi mumkin) */
+export type CandidateProfileLocationBody = {
   region_id?: number | string | null;
   region_name_uz?: string | null;
+  region_code?: string | null;
+  district_id?: number | string | null;
+  district_code?: string | null;
+  district_name_uz?: string | null;
+  address_mfy_uz?: string | null;
+  mfy_name_uz?: string | null;
+  address?: string | null;
+  address_uz?: string | null;
+};
+
+export type CandidateProfileCreateBody = CandidateProfileLocationBody & {
+  /** POST /candidate/profile — bog‘langan foydalanuvchi */
+  user_id?: number;
   marital_status?: string;
   education_level?: string;
   data_consent?: boolean;
@@ -643,9 +661,7 @@ export type CandidateProfileCreateBody = {
   custom_profession_name?: string;
 };
 
-export type CandidateProfileUpdateBody = {
-  region_id?: number | string | null;
-  region_name_uz?: string | null;
+export type CandidateProfileUpdateBody = CandidateProfileLocationBody & {
   marital_status?: string;
   education_level?: string;
   data_consent?: boolean;
@@ -663,8 +679,6 @@ export type CandidateProfileUpdateBody = {
 /** POST /candidate/profile — null maydonlar va defaultlar backend bilan mos */
 function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): Record<string, unknown> {
   const {
-    region_id,
-    region_name_uz,
     profession_id,
     profession_category_id,
     experience_years,
@@ -733,7 +747,7 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
     payload.salary_currency = CANDIDATE_SALARY_CURRENCY;
   }
 
-  return finalizeProfileRegionFields(payload, { region_id, region_name_uz });
+  return finalizeProfileLocationFields(payload, body);
 }
 
 /** Backend viloyat id — `REGIONS` ro‘yxati (1…14) */
@@ -754,10 +768,200 @@ export function normalizeCandidateRegionId(raw: unknown): number | undefined {
   return n;
 }
 
-/** POST/PATCH — `region_id` va `region_name_uz` har doim string (bo‘sh bo‘lsa `""`) */
-function regionIdAsApiString(raw: unknown): string {
-  const rid = normalizeCandidateRegionId(raw);
-  return rid != null ? String(rid) : '';
+const CANDIDATE_REGION_LABELS: { id: number; label: string }[] = REGIONS.map((r) => {
+  const m = /^(\d+)\s*[-–]\s*/.exec(r.trim()) ?? /^(\d+)/.exec(r.trim());
+  const id = m ? Number(m[1]) : NaN;
+  return { id, label: r };
+}).filter((x) => Number.isFinite(x.id) && x.id > 0);
+
+function normalizeRegionMatchKey(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[''`]/g, '')
+    .replace(/\s*(viloyati|respublikasi|republicasi|shahri)\b/gi, ' ')
+    .replace(/[^a-z0-9\u0400-\u04ff]+/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function regionCatalogLabelSansId(rid: number): string {
+  const opt = CANDIDATE_REGION_LABELS.find((r) => r.id === rid);
+  if (!opt) return '';
+  return opt.label.replace(/^\d+\s*[-–]\s*/, '').trim() || opt.label.trim();
+}
+
+function resolveRegionIdFromViloyatName(uz: string): number | undefined {
+  const lower = uz.toLowerCase();
+  if (/qoraqalpo|qqr|karakalpak/i.test(lower)) return 14;
+  if (/toshkent/.test(lower) && /shahri/.test(lower)) return 1;
+  if (/toshkent/.test(lower) && /viloyati/.test(lower)) return 2;
+
+  const key = normalizeRegionMatchKey(uz);
+  if (!key) return undefined;
+
+  for (const opt of CANDIDATE_REGION_LABELS) {
+    const core = opt.label.replace(/^\d+\s*[-–]\s*/, '');
+    const coreKey = normalizeRegionMatchKey(core);
+    if (!coreKey) continue;
+    if (key === coreKey || key.includes(coreKey) || coreKey.includes(key)) {
+      return opt.id;
+    }
+  }
+  return undefined;
+}
+
+/** Foydalanuvchi manzilidagi viloyat nomidan profil `region_id` / `region_name_uz` */
+export function resolveCandidateRegionFromAddress(
+  viloyatRaw: string | null | undefined,
+): Pick<CandidateProfileCreateBody, 'region_id' | 'region_name_uz'> | undefined {
+  return candidateRegionFieldsFromInputs({ addressRegion: viloyatRaw });
+}
+
+/**
+ * Forma inputlari → POST/PATCH uchun `region_id` + `region_name_uz`.
+ * Nom har doim foydalanuvchi ko‘rgan matndan (viloyat select / hudud ro‘yxati).
+ */
+export function candidateRegionFieldsFromInputs(input: {
+  regionId?: number | string | null;
+  /** Profil “Hudud” selectidagi ko‘rinadigan matn */
+  regionLabelUz?: string | null;
+  /** 4-qadam viloyat selecti */
+  addressRegion?: string | null;
+}): Pick<CandidateProfileCreateBody, 'region_id' | 'region_name_uz'> | undefined {
+  const viloyat = resolveViloyatLabelUz(input.addressRegion).trim();
+  const labelRaw = (input.regionLabelUz ?? '').trim();
+  const labelSansNum = labelRaw.replace(/^\d+\s*[-–]\s*/, '').trim();
+
+  let region_name_uz = viloyat || labelSansNum || labelRaw;
+  let region_id = normalizeCandidateRegionId(input.regionId);
+
+  if (region_id == null && region_name_uz) {
+    region_id = resolveRegionIdFromViloyatName(region_name_uz);
+  }
+  if (!region_name_uz && region_id != null) {
+    region_name_uz = regionCatalogLabelSansId(region_id);
+  }
+
+  if (!region_name_uz && region_id == null) return undefined;
+
+  const out: Pick<CandidateProfileCreateBody, 'region_id' | 'region_name_uz'> = {
+    region_name_uz,
+  };
+  if (region_id != null) out.region_id = region_id;
+  return out;
+}
+
+const PROFILE_LOCATION_KEYS = [
+  'region_id',
+  'region_name_uz',
+  'region_code',
+  'district_id',
+  'district_code',
+  'district_name_uz',
+  'address_mfy_uz',
+  'mfy_name_uz',
+  'address',
+  'address_uz',
+] as const;
+
+/**
+ * 4-qadam manzil formasi → profil POST/PATCH (viloyat, tuman, MFY, ko‘cha).
+ */
+export function candidateLocationFieldsFromForm(input: {
+  addressRegion?: string | null;
+  addressDistrict?: string | null;
+  addressMFY?: string | null;
+  address?: string | null;
+  regionId?: number | string | null;
+  regionLabelUz?: string | null;
+}): CandidateProfileLocationBody {
+  const viloyatName = resolveViloyatLabelUz(input.addressRegion).trim();
+  const groups = getUzRegionGroups();
+  const group = viloyatName ? findGroupByViloyatName(groups, viloyatName) : undefined;
+  const districtDisplay = resolveTumanLabelUz(input.addressDistrict, viloyatName).trim();
+  const tuman = findTumanInGroup(group, input.addressDistrict ?? districtDisplay);
+
+  const regionPart = candidateRegionFieldsFromInputs({
+    addressRegion: viloyatName || input.addressRegion,
+    regionId: input.regionId,
+    regionLabelUz: input.regionLabelUz,
+  });
+
+  const out: CandidateProfileLocationBody = {};
+  if (regionPart?.region_id != null) out.region_id = regionPart.region_id;
+  if (regionPart?.region_name_uz) out.region_name_uz = regionPart.region_name_uz;
+  if (regionPart?.region_id != null || regionPart?.region_name_uz) {
+    out.region_code = null;
+  }
+
+  const districtName = tuman?.display ?? districtDisplay;
+  if (districtName) {
+    out.district_name_uz = districtName;
+    out.district_code = null;
+    out.district_id = null;
+  }
+
+  const mfy = (input.addressMFY ?? '').trim();
+  const street = (input.address ?? '').trim();
+  if (mfy) {
+    out.address_mfy_uz = mfy;
+    out.mfy_name_uz = mfy;
+  }
+  if (street) {
+    out.address = street;
+    out.address_uz = street;
+  }
+
+  return out;
+}
+
+function hasProfileLocationHints(hints?: CandidateProfileLocationBody): boolean {
+  if (!hints) return false;
+  return PROFILE_LOCATION_KEYS.some((k) => {
+    if (!(k in hints)) return false;
+    const v = hints[k];
+    return v != null && String(v).trim() !== '';
+  });
+}
+
+function assignOptionalProfileString(
+  target: Record<string, unknown>,
+  key: string,
+  raw: unknown,
+): void {
+  if (raw == null) return;
+  const s = String(raw).trim();
+  if (s) target[key] = s;
+}
+
+function finalizeProfileLocationFields(
+  payload: Record<string, unknown>,
+  hints?: CandidateProfileLocationBody,
+): Record<string, unknown> {
+  const regionPart = finalizeProfileRegionFields(payload, {
+    region_id: hints?.region_id,
+    region_name_uz: hints?.region_name_uz,
+  });
+
+  const hasRegion =
+    normalizeCandidateRegionId(hints?.region_id) != null ||
+    !!regionNameUzAsApiString(hints?.region_name_uz);
+  if (hasRegion) {
+    regionPart.region_code = null;
+  }
+  const hasDistrict = !!regionNameUzAsApiString(hints?.district_name_uz);
+  if (hasDistrict) {
+    regionPart.district_code = null;
+    regionPart.district_id = null;
+  }
+  assignOptionalProfileString(regionPart, 'district_name_uz', hints?.district_name_uz);
+
+  assignOptionalProfileString(regionPart, 'address_mfy_uz', hints?.address_mfy_uz ?? hints?.mfy_name_uz);
+  assignOptionalProfileString(regionPart, 'mfy_name_uz', hints?.mfy_name_uz ?? hints?.address_mfy_uz);
+  assignOptionalProfileString(regionPart, 'address', hints?.address ?? hints?.address_uz);
+  assignOptionalProfileString(regionPart, 'address_uz', hints?.address_uz ?? hints?.address);
+
+  return regionPart;
 }
 
 function regionNameUzAsApiString(raw: unknown): string {
@@ -771,11 +975,21 @@ function finalizeProfileRegionFields(
 ): Record<string, unknown> {
   const regionRaw = hints && 'region_id' in hints ? hints.region_id : payload.region_id;
   const nameRaw = hints && 'region_name_uz' in hints ? hints.region_name_uz : payload.region_name_uz;
-  return {
+  const rid = normalizeCandidateRegionId(regionRaw);
+  let region_name_uz = regionNameUzAsApiString(nameRaw);
+  if (!region_name_uz && rid != null) {
+    region_name_uz = regionCatalogLabelSansId(rid);
+  }
+  const out: Record<string, unknown> = {
     ...payload,
-    region_id: regionIdAsApiString(regionRaw),
-    region_name_uz: regionNameUzAsApiString(nameRaw),
+    /** Backend saqlashi uchun tanlanganida butun son, bo‘sh bo‘lsa `""` (null emas) */
+    region_id: rid != null ? rid : '',
+    region_name_uz,
   };
+  if (region_name_uz) {
+    out.region = region_name_uz;
+  }
+  return out;
 }
 
 /** JWT dan yoki `/users/me` dan foydalanuvchi id */
@@ -824,6 +1038,9 @@ export async function ensureCandidateProfile(
     const existingId = profileIdFromMeRecord(me, user_id);
     if (existingId) {
       storeCandidateProfileId(existingId);
+      if (hasProfileLocationHints(extras)) {
+        await candidateUpdateProfile(extras);
+      }
       return existingId;
     }
   }
@@ -891,11 +1108,8 @@ export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): 
     raw.salary_currency = CANDIDATE_SALARY_CURRENCY;
   }
   let payload: Record<string, unknown> = raw;
-  if ('region_id' in body || 'region_name_uz' in body) {
-    payload = finalizeProfileRegionFields(raw, {
-      region_id: body.region_id,
-      region_name_uz: body.region_name_uz,
-    });
+  if (hasProfileLocationHints(body)) {
+    payload = finalizeProfileLocationFields(raw, body);
   }
 
   const { data } = await authApi.patch<unknown>('/candidate/profile', payload, {
@@ -904,17 +1118,142 @@ export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): 
   return unwrapRecord(data);
 }
 
+function pickLanguageRowId(row: Record<string, unknown>): string | null {
+  const id = row.id ?? row.language_id ?? row.languageId;
+  if (typeof id === 'string' && id.trim()) return id.trim();
+  if (typeof id === 'number' && Number.isFinite(id)) return String(Math.trunc(id));
+  return null;
+}
+
+async function candidateMultipartRequest(path: string, fd: FormData): Promise<unknown> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Token yo‘q');
+
+  let authToken = token;
+  if (await tryRefreshCandidateTokenIfExpired()) {
+    const refreshedToken = getCandidateToken();
+    if (refreshedToken) authToken = refreshedToken;
+  }
+
+  const url = candidateMultipartUrl(path);
+  const makeRequest = () =>
+    fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${authToken}` },
+      body: fd,
+    });
+
+  let res = await makeRequest();
+  if (res.status === 401) {
+    const refreshed = await candidateRefreshWithStoredRefresh();
+    const refreshedToken = refreshed ? getCandidateToken() : null;
+    if (refreshedToken) {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${refreshedToken}` },
+        body: fd,
+      });
+    }
+  }
+
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as Record<string, unknown>;
+      if (typeof j.message === 'string') msg = j.message;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(msg);
+  }
+
+  const text = await res.text();
+  if (!text.trim()) return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function pickNumericFileId(data: unknown): number | undefined {
+  const rec = unwrapRecord(data);
+  if (!rec) return undefined;
+  for (const k of ['id', 'fileId', 'file_id', 'certificate_file_id', 'certificateFileId']) {
+    const v = rec[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v > 0) return Math.trunc(v);
+    if (typeof v === 'string' && /^\d+$/.test(v.trim())) {
+      const n = Number(v.trim());
+      if (n > 0) return n;
+    }
+  }
+  const nested = rec.object ?? rec.data;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    return pickNumericFileId(nested);
+  }
+  return undefined;
+}
+
+/** POST /api/file/upload — `USER_FILE_CATEGORIES` (admin Sozlamalar → Fayllar) */
+export async function candidateUploadFile(
+  file: File,
+  category: UserFileCategory | string = 'user_document',
+): Promise<number> {
+  const userId = getCandidateUserId() ?? (await resolveCandidateUserId());
+  const fd = new FormData();
+  fd.append('file', file);
+  const cat = normalizeUserFileCategory(category);
+  const qs = new URLSearchParams({
+    userId: String(Math.trunc(Number(userId))),
+    category: cat,
+  });
+  const data = await candidateMultipartRequest(`/file/upload?${qs.toString()}`, fd);
+  const id = pickNumericFileId(data);
+  if (id == null) throw new Error('Fayl yuklandi, lekin server fayl ID qaytarmadi.');
+  return id;
+}
+
 export async function candidateAddLanguage(body: {
   language: string;
   level: string;
   has_certificate: boolean;
-}): Promise<void> {
+  certificate_file_id?: number;
+  /** `has_certificate` bo‘lsa avval `/file/upload`, keyin `certificate_file_id` bilan POST */
+  certificateFile?: File | null;
+}): Promise<string | null> {
   const token = getCandidateToken();
   if (!token) throw new Error('Token yo‘q');
-  const { data } = await authApi.post<unknown>('/candidate/profile/languages', body, {
+
+  let certificate_file_id = body.certificate_file_id;
+  if (body.has_certificate && body.certificateFile) {
+    certificate_file_id = await candidateUploadFile(body.certificateFile, 'user_document');
+  }
+
+  const payload: Record<string, unknown> = {
+    language: String(body.language).trim(),
+    level: String(body.level).trim(),
+    has_certificate: body.has_certificate === true,
+  };
+  if (body.has_certificate && certificate_file_id != null && certificate_file_id > 0) {
+    payload.certificate_file_id = Math.trunc(certificate_file_id);
+  }
+
+  const { data } = await authApi.post<unknown>('/candidate/profile/languages', payload, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  unwrapRecord(data);
+  const rec = unwrapRecord(data);
+  return rec ? pickLanguageRowId(rec) : null;
+}
+
+export async function candidateDeleteDocument(documentId: string): Promise<void> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Token yo‘q');
+  const id = documentId.trim();
+  if (!id) throw new Error('Hujjat ID yo‘q');
+  const { data } = await authApi.delete<unknown>(`/candidate/profile/documents/${encodeURIComponent(id)}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  assertApiSuccess(data);
 }
 
 /** Swagger: POST /api/candidate/profile/work-experiences — JSON massiv (har bir element `CandidateWorkExperienceBody`) */
@@ -1028,10 +1367,11 @@ async function tryRefreshCandidateTokenIfExpired(): Promise<boolean> {
 }
 
 /** Multipart — axios default JSON Content-Type buzmasligi uchun fetch */
-export async function candidateUploadDocument(file: File, documentType: string): Promise<void> {
-  const token = getCandidateToken();
-  if (!token) throw new Error('Token yo‘q');
-
+export async function candidateUploadDocument(
+  file: File,
+  documentType: string,
+  extras?: Record<string, string>,
+): Promise<void> {
   const fd = new FormData();
   fd.append('file', file);
   fd.append('document_type', documentType);
@@ -1039,43 +1379,12 @@ export async function candidateUploadDocument(file: File, documentType: string):
   if (userId != null) {
     fd.append('authorities[0].authority', String(userId));
   }
-
-  let authToken = token;
-  if (await tryRefreshCandidateTokenIfExpired()) {
-    const refreshedToken = getCandidateToken();
-    if (refreshedToken) authToken = refreshedToken;
-  }
-
-  const makeRequest = () =>
-    fetch(candidateMultipartUrl('/candidate/profile/documents'), {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${authToken}` },
-      body: fd,
-    });
-
-  let res = await makeRequest();
-  if (res.status === 401) {
-    const refreshed = await candidateRefreshWithStoredRefresh();
-    const refreshedToken = refreshed ? getCandidateToken() : null;
-    if (refreshedToken) {
-      res = await fetch(candidateMultipartUrl('/candidate/profile/documents'), {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${refreshedToken}` },
-        body: fd,
-      });
+  if (extras) {
+    for (const [k, v] of Object.entries(extras)) {
+      if (v.trim()) fd.append(k, v.trim());
     }
   }
-
-  if (!res.ok) {
-    let msg = `HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as Record<string, unknown>;
-      if (typeof j.message === 'string') msg = j.message;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(msg);
-  }
+  await candidateMultipartRequest('/candidate/profile/documents', fd);
 }
 
 /** Profilni yakuniy yuborish — `POST /api/candidate/profile/submit` */

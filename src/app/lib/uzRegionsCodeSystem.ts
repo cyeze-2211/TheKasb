@@ -63,6 +63,20 @@ export function findGroupByViloyatName(groups: UzRegionGroup[], name: string): U
   return groups.find((g) => g.viloyatNameUz === t);
 }
 
+export function findTumanInGroup(
+  group: UzRegionGroup | undefined,
+  districtRaw: string | null | undefined,
+): { code: string; display: string } | undefined {
+  if (!group) return undefined;
+  const raw = districtRaw == null ? '' : String(districtRaw).trim();
+  if (!raw) return undefined;
+  const byDisplay = group.tumanlar.find((t) => t.display === raw || t.code === raw);
+  if (byDisplay) return byDisplay;
+  const resolved = resolveTumanLabelUz(raw, group.viloyatNameUz);
+  if (!resolved) return undefined;
+  return group.tumanlar.find((t) => t.display === resolved || t.code === resolved);
+}
+
 export function findGroupContainingTuman(groups: UzRegionGroup[], tumanDisplay: string): UzRegionGroup | undefined {
   const t = tumanDisplay.trim();
   if (!t) return undefined;

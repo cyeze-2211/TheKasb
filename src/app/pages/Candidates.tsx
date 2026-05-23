@@ -44,6 +44,8 @@ import {
   ADMIN_LANGUAGE_SELECT_ORDER,
   candidateProfileStatusUz,
   cefrLevelUz,
+  EDUCATION_LEVEL_SELECT_ORDER,
+  educationLevelUz,
   uzOrCode,
 } from '../lib/adminUiUz';
 import { languageLabelUz, parseLanguageCodesFromCell } from '../lib/languageUi';
@@ -72,6 +74,8 @@ const initialQuery = (): CandidatesListQuery => ({
   size: 20,
   profileStatus: '',
   regionId: undefined,
+  regionName: '',
+  educationLevel: '',
   categoryId: undefined,
   professionId: undefined,
   agentId: undefined,
@@ -289,20 +293,49 @@ export function Candidates() {
             </div>
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Hudud</span>
+              <input
+                type="search"
+                className={ctlInput}
+                list="candidates-region-filter"
+                placeholder="Hudud nomi yoki ro‘yxatdan tanlang"
+                disabled={filterMetaLoading}
+                value={
+                  q.regionId != null
+                    ? (REGION_FILTER_OPTIONS.find((r) => r.id === q.regionId)?.label ?? q.regionName ?? '')
+                    : (q.regionName ?? '')
+                }
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const match = REGION_FILTER_OPTIONS.find(
+                    (r) => r.label.toLowerCase() === v.trim().toLowerCase(),
+                  );
+                  if (match) {
+                    setField({ regionId: match.id, regionName: '' });
+                    return;
+                  }
+                  setField({
+                    regionId: undefined,
+                    regionName: v,
+                  });
+                }}
+              />
+              <datalist id="candidates-region-filter">
+                {REGION_FILTER_OPTIONS.map((r) => (
+                  <option key={r.id} value={r.label} />
+                ))}
+              </datalist>
+            </div>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Ta’lim darajasi</span>
               <select
                 className={ctlSelect}
-                disabled={filterMetaLoading}
-                value={q.regionId ?? ''}
-                onChange={(e) =>
-                  setField({
-                    regionId: e.target.value ? Number(e.target.value) : undefined,
-                  })
-                }
+                value={q.educationLevel ?? ''}
+                onChange={(e) => setField({ educationLevel: e.target.value })}
               >
                 <option value="">Barchasi</option>
-                {REGION_FILTER_OPTIONS.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.label}
+                {EDUCATION_LEVEL_SELECT_ORDER.map((k) => (
+                  <option key={k} value={k}>
+                    {educationLevelUz[k] ?? k}
                   </option>
                 ))}
               </select>
