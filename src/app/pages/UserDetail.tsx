@@ -37,6 +37,7 @@ import {
 } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
 import { btnSecondary, pageKicker, panelElite, panelEliteRaised } from '../components/pageChrome';
+import { resolveTumanLabelUz, resolveViloyatLabelUz } from '../lib/uzRegionsCodeSystem';
 
 function roleForBadge(u: SdgUserDto): UserRole {
   const r = String(u.accountType ?? 'CANDIDATE');
@@ -277,8 +278,14 @@ export function UserDetail() {
             />
             <DetailRow label="Oxirgi kirish" value={fmtIso(user.lastLoginAt ?? undefined)} />
             <DetailRow label="Manzil" value={String(user.address ?? '')} />
-            <DetailRow label="Viloyat" value={String(user.addressRegion ?? '')} />
-            <DetailRow label="Tuman" value={String(user.addressDistrict ?? '')} />
+            <DetailRow
+              label="Viloyat"
+              value={resolveViloyatLabelUz(user.addressRegion) || '—'}
+            />
+            <DetailRow
+              label="Tuman"
+              value={resolveTumanLabelUz(user.addressDistrict, user.addressRegion) || '—'}
+            />
             <DetailRow label="MFY" value={String(user.addressMFY ?? '')} />
             <DetailRow label="Maktab" value={String(user.school ?? '')} />
             <DetailRow label="Guruh" value={String(user.group ?? '')} />

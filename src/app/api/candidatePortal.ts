@@ -16,7 +16,8 @@ import {
 import { isTelegramMiniAppEntry } from '../lib/telegramWebApp';
 import type { ProfessionCategoryDto, ProfessionDto } from './professions';
 import { API_BASE_URL } from './client';
-import { normalizeEducationLevelForApi } from '../lib/adminUiUz';
+import { CANDIDATE_SALARY_CURRENCY, normalizeEducationLevelForApi } from '../lib/adminUiUz';
+import { resolveTumanLabelUz, resolveViloyatLabelUz } from '../lib/uzRegionsCodeSystem';
 import { assertApiSuccess } from './users';
 
 function extractObjectArray<T>(data: unknown): T[] {
@@ -597,15 +598,17 @@ export async function candidateUpdateMyUser(body: CandidateMyUserUpdateBody): Pr
   if (addressMFY) dto.addressMFY = addressMFY;
   const addressRegion = body.addressRegion;
   if (addressRegion != null && String(addressRegion).trim() !== '') {
-    dto.addressRegion = String(addressRegion).trim();
+    dto.addressRegion = resolveViloyatLabelUz(addressRegion);
   }
   const addressDistrict = body.addressDistrict;
   if (addressDistrict != null && String(addressDistrict).trim() !== '') {
-    dto.addressDistrict = String(addressDistrict).trim();
+    dto.addressDistrict = resolveTumanLabelUz(addressDistrict, addressRegion);
   }
   const tg = body.telegramChatId;
   if (tg != null && Number.isFinite(Number(tg))) {
-    dto.telegramChatId = Number(tg);
+    const chatId = Number(tg);
+    dto.telegramChatId = chatId;
+    dto.telegram_chat_id = chatId;
   }
 
   try {
@@ -624,10 +627,11 @@ export type CandidateProfileCreateBody = {
   /** POST /candidate/profile — bog‘langan foydalanuvchi */
   user_id?: number;
   /** Bo‘sh bo‘lsa JSON ga kiritilmaydi (null 500 berishi mumkin) */
-  region_id?: number | null;
-  marital_status: string;
-  education_level: string;
-  data_consent: boolean;
+  region_id?: number | string | null;
+  region_name_uz?: string | null;
+  marital_status?: string;
+  education_level?: string;
+  data_consent?: boolean;
   profession_id?: number;
   profession_category_id?: number;
   experience_years?: number;
@@ -640,10 +644,11 @@ export type CandidateProfileCreateBody = {
 };
 
 export type CandidateProfileUpdateBody = {
-  region_id?: number | null;
-  marital_status: string;
-  education_level: string;
-  data_consent: boolean;
+  region_id?: number | string | null;
+  region_name_uz?: string | null;
+  marital_status?: string;
+  education_level?: string;
+  data_consent?: boolean;
   profession_id?: number;
   profession_category_id?: number;
   availability_status?: string;
@@ -659,29 +664,38 @@ export type CandidateProfileUpdateBody = {
 function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): Record<string, unknown> {
   const {
     region_id,
+    region_name_uz,
     profession_id,
     profession_category_id,
     experience_years,
     education_level,
+    marital_status,
     custom_profession_name,
-    ...rest
+    data_consent,
+    availability_status,
+    experience_range,
+    desired_salary_min,
+    desired_salary_max,
+    salary_currency,
+    user_id: _uid,
   } = body;
 
-  const payload: Record<string, unknown> = {
-    ...rest,
-    education_level: normalizeEducationLevelForApi(education_level),
-  };
+  const payload: Record<string, unknown> = {};
 
   const uidRaw = body.user_id ?? getCandidateUserId();
   if (uidRaw == null || !Number.isFinite(Number(uidRaw)) || Number(uidRaw) <= 0) {
     throw new Error('Foydalanuvchi ID kerak — POST /candidate/profile uchun user_id yuborilmadi.');
   }
-  const uid = Math.trunc(Number(uidRaw));
-  payload.user_id = uid;
-  payload.userId = uid;
+  payload.user_id = Math.trunc(Number(uidRaw));
 
-  const rid = normalizeCandidateRegionId(region_id);
-  if (rid != null) payload.region_id = rid;
+  if (data_consent === true) payload.data_consent = true;
+  if (marital_status != null && String(marital_status).trim()) {
+    payload.marital_status = String(marital_status).trim();
+  }
+  if (education_level != null && String(education_level).trim()) {
+    payload.education_level = normalizeEducationLevelForApi(education_level);
+  }
+
   if (experience_years != null && Number.isFinite(Number(experience_years))) {
     payload.experience_years = Math.max(0, Math.trunc(Number(experience_years)));
   }
@@ -699,7 +713,27 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
     payload.profession_id = 0;
   }
 
-  return payload;
+  if (availability_status != null && String(availability_status).trim()) {
+    payload.availability_status = String(availability_status).trim();
+  }
+  if (experience_range != null && String(experience_range).trim()) {
+    payload.experience_range = String(experience_range).trim();
+  }
+  if (desired_salary_min != null && Number.isFinite(Number(desired_salary_min))) {
+    payload.desired_salary_min = Number(desired_salary_min);
+  }
+  if (desired_salary_max != null && Number.isFinite(Number(desired_salary_max))) {
+    payload.desired_salary_max = Number(desired_salary_max);
+  }
+  if (
+    desired_salary_min != null ||
+    desired_salary_max != null ||
+    (salary_currency != null && String(salary_currency).trim())
+  ) {
+    payload.salary_currency = CANDIDATE_SALARY_CURRENCY;
+  }
+
+  return finalizeProfileRegionFields(payload, { region_id, region_name_uz });
 }
 
 /** Backend viloyat id — `REGIONS` ro‘yxati (1…14) */
@@ -720,15 +754,28 @@ export function normalizeCandidateRegionId(raw: unknown): number | undefined {
   return n;
 }
 
-/** PATCH/POST — noto‘g‘ri yoki null `region_id` yuborilmasin */
-function stripNullRegionFromPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  if (!('region_id' in payload)) return payload;
-  const rid = normalizeCandidateRegionId(payload.region_id);
-  if (rid == null) {
-    const { region_id: _r, ...rest } = payload;
-    return rest;
-  }
-  return { ...payload, region_id: rid };
+/** POST/PATCH — `region_id` va `region_name_uz` har doim string (bo‘sh bo‘lsa `""`) */
+function regionIdAsApiString(raw: unknown): string {
+  const rid = normalizeCandidateRegionId(raw);
+  return rid != null ? String(rid) : '';
+}
+
+function regionNameUzAsApiString(raw: unknown): string {
+  if (raw == null) return '';
+  return String(raw).trim();
+}
+
+function finalizeProfileRegionFields(
+  payload: Record<string, unknown>,
+  hints?: { region_id?: unknown; region_name_uz?: unknown },
+): Record<string, unknown> {
+  const regionRaw = hints && 'region_id' in hints ? hints.region_id : payload.region_id;
+  const nameRaw = hints && 'region_name_uz' in hints ? hints.region_name_uz : payload.region_name_uz;
+  return {
+    ...payload,
+    region_id: regionIdAsApiString(regionRaw),
+    region_name_uz: regionNameUzAsApiString(nameRaw),
+  };
 }
 
 /** JWT dan yoki `/users/me` dan foydalanuvchi id */
@@ -783,8 +830,6 @@ export async function ensureCandidateProfile(
 
   const id = await candidateCreateProfile({
     user_id,
-    marital_status: 'SINGLE',
-    education_level: 'BACHELOR',
     data_consent: true,
     ...extras,
   });
@@ -827,11 +872,31 @@ export async function candidateUpdateProfile(body: CandidateProfileUpdateBody): 
   const token = getCandidateToken();
   if (!token) throw new Error('Avval OTP bilan kiring');
 
-  const raw: Record<string, unknown> = {
-    ...body,
-    education_level: normalizeEducationLevelForApi(body.education_level),
-  };
-  const payload = stripNullRegionFromPayload(raw);
+  const raw: Record<string, unknown> = { ...body };
+  if (body.education_level != null && String(body.education_level).trim()) {
+    raw.education_level = normalizeEducationLevelForApi(body.education_level);
+  } else {
+    delete raw.education_level;
+  }
+  if (body.marital_status != null && String(body.marital_status).trim()) {
+    raw.marital_status = String(body.marital_status).trim();
+  } else {
+    delete raw.marital_status;
+  }
+  if (
+    body.desired_salary_min != null ||
+    body.desired_salary_max != null ||
+    body.salary_currency != null
+  ) {
+    raw.salary_currency = CANDIDATE_SALARY_CURRENCY;
+  }
+  let payload: Record<string, unknown> = raw;
+  if ('region_id' in body || 'region_name_uz' in body) {
+    payload = finalizeProfileRegionFields(raw, {
+      region_id: body.region_id,
+      region_name_uz: body.region_name_uz,
+    });
+  }
 
   const { data } = await authApi.patch<unknown>('/candidate/profile', payload, {
     headers: { Authorization: `Bearer ${token}` },

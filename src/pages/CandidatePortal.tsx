@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 import FotonLogo from '../Img/e9ee15f1-3bc8-490d-941f-3b6a5ee4ce9c_removalai_preview.png';
-import { getUzRegionGroups, UzRegionGroup } from '../app/lib/uzRegionsCodeSystem'; // adjust import path
+import { getUzRegionGroups, type UzRegionGroup } from '../app/lib/uzRegionsCodeSystem';
 import type { LucideIcon } from 'lucide-react';
 import {
   Award,
@@ -83,6 +83,7 @@ import {
   candidateProfileStatusUz,
   cefrLevelUz,
   documentTypeUz,
+  CANDIDATE_SALARY_CURRENCY,
   formatSalaryCurrencyLabel,
   EDUCATION_LEVEL_SELECT_ORDER,
   educationLevelToFormValue,
@@ -142,6 +143,18 @@ const C = {
 } as const;
 
 const LOGO_URL = 'https://thekasb.uz/icones/new-main-logo.png';
+
+/** Bo‘sh / null profil maydonlari uchun */
+const FIELD_EMPTY = 'Berilmagan';
+
+/** Qiziqishlar (target countries) — maksimal tanlov */
+const MAX_TARGET_COUNTRIES = 5;
+
+function displayField(value: string | null | undefined): string {
+  const s = (value ?? '').trim();
+  if (!s || s === '—') return FIELD_EMPTY;
+  return s;
+}
 
 /** To‘liq ekran (Telegram / mobil); katta telefonlarda markazda cheklanadi */
 const PORTAL_MAX_WIDTH_PX = 480;
@@ -281,8 +294,7 @@ function destinationCountryCardDesc(d: {
     Number.isFinite(d.salary_min) &&
     Number.isFinite(d.salary_max)
   ) {
-    const cur = (d.salary_currency_symbol || d.salary_currency || '').trim();
-    parts.push(cur ? `${d.salary_min} – ${d.salary_max} ${cur}` : `${d.salary_min} – ${d.salary_max}`);
+    parts.push(`${d.salary_min} – ${d.salary_max} $`);
   }
   if (d.language_req) parts.push(d.language_req);
   if (d.note) parts.push(d.note);
@@ -376,11 +388,8 @@ function availabilityStatusFromForm(form: FormState): string {
   return 'WITHIN_3_MONTHS';
 }
 
-const PROFILE_STEP_DEFAULTS = {
-  marital_status: 'SINGLE',
-  education_level: 'BACHELOR',
-  data_consent: true,
-} as const;
+/** Profil yaratish — faqat rozilik; marital/ta’lim keyinroq foydalanuvchidan */
+const PROFILE_ENSURE_BASE = { data_consent: true } as const;
 
 /** Bakalavr va yuqori — OTM ro‘yxati (viloyat → universitet) */
 const OTM_PICKER_EDUCATION_LEVELS = new Set([
@@ -597,7 +606,7 @@ function ProfessionCategoryIcon({ icon }: { icon: string }) {
 
 function TopBar({ onBack }: { onBack?: () => void }) {
   return (
-    <div className="flex items-center gap-2 px-5 pb-2 pt-[52px]">
+    <div className="flex items-center gap-2 px-5 pb-2 pt-[108px]">
       <img
         src={LOGO_URL}
         alt="The Kasb logotipi"
@@ -632,7 +641,7 @@ function stepLabel(screen: Screen): string {
     5: 'Ta’lim',
     6: 'Kasb tanlash',
     7: 'Til bilimi',
-    8: 'Davlat va maosh',
+    8: 'Qiziqishlar',
     9: 'Hujjatlar',
   };
   return labels[screen] ?? '';
@@ -703,7 +712,7 @@ function Screen1({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center px-6 pt-[52px]">
+      <div className="flex flex-1 flex-col items-center justify-center px-6 pt-[108px]">
         <div
           className="mb-3 flex items-center justify-center"
           
@@ -1101,7 +1110,7 @@ function Screen4Personal({
           >
             <option value="">Viloyatni tanlang</option>
             {getUzRegionGroups().map((group) => (
-              <option key={group.viloyatCode} value={group.viloyatCode}>
+              <option key={group.viloyatCode} value={group.viloyatNameUz}>
                 {group.viloyatNameUz}
               </option>
             ))}
@@ -1125,9 +1134,12 @@ function Screen4Personal({
           >
             <option value="">Tumanni tanlang</option>
             {getUzRegionGroups()
-              .find((group) => group.viloyatCode === form.addressRegion)
+              .find(
+                (group) =>
+                  group.viloyatNameUz === form.addressRegion || group.viloyatCode === form.addressRegion,
+              )
               ?.tumanlar.map((t) => (
-                <option key={t.code} value={t.code}>
+                <option key={t.code} value={t.display}>
                   {t.display}
                 </option>
               ))}
@@ -1866,12 +1878,6 @@ function Screen6Work({
         </div>
       ) : panel === 'experience' ? (
         <div className="flex flex-col gap-2.5 px-5 pb-9 pt-4">
-          {form.workExperienceEntries.length > 0 ? (
-            <p className="text-center text-[13px] leading-snug" style={{ color: C.muted }}>
-              {form.workExperienceEntries.length} ta ish tajribasi qo‘shildi. Yana qo‘shishingiz yoki keyingi bosqichga
-              o‘tishingiz mumkin.
-            </p>
-          ) : null}
           <button
             type="button"
             onClick={() => addAnotherWork()}
@@ -2529,7 +2535,7 @@ function Screen8({
         if (!cancelled) setDestinationCountries(list);
       })
       .catch((e) => {
-        if (!cancelled) setDestinationError(candidatePortalError(e, 'Maqsad mamlakatlar yuklanmadi.'));
+        if (!cancelled) setDestinationError(candidatePortalError(e, 'Qiziqishlar ro‘yxati yuklanmadi.'));
       })
       .finally(() => {
         if (!cancelled) setLoadingCountries(false);
@@ -2544,6 +2550,10 @@ function Screen8({
     setForm((f) => {
       if (f.countries.includes(id)) {
         return { ...f, countries: f.countries.filter((value) => value !== id) };
+      }
+      if (f.countries.length >= MAX_TARGET_COUNTRIES) {
+        toast.error(`Eng ko‘pi bilan ${MAX_TARGET_COUNTRIES} ta davlat tanlash mumkin.`);
+        return f;
       }
       return { ...f, countries: [...f.countries, id] };
     });
@@ -2573,16 +2583,21 @@ function Screen8({
             fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
           }}
         >
-          Maqsad mamlakatlar va maosh
+          Qiziqishlar va maosh
         </h2>
         <div className="mt-2">
-          <SectionLabel>Maqsad mamlakatlar</SectionLabel>
+          <SectionLabel>Qiziqishlar</SectionLabel>
+          {form.countries.length > 0 ? (
+            <p className="mt-1 text-[12px] font-medium tabular-nums" style={{ color: C.blueL }}>
+              Tanlangan: {form.countries.length} / {MAX_TARGET_COUNTRIES}
+            </p>
+          ) : null}
         </div>
         {loadingCountries ? (
           <div className="flex flex-1 flex-col items-center justify-center py-16">
             <Loader2 className="h-8 w-8 animate-spin" style={{ color: C.blueL }} />
             <p className="mt-3 text-sm" style={{ color: C.muted }}>
-              Maqsad mamlakatlar yuklanmoqda…
+              Davlatlar ro‘yxati yuklanmoqda…
             </p>
           </div>
         ) : destinationError ? (
@@ -2593,15 +2608,22 @@ function Screen8({
           <div className="grid gap-2.5 pb-3">
             {destinationCountries.map((country) => {
               const selected = form.countries.includes(country.id);
+              const atLimit = form.countries.length >= MAX_TARGET_COUNTRIES && !selected;
               const flag = countryFlagEmoji(country.country_code);
               return (
                 <OptionCard
                   key={country.id}
                   selected={selected}
-                  onClick={() => toggleCountry(country.id)}
+                  onClick={() => {
+                    if (atLimit) {
+                      toast.error(`Eng ko‘pi bilan ${MAX_TARGET_COUNTRIES} ta davlat tanlash mumkin.`);
+                      return;
+                    }
+                    toggleCountry(country.id);
+                  }}
                   left={<span className="shrink-0 text-lg">{flag}</span>}
                   title={countryTitle(country)}
-                  desc={country.note || country.language_req || 'Tanlash'}
+                  desc={country.note || country.language_req || 'Vakansiyalar qidiriladi'}
                 />
               );
             })}
@@ -2644,7 +2666,7 @@ const AVAILABILITY_STATUS_UZ: Record<string, string> = {
 };
 
 function formatPortalDateTime(raw: string): string {
-  if (!raw || !raw.trim()) return '—';
+  if (!raw || !raw.trim()) return FIELD_EMPTY;
   const t = raw.trim();
   try {
     const d = new Date(t);
@@ -2674,6 +2696,58 @@ function pickStr(obj: Record<string, unknown> | null | undefined, ...keys: strin
   return '';
 }
 
+/** `null` yoki bo‘sh string — default enum qo‘llanmasin */
+function pickProfileEnum(obj: Record<string, unknown> | null | undefined, ...keys: string[]): string {
+  if (!obj) return '';
+  for (const k of keys) {
+    if (!(k in obj)) continue;
+    const v = obj[k];
+    if (v == null) return '';
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+function educationSelectValueFromProfile(raw: string): string {
+  const t = raw.trim();
+  if (!t) return '';
+  const u = t.toUpperCase();
+  if ((EDUCATION_LEVEL_SELECT_ORDER as readonly string[]).includes(u)) return u;
+  return t;
+}
+
+function pickTargetCountryCodeFromItem(o: Record<string, unknown>): string {
+  const direct = pickStr(o, 'country_code', 'countryCode', 'code');
+  if (direct) return direct.toUpperCase();
+  const dest = o.destination_country ?? o.destinationCountry;
+  if (dest && typeof dest === 'object' && !Array.isArray(dest)) {
+    return pickStr(dest as Record<string, unknown>, 'country_code', 'countryCode').toUpperCase();
+  }
+  return '';
+}
+
+function parseTargetCountryRows(
+  tc: unknown,
+): Array<{ code: string; pr: number }> {
+  if (!Array.isArray(tc)) return [];
+  type Row = { code: string; pr: number };
+  const rows: Row[] = [];
+  for (const item of tc) {
+    if (item && typeof item === 'object' && !Array.isArray(item)) {
+      const o = item as Record<string, unknown>;
+      const code = pickTargetCountryCodeFromItem(o);
+      if (!code) continue;
+      const pr = pickNum(o, 'priority') ?? 999;
+      rows.push({ code, pr });
+    } else if (item != null) {
+      const code = String(item).trim().toUpperCase();
+      if (code) rows.push({ code, pr: 999 });
+    }
+  }
+  rows.sort((a, b) => a.pr - b.pr);
+  return rows;
+}
+
 function pickNum(obj: Record<string, unknown> | null | undefined, ...keys: string[]): number | null {
   if (!obj) return null;
   for (const k of keys) {
@@ -2689,7 +2763,7 @@ function pickNum(obj: Record<string, unknown> | null | undefined, ...keys: strin
 
 function countryChip(code: string): string {
   const u = code.trim().toUpperCase();
-  if (!u) return '—';
+  if (!u) return FIELD_EMPTY;
   const flag = countryFlagEmoji(u);
   const name = countryNameUz(u);
   return name ? `${flag} ${name}` : flag;
@@ -2697,7 +2771,7 @@ function countryChip(code: string): string {
 
 function profileStatusLabelUz(raw: string): string {
   const s = (raw || '').trim();
-  if (!s) return '—';
+  if (!s) return FIELD_EMPTY;
   const u = s.toUpperCase();
   const mapped = candidateProfileStatusUz[u];
   if (mapped) return mapped;
@@ -2862,7 +2936,7 @@ function profileChecklistItems(profile: Record<string, unknown> | null): Profile
     { key: 'region', label: 'Hudud', ok: hasRegion },
     { key: 'prof', label: 'Kasb / ish tajribasi', ok: hasProfessionSignal(profile) },
     { key: 'lang', label: 'Tillar', ok: langsOk },
-    { key: 'countries', label: 'Maqsad mamlakatlar', ok: countriesOk },
+    { key: 'countries', label: 'Qiziqishlar (davlatlar)', ok: countriesOk },
     { key: 'salary', label: 'Maosh (min va max)', ok: salaryOk },
     { key: 'exp', label: 'Ish tajribasi (yoki bandlar)', ok: expOk },
     {
@@ -2924,7 +2998,7 @@ function summarizeProfileCompletion(profile: Record<string, unknown> | null): {
     { key: 'languages', labelUz: 'Tillar', max: 15, earned: langEarned, color: C.green, icon: Languages },
     {
       key: 'countries',
-      labelUz: 'Maqsad mamlakatlar',
+      labelUz: 'Qiziqishlar',
       max: 15,
       earned: countryEarned,
       color: '#2ecc71',
@@ -2981,7 +3055,7 @@ function profileCompletionPct(profile: Record<string, unknown> | null): number {
 
 function formatProfileDateOnly(raw: string): string {
   const s = (raw || '').trim();
-  if (!s) return '—';
+  if (!s) return FIELD_EMPTY;
   const d = s.slice(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
     const [y, m, day] = d.split('-');
@@ -2996,7 +3070,7 @@ function formatWorkExperienceDuration(o: Record<string, unknown>): string {
   const parts: string[] = [];
   if (y > 0) parts.push(`${y} yil`);
   if (mo > 0) parts.push(`${mo} oy`);
-  return parts.join(' ') || '—';
+  return parts.join(' ') || FIELD_EMPTY;
 }
 
 function displayNameFromProfile(profile: Record<string, unknown> | null): string {
@@ -3022,7 +3096,7 @@ function formatVacancySalary(v: PublicVacancyRow): string {
   const cur = formatSalaryCurrencyLabel(String(v.salary_currency ?? v.salaryCurrency ?? 'USD'));
   if (typeof min === 'number' && typeof max === 'number') return `${min.toLocaleString('uz-UZ')} – ${max.toLocaleString('uz-UZ')} ${cur}/oy`;
   if (typeof min === 'number') return `${min.toLocaleString('uz-UZ')}+ ${cur}/oy`;
-  return `—`;
+  return FIELD_EMPTY;
 }
 
 function vacancyTitle(v: PublicVacancyRow): string {
@@ -3035,30 +3109,16 @@ function vacancyCountryCode(v: PublicVacancyRow): string {
 }
 
 function targetCountriesSummary(profile: Record<string, unknown> | null): string {
-  if (!profile) return '—';
+  if (!profile) return FIELD_EMPTY;
   const tc = profile.target_countries ?? profile.targetCountries;
-  if (Array.isArray(tc) && tc.length) {
-    type Row = { code: string; pr: number };
-    const rows: Row[] = [];
-    for (const item of tc) {
-      if (item && typeof item === 'object' && !Array.isArray(item)) {
-        const o = item as Record<string, unknown>;
-        const code = pickStr(o, 'country_code', 'countryCode', 'code').toUpperCase();
-        if (!code) continue;
-        const pr = pickNum(o, 'priority') ?? 999;
-        rows.push({ code, pr });
-      } else if (item != null) {
-        const code = String(item).trim().toUpperCase();
-        if (code) rows.push({ code, pr: 999 });
-      }
-    }
-    rows.sort((a, b) => a.pr - b.pr);
+  const rows = parseTargetCountryRows(tc);
+  if (rows.length) {
     const parts = rows.map((r) => {
       const name = countryNameUz(r.code);
       const flag = countryFlagEmoji(r.code);
       return name ? `${flag} ${name}` : flag;
     });
-    return parts.join(', ') || '—';
+    return parts.join(', ') || FIELD_EMPTY;
   }
   const single = pickStr(profile, 'target_country_code', 'targetCountryCode', 'primary_target_country');
   if (single) {
@@ -3067,33 +3127,17 @@ function targetCountriesSummary(profile: Record<string, unknown> | null): string
     const flag = countryFlagEmoji(u);
     return name ? `${flag} ${name}` : flag;
   }
-  return '—';
+  return FIELD_EMPTY;
 }
 
 function targetCountryRows(profile: Record<string, unknown> | null): Array<{ code: string; pr: number }> {
   if (!profile) return [];
   const tc = profile.target_countries ?? profile.targetCountries;
-  if (!Array.isArray(tc)) return [];
-  type Row = { code: string; pr: number };
-  const rows: Row[] = [];
-  for (const item of tc) {
-    if (item && typeof item === 'object' && !Array.isArray(item)) {
-      const o = item as Record<string, unknown>;
-      const code = pickStr(o, 'country_code', 'countryCode', 'code').toUpperCase();
-      if (!code) continue;
-      const pr = pickNum(o, 'priority') ?? 999;
-      rows.push({ code, pr });
-    } else if (item != null) {
-      const code = String(item).trim().toUpperCase();
-      if (code) rows.push({ code, pr: 999 });
-    }
-  }
-  rows.sort((a, b) => a.pr - b.pr);
-  return rows;
+  return parseTargetCountryRows(tc);
 }
 
 function languagesSummary(profile: Record<string, unknown> | null): string {
-  if (!profile) return '—';
+  if (!profile) return FIELD_EMPTY;
   const langs = profile.languages ?? profile.candidate_languages ?? profile.candidateLanguages;
   if (Array.isArray(langs) && langs.length) {
     const parts = langs.map((item) => {
@@ -3109,7 +3153,7 @@ function languagesSummary(profile: Record<string, unknown> | null): string {
       const s = String(item ?? '').trim();
       return s ? uzOrCode(adminLanguageUz, s.toUpperCase()) || s : '';
     });
-    return parts.filter(Boolean).join(' · ') || '—';
+    return parts.filter(Boolean).join(' · ') || FIELD_EMPTY;
   }
   const flat = pickStr(profile, 'languages');
   if (flat.includes(',')) {
@@ -3117,9 +3161,9 @@ function languagesSummary(profile: Record<string, unknown> | null): string {
       .split(',')
       .map((x) => uzOrCode(adminLanguageUz, x.trim().toUpperCase()))
       .filter(Boolean);
-    return parts.length ? parts.join(' · ') : '—';
+    return parts.length ? parts.join(' · ') : FIELD_EMPTY;
   }
-  return '—';
+  return FIELD_EMPTY;
 }
 
 function vacancyRowKey(v: PublicVacancyRow, idx: number): string {
@@ -3141,7 +3185,7 @@ function ProfileInfoRow({ label, value }: { label: string; value: string }) {
         className="min-w-0 break-words sm:max-w-[70%] sm:text-right"
         style={{ fontSize: 15, fontWeight: 600, color: C.text }}
       >
-        {value || '—'}
+        {displayField(value)}
       </span>
     </div>
   );
@@ -3170,7 +3214,7 @@ function CircleProgress({ pct, size = 56 }: { pct: number; size?: number }) {
 }
 
 function ProfileCompletenessPanel({ profile }: { profile: Record<string, unknown> | null }) {
-  const { sections, totalRounded } = useMemo(() => summarizeProfileCompletion(profile), [profile]);
+  const { totalRounded } = useMemo(() => summarizeProfileCompletion(profile), [profile]);
   const checklist = useMemo(() => profileChecklistItems(profile), [profile]);
   const backendPct = useMemo(() => pickBackendProfilePct(profile), [profile]);
   const headline = backendPct ?? totalRounded;
@@ -3207,23 +3251,10 @@ function ProfileCompletenessPanel({ profile }: { profile: Record<string, unknown
           >
             {headline}%
           </p>
-          {backendPct != null ? (
-            <p className="mt-1 max-w-[280px] text-[11px] leading-snug" style={{ color: C.muted }}>
-              Foiz serverdagi <span className="font-medium" style={{ color: C.blueL }}>profile_completeness</span> /{' '}
-              <span className="font-medium" style={{ color: C.blueL }}>profile_score</span> maydoniga asoslangan.
-            </p>
-          ) : (
-            <p className="mt-1 max-w-[280px] text-[11px] leading-snug" style={{ color: C.muted }}>
-              Server foizi yo‘q — taxminiy hisob ishlatilmoqda.
-            </p>
-          )}
         </div>
         <div className="text-right">
           <p className="text-[12px] font-semibold tabular-nums" style={{ color: C.text }}>
             {reqDone}/{required.length}
-          </p>
-          <p className="text-[11px]" style={{ color: C.muted }}>
-            asosiy band
           </p>
         </div>
       </div>
@@ -3248,9 +3279,6 @@ function ProfileCompletenessPanel({ profile }: { profile: Record<string, unknown
         />
       </div>
 
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-        Tekshiruv ro‘yxati
-      </p>
       <div className="mb-4 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
         {checklist.map((item) => (
           <div
@@ -3278,55 +3306,6 @@ function ProfileCompletenessPanel({ profile }: { profile: Record<string, unknown
           </div>
         ))}
       </div>
-
-      <details className="group rounded-xl border" style={{ borderColor: C.border, backgroundColor: `${C.card}66` }}>
-        <summary
-          className="cursor-pointer list-none px-3 py-2.5 text-[12px] font-semibold outline-none marker:content-none [&::-webkit-details-marker]:hidden"
-          style={{ color: C.blueL }}
-        >
-          Bo‘limlar bo‘yicha taxminiy ulush
-        </summary>
-        <div className="flex flex-col gap-3 border-t px-3 py-3" style={{ borderColor: C.border }}>
-          {sections.map((s) => {
-            const Icon = s.icon;
-            const fillPct = s.max > 0 ? Math.min(100, Math.round((s.earned / s.max) * 100)) : 0;
-            const sub: ReactNode = s.isBonus ? (
-              <span style={{ fontSize: 10, color: '#9b59b6' }}>+ bonus</span>
-            ) : null;
-            return (
-              <div key={s.key} className="flex min-w-0 items-center gap-2 sm:gap-3">
-                <div
-                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
-                  style={{ backgroundColor: `${s.color}22`, border: `1px solid ${s.color}44` }}
-                >
-                  <Icon size={18} color={s.color} strokeWidth={2} aria-hidden />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="mb-1 flex flex-wrap items-baseline justify-between gap-1">
-                    <span className="text-[13px] font-semibold leading-tight" style={{ color: C.text }}>
-                      {s.labelUz}
-                    </span>
-                    <span className="shrink-0 tabular-nums text-[12px] font-bold" style={{ color: s.color }}>
-                      {s.earned}/{s.max}
-                      {sub ? <span className="ml-1 font-normal">{sub}</span> : null}
-                    </span>
-                  </div>
-                  <div className="h-2.5 overflow-hidden rounded-full" style={{ backgroundColor: `${C.border}88` }}>
-                    <div
-                      className="h-full rounded-full transition-all duration-500 ease-out"
-                      style={{
-                        width: `${fillPct}%`,
-                        backgroundColor: s.color,
-                        boxShadow: fillPct > 0 ? `0 0 10px ${s.color}55` : undefined,
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </details>
     </div>
   );
 }
@@ -3339,26 +3318,24 @@ function CandidateProfileUnifiedForm({
   onSaved: () => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [marital, setMarital] = useState('SINGLE');
-  const [edu, setEdu] = useState('BACHELOR');
-  const [avail, setAvail] = useState('WITHIN_3_MONTHS');
-  const [exp, setExp] = useState('YEAR_1_3');
+  const [marital, setMarital] = useState('');
+  const [edu, setEdu] = useState('');
+  const [avail, setAvail] = useState('');
+  const [exp, setExp] = useState('');
   const [salMin, setSalMin] = useState(SALARY_USD_DEFAULT_MIN);
   const [salMax, setSalMax] = useState(SALARY_USD_DEFAULT_MAX);
-  const [salCur, setSalCur] = useState('USD');
   const [consent, setConsent] = useState(true);
   const [regionSelect, setRegionSelect] = useState<number | ''>('');
   const [customProf, setCustomProf] = useState('');
 
   const applyServerToDraft = useCallback(() => {
     if (!profile) return;
-    setMarital(pickStr(profile, 'marital_status', 'maritalStatus') || 'SINGLE');
-    setEdu(educationLevelToFormValue(pickStr(profile, 'education_level', 'educationLevel')));
-    setAvail(pickStr(profile, 'availability_status', 'availabilityStatus') || 'WITHIN_3_MONTHS');
-    setExp(pickStr(profile, 'experience_range', 'experienceRange') || 'YEAR_1_3');
+    setMarital(pickProfileEnum(profile, 'marital_status', 'maritalStatus'));
+    setEdu(educationSelectValueFromProfile(pickProfileEnum(profile, 'education_level', 'educationLevel')));
+    setAvail(pickProfileEnum(profile, 'availability_status', 'availabilityStatus'));
+    setExp(pickProfileEnum(profile, 'experience_range', 'experienceRange'));
     setSalMin(pickNum(profile, 'desired_salary_min', 'desiredSalaryMin') ?? SALARY_USD_DEFAULT_MIN);
     setSalMax(pickNum(profile, 'desired_salary_max', 'desiredSalaryMax') ?? SALARY_USD_DEFAULT_MAX);
-    setSalCur(pickStr(profile, 'salary_currency', 'salaryCurrency') || 'USD');
     setConsent(profile.data_consent === true || profile.dataConsent === true);
     const rid = normalizeCandidateRegionId(pickNum(profile, 'region_id', 'regionId'));
     setRegionSelect(rid ?? '');
@@ -3388,17 +3365,18 @@ function CandidateProfileUnifiedForm({
     pickStr(profile, 'profile_status', 'profileStatus', 'status', 'application_status', 'applicationStatus'),
   );
   const displayNameLocal = displayNameFromProfile(profile);
-  const phoneLocal = pickStr(profile, 'phone_number', 'phoneNumber', 'phone', 'mobile') || '—';
+  const phoneLocal = displayField(pickStr(profile, 'phone_number', 'phoneNumber', 'phone', 'mobile'));
   const birthLocal = formatProfileDateOnly(
     pickStr(profile, 'date_birth', 'dateBirth', 'birth_date', 'birthDate'),
   );
-  const regionLocal =
-    pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region') || '—';
+  const regionLocal = displayField(
+    pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region'),
+  );
   const countriesLocal = targetCountriesSummary(profile);
   const langsLocal = languagesSummary(profile);
-  const professionLocal = professionDisplayFromProfile(profile) || '—';
+  const professionLocal = displayField(professionDisplayFromProfile(profile));
   const consentRo =
-    profile.data_consent === true || profile.dataConsent === true ? 'Berilgan' : 'Berilmagan / —';
+    profile.data_consent === true || profile.dataConsent === true ? 'Berilgan' : FIELD_EMPTY;
   const consentTime = formatPortalDateTime(pickStr(profile, 'data_consent_at', 'dataConsentAt'));
   const createdLocal = formatPortalDateTime(pickStr(profile, 'created_at', 'createdAt', 'created'));
   const updatedLocal = formatPortalDateTime(pickStr(profile, 'updated_at', 'updatedAt', 'updated'));
@@ -3421,15 +3399,15 @@ function CandidateProfileUnifiedForm({
     setBusy(true);
     try {
       const body: CandidateProfileUpdateBody = {
-        marital_status: marital,
-        education_level: edu,
         data_consent: consent,
-        availability_status: avail,
-        experience_range: exp,
         desired_salary_min: salMin,
         desired_salary_max: salMax,
-        salary_currency: salCur,
+        salary_currency: CANDIDATE_SALARY_CURRENCY,
       };
+      if (marital.trim()) body.marital_status = marital.trim();
+      if (edu.trim()) body.education_level = normalizeEducationLevelForApi(edu);
+      if (avail.trim()) body.availability_status = avail.trim();
+      if (exp.trim()) body.experience_range = exp.trim();
       if (regionSelect !== '') {
         const rid = normalizeCandidateRegionId(regionSelect);
         if (rid == null) {
@@ -3438,6 +3416,10 @@ function CandidateProfileUnifiedForm({
           return;
         }
         body.region_id = rid;
+        body.region_name_uz = REGION_OPTIONS.find((r) => r.id === rid)?.label ?? '';
+      } else {
+        body.region_id = '';
+        body.region_name_uz = '';
       }
       const pid = pickNum(profile, 'profession_id', 'professionId');
       const pcid = pickNum(profile, 'profession_category_id', 'professionCategoryId');
@@ -3484,16 +3466,10 @@ function CandidateProfileUnifiedForm({
             >
               Ma’lumotlarim
             </h3>
-            <p className="mt-1 max-w-[320px] text-[12px] leading-snug" style={{ color: C.muted }}>
-              Yuqorida serverdan kelgan qiymatlar (ko‘rish). Pastda anketa bo‘limini o‘zgartirib, saqlang.
-            </p>
           </div>
         </div>
       </div>
 
-      <p className="mb-2 text-[10px] font-bold uppercase tracking-wider" style={{ color: C.muted }}>
-        Ko‘rish rejimi
-      </p>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className="block sm:col-span-2">
           <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
@@ -3533,7 +3509,7 @@ function CandidateProfileUnifiedForm({
         </label>
         <label className="block sm:col-span-2">
           <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide" style={{ color: C.muted }}>
-            Maqsad davlatlar
+            Qiziqishlar
           </span>
           <input readOnly className={ctl} style={roStyle} value={countriesLocal} />
         </label>
@@ -3575,15 +3551,13 @@ function CandidateProfileUnifiedForm({
         aria-hidden
       />
 
-      <p className="mb-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: C.blueL }}>
-        Tahrirlash
-      </p>
       <div className="flex flex-col gap-3.5">
         <label className="block">
           <span className="mb-0.5 block text-[12px] font-medium" style={{ color: C.muted }}>
             Oilaviy holat
           </span>
           <select className={ctl} style={fieldStyle} value={marital} onChange={(e) => setMarital(e.target.value)}>
+            <option value="">{FIELD_EMPTY}</option>
             {Object.keys(maritalStatusUz).map((k) => (
               <option key={k} value={k}>
                 {maritalStatusUz[k]}
@@ -3596,6 +3570,7 @@ function CandidateProfileUnifiedForm({
             Ta’lim darajasi
           </span>
           <select className={ctl} style={fieldStyle} value={edu} onChange={(e) => setEdu(e.target.value)}>
+            <option value="">{FIELD_EMPTY}</option>
             {EDUCATION_LEVEL_SELECT_ORDER.map((k) => (
               <option key={k} value={k}>
                 {educationLevelUz[k] ?? k}
@@ -3608,6 +3583,7 @@ function CandidateProfileUnifiedForm({
             Ishga tayyorgarlik
           </span>
           <select className={ctl} style={fieldStyle} value={avail} onChange={(e) => setAvail(e.target.value)}>
+            <option value="">{FIELD_EMPTY}</option>
             {availabilityKeys.map((k) => (
               <option key={k} value={k}>
                 {AVAILABILITY_STATUS_UZ[k] ?? k}
@@ -3620,6 +3596,7 @@ function CandidateProfileUnifiedForm({
             Ish tajribasi (oraliq)
           </span>
           <select className={ctl} style={fieldStyle} value={exp} onChange={(e) => setExp(e.target.value)}>
+            <option value="">{FIELD_EMPTY}</option>
             {experienceKeys.map((k) => (
               <option key={k} value={k}>
                 {experienceRangeUz[k] ?? k}
@@ -3659,20 +3636,6 @@ function CandidateProfileUnifiedForm({
             />
           </label>
         </div>
-        <label className="block">
-          <span className="mb-0.5 block text-[12px] font-medium" style={{ color: C.muted }}>
-            Valyuta
-          </span>
-          <input
-            type="text"
-            className={ctl}
-            style={fieldStyle}
-            value={salCur}
-            onChange={(e) => setSalCur(e.target.value.toUpperCase().slice(0, 8))}
-            maxLength={8}
-            placeholder="Masalan: USD yoki EUR"
-          />
-        </label>
         <label className="block">
           <span className="mb-0.5 block text-[12px] font-medium" style={{ color: C.muted }}>
             Hudud
@@ -3810,7 +3773,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
       ? `${salaryMin.toLocaleString('uz-UZ')} – ${salaryMax.toLocaleString('uz-UZ')} ${salaryCur}`
       : salaryMin != null
         ? `${salaryMin.toLocaleString('uz-UZ')}+ ${salaryCur}`
-        : '—';
+        : FIELD_EMPTY;
   const availability = pickStr(profile, 'availability_status', 'availabilityStatus');
   const experience = pickStr(profile, 'experience_range', 'experienceRange');
   const edu = pickStr(profile, 'education_level', 'educationLevel');
@@ -3819,11 +3782,11 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const createdFmt = formatPortalDateTime(created);
   const updatedFmt = formatPortalDateTime(updated);
   const region = pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region');
-  const marital = pickStr(profile, 'marital_status', 'maritalStatus');
+  const marital = pickProfileEnum(profile, 'marital_status', 'maritalStatus');
   const maritalUz = marital ? uzOrCode(maritalStatusUz, marital) : '';
   const consentRaw = profile?.data_consent ?? profile?.dataConsent;
   const consentTxt =
-    typeof consentRaw === 'boolean' ? (consentRaw ? 'Berilgan' : 'Berilmagan') : '—';
+    typeof consentRaw === 'boolean' ? (consentRaw ? 'Berilgan' : FIELD_EMPTY) : FIELD_EMPTY;
   const experienceUz = experience ? uzOrCode(experienceRangeUz, experience) || experience : '';
   const availabilityUz = availability
     ? AVAILABILITY_STATUS_UZ[availability] ?? availability
@@ -3835,6 +3798,8 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const consentAtRaw = pickStr(profile, 'data_consent_at', 'dataConsentAt');
   const consentAtFmt = formatPortalDateTime(consentAtRaw);
   const tcRows = targetCountryRows(profile);
+  const langsArr = profile?.languages ?? profile?.candidate_languages ?? profile?.candidateLanguages;
+  const hasLangsArr = Array.isArray(langsArr) && langsArr.length > 0;
   const hasRegionField =
     (pickNum(profile, 'region_id', 'regionId') ?? 0) > 0 ||
     !!pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region');
@@ -3850,8 +3815,8 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   if (!agentName) agentName = pickStr(profile, 'agent_name', 'agentName', 'assigned_agent_name', 'assignedAgentName');
   const agentCallHref = agentPhone ? phoneTelHref(agentPhone) : null;
 
-  const hasCountries = countries !== '—' && countries.length > 0;
-  const hasLangs = langs !== '—' && langs.length > 0;
+  const hasCountries = tcRows.length > 0;
+  const hasLangs = hasLangsArr;
   const docCount = Array.isArray(profile?.documents) ? (profile!.documents as unknown[]).length : null;
   const weList = workExperiencesArray(profile);
   const hasWorkExpChip = !!experience || weList.length > 0;
@@ -3864,7 +3829,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
             const o = row as Record<string, unknown>;
             const d = pickStr(o, 'description');
             const dur = formatWorkExperienceDuration(o);
-            const bits = [dur !== '—' ? dur : '', d].filter(Boolean);
+            const bits = [dur !== FIELD_EMPTY ? dur : '', d].filter(Boolean);
             return bits.join(' — ') || `Qator ${i + 1}`;
           })
           .filter(Boolean)
@@ -3957,12 +3922,6 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
               >
                 {pct}%
               </p>
-              {pickBackendProfilePct(profile) != null ? (
-                <p className="mt-1 max-w-[260px] text-[11px] leading-snug" style={{ color: C.muted }}>
-                  Foiz serverdagi <span style={{ color: C.blueL }}>profile_completeness</span> /{' '}
-                  <span style={{ color: C.blueL }}>profile_score</span> bilan uyg‘unlashtirilgan.
-                </p>
-              ) : null}
             </div>
             <div className="relative mx-auto flex items-center justify-center sm:mx-0" style={{ width: 56, height: 56 }}>
               <CircleProgress pct={pct} size={56} />
@@ -3981,7 +3940,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
             {[
               [phone, '✓ Telefon', '+ Telefon'],
               [!!profession, '✓ Kasb / tajriba', '+ Kasb / tajriba'],
-              [hasCountries, '✓ Mamlakat', '+ Mamlakat'],
+              [hasCountries, '✓ Qiziqishlar', '+ Qiziqishlar'],
             ].map(([ok, done, todo]) => (
               <span
                 key={String(done)}
@@ -4253,18 +4212,18 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
         <div className="rounded-[18px] border p-4" style={{ backgroundColor: C.card, borderColor: C.border }}>
           <ProfileInfoRow label="Holat" value={statusUz} />
           <ProfileInfoRow label="Profil to‘ldirish" value={`${pct}%`} />
-          <ProfileInfoRow label="Telefon" value={phone} />
+          <ProfileInfoRow label="Telefon" value={displayField(phone)} />
           <ProfileInfoRow label="Tug‘ilgan sana" value={dateBirthFmt} />
-          <ProfileInfoRow label="Oilaviy holat" value={maritalUz || '—'} />
-          <ProfileInfoRow label="Hudud" value={region || '—'} />
-          <ProfileInfoRow label="Kasb / ish tajribasi" value={profession || '—'} />
-          <ProfileInfoRow label="Ish tajribasi (bandlar)" value={workExpSummary || '—'} />
-          <ProfileInfoRow label="Ta’lim darajasi" value={eduUz || '—'} />
-          <ProfileInfoRow label="Ish tajribasi (oraliq)" value={experienceUz || '—'} />
-          <ProfileInfoRow label="Ishga tayyorgarlik" value={availabilityUz || '—'} />
+          <ProfileInfoRow label="Oilaviy holat" value={displayField(maritalUz)} />
+          <ProfileInfoRow label="Hudud" value={displayField(region)} />
+          <ProfileInfoRow label="Kasb / ish tajribasi" value={displayField(profession)} />
+          <ProfileInfoRow label="Ish tajribasi (bandlar)" value={displayField(workExpSummary)} />
+          <ProfileInfoRow label="Ta’lim darajasi" value={displayField(eduUz)} />
+          <ProfileInfoRow label="Ish tajribasi (oraliq)" value={displayField(experienceUz)} />
+          <ProfileInfoRow label="Ishga tayyorgarlik" value={displayField(availabilityUz)} />
           <ProfileInfoRow label="Tillar" value={langs} />
-          <ProfileInfoRow label="Maqsad maosh" value={salaryTxt} />
-          <ProfileInfoRow label="Maqsad davlatlar" value={countries} />
+          <ProfileInfoRow label="Kutilayotgan maosh" value={salaryTxt} />
+          <ProfileInfoRow label="Qiziqishlar" value={countries} />
           <ProfileInfoRow label="Ma’lumotlardan foydalanish" value={consentTxt} />
           <ProfileInfoRow label="Rozilik vaqti" value={consentAtFmt} />
           <ProfileInfoRow label="Yaratilgan" value={createdFmt} />
@@ -4321,7 +4280,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
               textTransform: 'uppercase',
             }}
           >
-            Maqsad mamlakatlar
+            Qiziqishlar
           </p>
           {tcRows.length > 0 ? (
             <div className="flex flex-wrap gap-2">
@@ -4345,7 +4304,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
             </div>
           ) : (
             <p className="text-[13px] leading-relaxed" style={{ color: C.muted }}>
-              Hozircha maqsad mamlakat tanlanmagan.
+              Hozircha qiziqish (davlat) tanlanmagan.
             </p>
           )}
         </div>
@@ -4652,7 +4611,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col" style={{ backgroundColor: C.bg }}>
       <div
-        className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 pb-3 pt-[52px] sm:px-4"
+        className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 pb-3 pt-[108px] sm:px-4"
         style={{ backgroundColor: C.card, borderBottom: `1px solid ${C.border}` }}
       >
         <div className="flex min-w-0 items-center gap-2">
@@ -4971,10 +4930,7 @@ export default function CandidatePortal() {
         address: form.address.trim() || null,
         telegramChatId,
       });
-      await linkCandidateProfileAfterUserEdit(userId, {
-        ...PROFILE_STEP_DEFAULTS,
-        region_id: normalizeCandidateRegionId(form.addressRegion) ?? undefined,
-      });
+      await linkCandidateProfileAfterUserEdit(userId, { ...PROFILE_ENSURE_BASE });
       goNext();
     } catch (e) {
       setProfileNoticeScreen4({
@@ -5007,7 +4963,7 @@ export default function CandidatePortal() {
     setBusy(true);
     try {
       await ensureCandidateProfile({
-        ...PROFILE_STEP_DEFAULTS,
+        ...PROFILE_ENSURE_BASE,
         education_level: normalizeEducationLevelForApi(form.educationLevel),
       });
       await candidateAddEducation({
@@ -5018,8 +4974,8 @@ export default function CandidatePortal() {
         ...(form.educationSpecialty.trim() ? { specialty: form.educationSpecialty.trim() } : {}),
       });
       await candidateUpdateProfile({
-        ...PROFILE_STEP_DEFAULTS,
         education_level: normalizeEducationLevelForApi(form.educationLevel),
+        data_consent: true,
       });
       goNext();
     } catch (e) {
@@ -5048,10 +5004,10 @@ export default function CandidatePortal() {
 
     setBusy(true);
     try {
-      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      await ensureCandidateProfile({ ...PROFILE_ENSURE_BASE });
       await candidateAddWorkExperience(entries);
       await candidateUpdateProfile({
-        ...PROFILE_STEP_DEFAULTS,
+        data_consent: true,
         experience_range: experienceRangeFromWorkEntries(entries),
         profession_id: lead.profession_id,
         profession_category_id: lead.profession_category_id,
@@ -5072,7 +5028,7 @@ export default function CandidatePortal() {
     }
     setBusy(true);
     try {
-      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      await ensureCandidateProfile({ ...PROFILE_ENSURE_BASE });
       if (!form.declaresNoLanguage) {
         for (const { name, level, hasCertificate } of form.languageSelections) {
           const lang = toCandidateLanguageEnum(name);
@@ -5094,7 +5050,11 @@ export default function CandidatePortal() {
 
   async function saveCountriesAndNext() {
     if (!form.countries.length) {
-      toast.error('Kamida bitta maqsad mamlakat tanlang.');
+      toast.error('Kamida bitta qiziqish (davlat) tanlang.');
+      return;
+    }
+    if (form.countries.length > MAX_TARGET_COUNTRIES) {
+      toast.error(`Eng ko‘pi bilan ${MAX_TARGET_COUNTRIES} ta davlat tanlash mumkin.`);
       return;
     }
     if (!form.availability) {
@@ -5104,25 +5064,25 @@ export default function CandidatePortal() {
 
     setBusy(true);
     try {
-      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      await ensureCandidateProfile({ ...PROFILE_ENSURE_BASE });
       for (let i = 0; i < form.countries.length; i++) {
         const destination_country_id = form.countries[i]!;
         await candidateAddTargetCountry({ destination_country_id, priority: i + 1 });
       }
       const entries = form.workExperienceEntries;
       await candidateUpdateProfile({
-        ...PROFILE_STEP_DEFAULTS,
+        data_consent: true,
         availability_status: availabilityStatusFromForm(form),
         desired_salary_min: form.desiredSalaryMin,
         desired_salary_max: form.desiredSalaryMax,
-        salary_currency: 'USD',
+        salary_currency: CANDIDATE_SALARY_CURRENCY,
         ...(entries.length > 0
           ? { experience_range: experienceRangeFromWorkEntries(entries) }
           : {}),
       });
       goNext();
     } catch (e) {
-      toast.error(candidatePortalError(e, 'Maqsad mamlakatlarni saqlashda xato.'));
+      toast.error(candidatePortalError(e, 'Qiziqishlarni saqlashda xato.'));
     } finally {
       setBusy(false);
     }
@@ -5142,7 +5102,7 @@ export default function CandidatePortal() {
 
     setBusy(true);
     try {
-      await ensureCandidateProfile({ ...PROFILE_STEP_DEFAULTS });
+      await ensureCandidateProfile({ ...PROFILE_ENSURE_BASE });
       for (const doc of filesToUpload) {
         const file = form.documents[doc.type];
         if (!file) continue;

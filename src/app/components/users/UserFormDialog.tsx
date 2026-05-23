@@ -25,6 +25,8 @@ import {
   findGroupByViloyatName,
   findGroupContainingTuman,
   getUzRegionGroups,
+  resolveTumanLabelUz,
+  resolveViloyatLabelUz,
 } from '../../lib/uzRegionsCodeSystem';
 import {
   formatNationalDisplay,
@@ -110,8 +112,8 @@ function fromUser(u: SdgUserDto): FormState {
     dateBirth: (u.dateBirth as string) ?? '',
     password: '',
     address: (u.address as string) ?? '',
-    addressRegion: (u.addressRegion as string) ?? '',
-    addressDistrict: (u.addressDistrict as string) ?? '',
+    addressRegion: resolveViloyatLabelUz(u.addressRegion as string) ?? '',
+    addressDistrict: resolveTumanLabelUz(u.addressDistrict as string, u.addressRegion as string) ?? '',
     addressMFY: (u.addressMFY as string) ?? '',
     school: (u.school as string) ?? '',
     group: (u.group as string) ?? '',
@@ -218,7 +220,8 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
       if (g) return g.viloyatCode;
     }
     if (r) {
-      const g = findGroupByViloyatName(regionGroups, r);
+      const g =
+        findGroupByViloyatName(regionGroups, r) ?? regionGroups.find((x) => x.viloyatCode === r);
       if (g) return g.viloyatCode;
       return LEGACY_VILOYAT;
     }
@@ -234,7 +237,7 @@ export function UserFormDialog({ open, onOpenChange, mode, userId, initialUser, 
     const d = form.addressDistrict.trim();
     if (!d) return '';
     if (!currentRegionGroup) return LEGACY_TUMAN;
-    const hit = currentRegionGroup.tumanlar.find((t) => t.display === d);
+    const hit = currentRegionGroup.tumanlar.find((t) => t.display === d || t.code === d);
     return hit ? hit.code : LEGACY_TUMAN;
   })();
 

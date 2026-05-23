@@ -66,5 +66,35 @@ export function findGroupByViloyatName(groups: UzRegionGroup[], name: string): U
 export function findGroupContainingTuman(groups: UzRegionGroup[], tumanDisplay: string): UzRegionGroup | undefined {
   const t = tumanDisplay.trim();
   if (!t) return undefined;
-  return groups.find((g) => g.tumanlar.some((x) => x.display === t));
+  return groups.find((g) => g.tumanlar.some((x) => x.display === t || x.code === t));
+}
+
+/** API / ko‘rinish — SOATO kod yoki nom → viloyat nomi (admin bilan bir xil) */
+export function resolveViloyatLabelUz(raw: string | number | null | undefined): string {
+  const s = raw == null ? '' : String(raw).trim();
+  if (!s) return '';
+  const groups = getUzRegionGroups();
+  const byCode = groups.find((g) => g.viloyatCode === s);
+  if (byCode) return byCode.viloyatNameUz;
+  const byName = findGroupByViloyatName(groups, s);
+  if (byName) return byName.viloyatNameUz;
+  return s;
+}
+
+/** API / ko‘rinish — SOATO kod yoki nom → tuman nomi */
+export function resolveTumanLabelUz(
+  raw: string | number | null | undefined,
+  regionHint?: string | number | null,
+): string {
+  const d = raw == null ? '' : String(raw).trim();
+  if (!d) return '';
+  const groups = getUzRegionGroups();
+  const regionName = resolveViloyatLabelUz(regionHint);
+  const preferred = regionName ? findGroupByViloyatName(groups, regionName) : undefined;
+  const searchGroups = preferred ? [preferred, ...groups.filter((g) => g !== preferred)] : groups;
+  for (const g of searchGroups) {
+    const hit = g.tumanlar.find((t) => t.code === d || t.display === d);
+    if (hit) return hit.display;
+  }
+  return d;
 }

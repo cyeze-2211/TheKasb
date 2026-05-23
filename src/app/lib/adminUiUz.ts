@@ -227,11 +227,12 @@ export const salaryCurrencyUz: Record<string, string> = {
   GBP: 'Funt sterling',
 };
 
-export function formatSalaryCurrencyLabel(code: string | undefined | null): string {
-  const c = (code ?? '').trim().toUpperCase();
-  if (!c) return 'AQSh dollari';
-  return salaryCurrencyUz[c] ?? c;
+/** Nomzod paneli — faqat dollar ($) */
+export function formatSalaryCurrencyLabel(_code?: string | null): string {
+  return '$';
 }
+
+export const CANDIDATE_SALARY_CURRENCY = 'USD' as const;
 
 export function uzOrCode(map: Record<string, string>, code: string): string {
   const c = (code || '').trim();
