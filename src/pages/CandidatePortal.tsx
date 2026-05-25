@@ -427,16 +427,13 @@ function availabilityStatusFromForm(form: FormState): string {
 /** Profil yaratish — faqat rozilik; marital/ta’lim keyinroq foydalanuvchidan */
 const PROFILE_ENSURE_BASE = { data_consent: true } as const;
 
-/** Bakalavr va yuqori — OTM ro‘yxati (viloyat → universitet) */
+/** Tugallanmagan oliy, bakalavr va undan yuqori — viloyat → OTM tanlash */
 const OTM_PICKER_EDUCATION_LEVELS = new Set([
   'INCOMPLETE_HIGHER',
   'BACHELOR',
   'MASTER',
   'PHD',
   'DSC',
-  'COLLEGE',
-  'TECHNICAL_SCHOOL',
-  'VOCATIONAL',
 ]);
 
 function educationLevelUsesOtmPicker(level: string): boolean {
