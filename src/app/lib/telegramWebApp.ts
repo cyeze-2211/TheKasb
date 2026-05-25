@@ -3,13 +3,89 @@
  * `index.html` da `telegram-web-app.js` yuklangan bo‘lishi kerak.
  */
 
+export type TelegramSafeAreaInsets = {
+  top: number;
+  bottom: number;
+  left: number;
+  right: number;
+};
+
 type TelegramWebAppLite = {
   ready: () => void;
   expand: () => void;
   disableVerticalSwipes?: () => void;
+  viewportHeight?: number;
+  viewportStableHeight?: number;
+  contentSafeAreaInset?: Partial<TelegramSafeAreaInsets>;
+  safeAreaInset?: Partial<TelegramSafeAreaInsets>;
+  onEvent?: (eventType: string, eventHandler: () => void) => void;
+  offEvent?: (eventType: string, eventHandler: () => void) => void;
   initDataUnsafe?: {
     user?: { id?: unknown };
     start_param?: unknown;
+  };
+};
+
+function readInsetSide(raw: unknown): number {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.trunc(raw));
+}
+
+function mergeInsetPair(
+  a?: Partial<TelegramSafeAreaInsets>,
+  b?: Partial<TelegramSafeAreaInsets>,
+): TelegramSafeAreaInsets {
+  return {
+    top: Math.max(readInsetSide(a?.top), readInsetSide(b?.top)),
+    bottom: Math.max(readInsetSide(a?.bottom), readInsetSide(b?.bottom)),
+    left: Math.max(readInsetSide(a?.left), readInsetSide(b?.left)),
+    right: Math.max(readInsetSide(a?.right), readInsetSide(b?.right)),
+  };
+}
+
+/** Telegram Mini App — kontent va tizim safe-area (px) */
+export function readTelegramSafeAreaInsets(): TelegramSafeAreaInsets {
+  const wa = tg();
+  if (!wa) return { top: 0, bottom: 0, left: 0, right: 0 };
+  return mergeInsetPair(wa.contentSafeAreaInset, wa.safeAreaInset);
+}
+
+/** Telegram ichidagi haqiqiy ko‘rinadigan balandlik (px) */
+export function readTelegramViewportHeightPx(): number | null {
+  const wa = tg();
+  if (!wa) return null;
+  const h = wa.viewportStableHeight ?? wa.viewportHeight;
+  if (typeof h !== 'number' || !Number.isFinite(h) || h <= 0) return null;
+  return Math.trunc(h);
+}
+
+/** Mini App, visualViewport yoki `innerHeight` */
+export function readPortalViewportHeightPx(): number {
+  if (typeof window === 'undefined') return 0;
+  const tgH = readTelegramViewportHeightPx();
+  if (tgH != null && tgH > 0) return tgH;
+  const vv = window.visualViewport?.height;
+  if (typeof vv === 'number' && vv > 0) return Math.trunc(vv);
+  return Math.trunc(window.innerHeight);
+}
+
+export function subscribeTelegramViewportInsets(onChange: () => void): () => void {
+  const wa = tg();
+  if (!wa?.onEvent) return () => undefined;
+  const handler = () => onChange();
+  try {
+    wa.onEvent('viewportChanged', handler);
+    wa.onEvent('safeAreaChanged', handler);
+  } catch {
+    return () => undefined;
+  }
+  return () => {
+    try {
+      wa.offEvent?.('viewportChanged', handler);
+      wa.offEvent?.('safeAreaChanged', handler);
+    } catch {
+      /* ignore */
+    }
   };
 };
 

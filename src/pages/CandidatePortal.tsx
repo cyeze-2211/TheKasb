@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -119,6 +129,9 @@ import {
   initTelegramMiniApp,
   isTelegramMiniApp,
   readTelegramMiniAppChatId,
+  readPortalViewportHeightPx,
+  readTelegramSafeAreaInsets,
+  subscribeTelegramViewportInsets,
   telegramEntryContextLabel,
 } from '../app/lib/telegramWebApp';
 
@@ -189,26 +202,151 @@ function displayField(value: string | null | undefined): string {
 
 /** To‘liq ekran (Telegram / mobil); katta telefonlarda markazda cheklanadi */
 const PORTAL_MAX_WIDTH_PX = 480;
-const PORTAL_FRAME_STYLE: CSSProperties = {
-  width: '100%',
-  maxWidth: PORTAL_MAX_WIDTH_PX,
-  height: '100dvh',
-  minHeight: '100svh',
-  backgroundColor: C.bg,
+const PORTAL_BASE_INSET_PX = 12;
+const ONBOARDING_DOTS_RESERVE_PX = 40;
+
+type PortalChrome = {
+  topPx: number;
+  bottomPx: number;
+  footerExtraPx: number;
+  viewportHeightPx: number;
+  isTelegram: boolean;
 };
 
-function CandidatePortalShell({ children }: { children: ReactNode }) {
+const PortalChromeContext = createContext<PortalChrome>({
+  topPx: PORTAL_BASE_INSET_PX,
+  bottomPx: PORTAL_BASE_INSET_PX,
+  footerExtraPx: 0,
+  viewportHeightPx: 0,
+  isTelegram: false,
+});
+
+function portalChromeCssVars(chrome: PortalChrome): CSSProperties {
+  const vh =
+    chrome.viewportHeightPx > 0 ? `${chrome.viewportHeightPx}px` : '100dvh';
+  return {
+    ['--portal-top-inset' as string]: `${chrome.topPx}px`,
+    ['--portal-bottom-inset' as string]: `${chrome.bottomPx}px`,
+    ['--portal-footer-extra' as string]: `${chrome.footerExtraPx}px`,
+    ['--portal-vh' as string]: vh,
+  };
+}
+
+function usePortalChromeInsets(onboarding: boolean): PortalChrome {
+  const [tgInsets, setTgInsets] = useState(readTelegramSafeAreaInsets);
+  const [viewportHeightPx, setViewportHeightPx] = useState(readPortalViewportHeightPx);
+  const isTelegram = isTelegramMiniApp();
+
+  useLayoutEffect(() => {
+    const sync = () => {
+      setTgInsets(readTelegramSafeAreaInsets());
+      setViewportHeightPx(readPortalViewportHeightPx());
+    };
+    if (isTelegram) initTelegramMiniApp();
+    sync();
+    const unsubTg = subscribeTelegramViewportInsets(sync);
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', sync);
+    vv?.addEventListener('scroll', sync);
+    window.addEventListener('resize', sync);
+    return () => {
+      unsubTg();
+      vv?.removeEventListener('resize', sync);
+      vv?.removeEventListener('scroll', sync);
+      window.removeEventListener('resize', sync);
+    };
+  }, [isTelegram]);
+
+  return useMemo(() => {
+    const topPx = isTelegram
+      ? Math.max(PORTAL_BASE_INSET_PX, tgInsets.top + 8)
+      : PORTAL_BASE_INSET_PX;
+    const bottomPx = Math.max(PORTAL_BASE_INSET_PX, isTelegram ? tgInsets.bottom : 0);
+    return {
+      topPx,
+      bottomPx,
+      footerExtraPx: onboarding ? ONBOARDING_DOTS_RESERVE_PX : 0,
+      viewportHeightPx,
+      isTelegram,
+    };
+  }, [isTelegram, tgInsets.top, tgInsets.bottom, onboarding, viewportHeightPx]);
+}
+
+function portalFrameStyle(chrome: PortalChrome): CSSProperties {
+  const height =
+    chrome.viewportHeightPx > 0 ? `${chrome.viewportHeightPx}px` : '100dvh';
+  return {
+    width: '100%',
+    maxWidth: PORTAL_MAX_WIDTH_PX,
+    height,
+    maxHeight: height,
+    backgroundColor: C.bg,
+  };
+}
+
+function CandidatePortalShell({
+  children,
+  chrome,
+}: {
+  children: ReactNode;
+  chrome: PortalChrome;
+}) {
   return (
     <div
-      className="kasb-candidate-portal flex min-h-[100dvh] min-h-[100svh] w-full justify-center"
+      className="kasb-candidate-portal flex w-full justify-center overflow-hidden"
       style={{
+        height: 'var(--portal-vh, 100dvh)',
+        maxHeight: 'var(--portal-vh, 100dvh)',
         backgroundColor: C.bg,
         fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+        ...portalChromeCssVars(chrome),
       }}
     >
-      <div className="relative flex overflow-hidden" style={PORTAL_FRAME_STYLE}>
+      <div className="relative flex min-h-0 w-full flex-col overflow-hidden" style={portalFrameStyle(chrome)}>
         {children}
       </div>
+    </div>
+  );
+}
+
+/** TopBar + progress — kichik ekranda siqilmaydi, kontent alohida scroll */
+function OnboardingHeader({ onBack, screen }: { onBack?: () => void; screen?: Screen }) {
+  return (
+    <div className="shrink-0" style={{ backgroundColor: C.bg, flexShrink: 0 }}>
+      {onBack ? <TopBar onBack={onBack} /> : null}
+      {screen != null ? <ProgressBar screen={screen} /> : null}
+    </div>
+  );
+}
+
+function ScreenScroll({
+  children,
+  className = '',
+  style,
+}: {
+  children: ReactNode;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      className={`kasb-portal-screen-scroll min-h-0 flex-1 ${className}`.trim()}
+      style={style}
+    >
+      {children}
+    </div>
+  );
+}
+
+function ScreenFooter({ children }: { children: ReactNode }) {
+  return (
+    <div
+      className="shrink-0 px-5 pt-4"
+      style={{
+        paddingBottom: `calc(max(var(--portal-bottom-inset, 12px), env(safe-area-inset-bottom, 0px)) + var(--portal-footer-extra, 0px) + 1rem)`,
+      }}
+    >
+      {children}
     </div>
   );
 }
@@ -639,7 +777,10 @@ function ProfessionCategoryIcon({ icon }: { icon: string }) {
 
 function TopBar({ onBack }: { onBack?: () => void }) {
   return (
-    <div className="flex items-center gap-2 px-5 pb-2 pt-[108px]">
+    <div
+      className="flex shrink-0 items-center gap-2 px-5 pb-2"
+      style={{ paddingTop: 'max(var(--portal-top-inset, 12px), env(safe-area-inset-top, 0px))' }}
+    >
       <img
         src={LOGO_URL}
         alt="The Kasb logotipi"
@@ -684,7 +825,7 @@ function ProgressBar({ screen }: { screen: Screen }) {
   const pct = PROGRESS_BY_SCREEN[screen] ?? 0;
   const showCaption = screen !== 4;
   return (
-    <div className="px-5 pb-5">
+    <div className="shrink-0 px-5 pb-5">
       <div className="h-[3px] w-full rounded-full" style={{ backgroundColor: C.border }}>
         <motion.div
           className="h-full rounded-full"
@@ -744,8 +885,11 @@ function Screen1({
   entryLabel?: string;
 }) {
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex flex-1 flex-col items-center justify-center px-6 pt-[108px]">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <ScreenScroll
+        className="flex flex-col items-center justify-start px-6 pb-4"
+        style={{ paddingTop: 'max(var(--portal-top-inset, 12px), env(safe-area-inset-top, 0px))' }}
+      >
         <div
           className="mb-3 flex items-center justify-center"
           
@@ -803,21 +947,23 @@ function Screen1({
             nomzod bugun ariza topshirdi
           </p>
         </div>
-      </div>
+      </ScreenScroll>
 
-      <div className="flex flex-col gap-2 px-5 pb-9 pt-6">
-        {lookupBusy ? (
-          <p className="mb-1 text-center text-[14px] leading-snug" style={{ color: C.muted }}>
-            Mavjud akkaunt tekshirilmoqda…
+      <ScreenFooter>
+        <div className="flex flex-col gap-2 pt-2">
+          {lookupBusy ? (
+            <p className="mb-1 text-center text-[14px] leading-snug" style={{ color: C.muted }}>
+              Mavjud akkaunt tekshirilmoqda…
+            </p>
+          ) : null}
+          <PrimaryButton onClick={onNext} disabled={lookupBusy} loading={lookupBusy}>
+            Boshlash — 1 daqiqa
+          </PrimaryButton>
+          <p className="text-center" style={{ fontSize: 14, color: C.muted }}>
+            Allaqachon akkauntim bor →
           </p>
-        ) : null}
-        <PrimaryButton onClick={onNext} disabled={lookupBusy} loading={lookupBusy}>
-          Boshlash — 1 daqiqa
-        </PrimaryButton>
-        <p className="text-center" style={{ fontSize: 14, color: C.muted }}>
-          Allaqachon akkauntim bor →
-        </p>
-      </div>
+        </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -839,10 +985,9 @@ function Screen2({
 }) {
   const isValid = sanitizeNationalDigits(form.phoneNational).length >= 9;
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={2} />
-      <div className="flex flex-1 flex-col overflow-y-auto px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={onBack} screen={2} />
+      <ScreenScroll className="flex flex-col px-5">
         <h2
           className="mb-1.5"
           style={{
@@ -904,13 +1049,13 @@ function Screen2({
             </span>
           ))}
         </div>
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         <InlineNoticeBar notice={notice} />
         <PrimaryButton onClick={onNext} disabled={!isValid} loading={busy}>
           SMS kod yuborish
         </PrimaryButton>
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -965,10 +1110,9 @@ function Screen3({
   const timerStr = `${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')}`;
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={3} />
-      <div className="flex flex-1 flex-col px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={onBack} screen={3} />
+      <ScreenScroll className="flex flex-col px-5">
         <h2
           className="mb-1.5"
           style={{
@@ -1009,13 +1153,13 @@ function Screen3({
         <p className="text-center tabular-nums" style={{ fontSize: 12, color: C.muted }}>
           Qayta yuborish: <span style={{ color: C.blue }}>{timerStr}</span>
         </p>
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         <InlineNoticeBar notice={notice} />
         <PrimaryButton onClick={onNext} disabled={!allFilled} loading={busy}>
           Tasdiqlash
         </PrimaryButton>
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -1042,10 +1186,9 @@ function Screen4Personal({
   const dateMax = new Date().toISOString().slice(0, 10);
 
   return (
-    <div className="flex h-full min-w-0 flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={4} />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-5 pt-1">
+    <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={onBack} screen={4} />
+      <ScreenScroll className="flex min-w-0 flex-col px-5 pt-1">
         <SectionLabel>Ism</SectionLabel>
         <input
           type="text"
@@ -1214,13 +1357,13 @@ function Screen4Personal({
             aria-label="Manzil"
           />
         </div>
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         <InlineNoticeBar notice={notice} />
         <PrimaryButton onClick={onNext} disabled={!canContinue} loading={busy}>
           Keyingi
         </PrimaryButton>
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -1368,10 +1511,9 @@ function Screen5Education({
     'mt-2 box-border min-h-[48px] w-full rounded-[14px] border px-3.5 py-2.5 text-[15px] outline-none focus:border-[#2980B9]';
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={handleTopBack} />
-      <ProgressBar screen={5} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={handleTopBack} screen={5} />
+      <ScreenScroll className="flex flex-col px-5">
         <div className="mb-3 flex items-center gap-2">
           <GraduationCap size={22} style={{ color: C.blueL }} strokeWidth={2} aria-hidden />
           <h2
@@ -1458,7 +1600,7 @@ function Screen5Education({
               className={ctl}
               style={fieldStyle}
             />
-            <div className="mt-3 grid max-h-[min(50vh,420px)] gap-2 overflow-y-auto">
+            <div className="mt-3 grid gap-2 pb-2">
               {universities.length === 0 ? (
                 <p className="py-6 text-center text-[13px]" style={{ color: C.muted }}>
                   OTM topilmadi
@@ -1551,8 +1693,8 @@ function Screen5Education({
             </label>
           </div>
         ) : null}
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         {panel === 'details' ? (
           <PrimaryButton
             onClick={() => void Promise.resolve(onNext())}
@@ -1564,7 +1706,7 @@ function Screen5Education({
         ) : (
           <div className="h-[52px]" aria-hidden />
         )}
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -1765,10 +1907,9 @@ function Screen6Work({
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={handleTopBack} />
-      <ProgressBar screen={6} />
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={handleTopBack} screen={6} />
+      <ScreenScroll className="flex min-w-0 flex-col px-5">
         <h2
           className="mb-1.5"
           style={{
@@ -1795,7 +1936,7 @@ function Screen6Work({
 
         {panel === 'category' ? (
           catsLoading ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16">
+            <div className="flex flex-col items-center justify-start gap-3 py-12">
               <Loader2 className="h-8 w-8 animate-spin" style={{ color: C.blueL }} />
               <span style={{ fontSize: 14, color: C.muted }}>Kasblar yuklanmoqda…</span>
             </div>
@@ -1817,7 +1958,7 @@ function Screen6Work({
 
         {panel === 'profession' ? (
           profsLoading ? (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 py-12">
+            <div className="flex flex-col items-center justify-start gap-3 py-12">
               <Loader2 className="h-7 w-7 animate-spin" style={{ color: C.blueL }} />
               <span style={{ fontSize: 13, color: C.muted }}>Kasblar yuklanmoqda…</span>
             </div>
@@ -1902,15 +2043,16 @@ function Screen6Work({
             </div>
           </motion.div>
         ) : null}
-      </div>
+      </ScreenScroll>
       {panel === 'otherDetail' ? (
-        <div className="px-5 pb-9 pt-4">
+        <ScreenFooter>
           <PrimaryButton onClick={() => primaryAction()} disabled={primaryDisabled}>
             Davom etish
           </PrimaryButton>
-        </div>
+        </ScreenFooter>
       ) : panel === 'experience' ? (
-        <div className="flex flex-col gap-2.5 px-5 pb-9 pt-4">
+        <ScreenFooter>
+          <div className="flex flex-col gap-2.5">
           <button
             type="button"
             onClick={() => addAnotherWork()}
@@ -1934,9 +2076,10 @@ function Screen6Work({
           >
             Keyingi
           </PrimaryButton>
-        </div>
+          </div>
+        </ScreenFooter>
       ) : (
-        <div className="shrink-0 pb-6" />
+        <div className="shrink-0" style={{ paddingBottom: 'var(--portal-footer-extra, 0px)' }} aria-hidden />
       )}
     </div>
   );
@@ -2150,10 +2293,9 @@ function Screen6({
     (form.declaresNoLanguage || form.languageSelections.length > 0) && langsCertMissing.length === 0;
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={7} />
-      <div className="flex flex-1 flex-col overflow-y-auto px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={onBack} screen={7} />
+      <ScreenScroll className="flex flex-col px-5">
         <h2
           className="mb-1.5"
           style={{
@@ -2360,12 +2502,12 @@ function Screen6({
             ))}
           </div>
         ) : null}
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         <PrimaryButton onClick={() => void Promise.resolve(onNext())} disabled={!langsOk || busy} loading={busy}>
           Keyingi
         </PrimaryButton>
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -2418,10 +2560,9 @@ function Screen7Documents({
   };
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={9} />
-      <div className="flex flex-1 flex-col overflow-y-auto px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={onBack} screen={9} />
+      <ScreenScroll className="flex flex-col px-5">
         <h2
           className="mb-1.5"
           style={{
@@ -2501,12 +2642,12 @@ function Screen7Documents({
             {error}
           </p>
         ) : null}
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         <PrimaryButton onClick={handleSubmit} disabled={!canContinue} loading={busy}>
           Yakunlash
         </PrimaryButton>
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -2724,10 +2865,9 @@ function Screen8({
   const canSubmit = !!form.availability && countriesOk;
 
   return (
-    <div className="flex h-full flex-col">
-      <TopBar onBack={onBack} />
-      <ProgressBar screen={8} />
-      <div className="flex flex-1 flex-col overflow-y-auto px-5">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
+      <OnboardingHeader onBack={onBack} screen={8} />
+      <ScreenScroll className="flex flex-col px-5">
         <h2
           className="mb-1.5"
           style={{
@@ -2749,7 +2889,7 @@ function Screen8({
           ) : null}
         </div>
         {loadingCountries ? (
-          <div className="flex flex-1 flex-col items-center justify-center py-16">
+          <div className="flex flex-col items-center justify-start py-12">
             <Loader2 className="h-8 w-8 animate-spin" style={{ color: C.blueL }} />
             <p className="mt-3 text-sm" style={{ color: C.muted }}>
               Davlatlar ro‘yxati yuklanmoqda…
@@ -2802,12 +2942,12 @@ function Screen8({
         </div>
 
         <DesiredSalaryRangeBlock form={form} setForm={setForm} />
-      </div>
-      <div className="px-5 pb-9 pt-4">
+      </ScreenScroll>
+      <ScreenFooter>
         <PrimaryButton onClick={onNext} disabled={!canSubmit || loadingCountries} loading={busy}>
           Keyingi
         </PrimaryButton>
-      </div>
+      </ScreenFooter>
     </div>
   );
 }
@@ -4949,8 +5089,12 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   return (
     <div className="relative flex h-full min-h-0 flex-col" style={{ backgroundColor: C.bg }}>
       <div
-        className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 pb-3 pt-[108px] sm:px-4"
-        style={{ backgroundColor: C.card, borderBottom: `1px solid ${C.border}` }}
+        className="flex shrink-0 flex-wrap items-center justify-between gap-2 px-3 pb-3 sm:px-4"
+        style={{
+          backgroundColor: C.card,
+          borderBottom: `1px solid ${C.border}`,
+          paddingTop: 'max(var(--portal-top-inset, 12px), env(safe-area-inset-top, 0px))',
+        }}
       >
         <div className="flex min-w-0 items-center gap-2">
           <img src={LOGO_URL} alt="The Kasb logotipi" style={{ width: 28, height: 28, objectFit: 'contain', borderRadius: 6 }} />
@@ -5053,7 +5197,15 @@ export default function CandidatePortal() {
     [],
   );
   const [screen, setScreen] = useState<Screen>(1);
+  const portalChrome = usePortalChromeInsets(view === 'onboarding');
   const [busy, setBusy] = useState(false);
+
+  useLayoutEffect(() => {
+    if (view !== 'onboarding') return;
+    document.querySelectorAll('.kasb-portal-screen-scroll').forEach((el) => {
+      el.scrollTop = 0;
+    });
+  }, [screen, view]);
   const [sessionBootstrapped, setSessionBootstrapped] = useState(false);
 
   const [form, setForm] = useState<FormState>({
@@ -5573,56 +5725,66 @@ export default function CandidatePortal() {
     ),
   };
 
-  if (!sessionBootstrapped) {
-    return (
-      <CandidatePortalShell>
-        <div className="flex h-full w-full items-center justify-center">
-          <Loader2 className="h-11 w-11 animate-spin" style={{ color: C.blueL }} strokeWidth={2} aria-hidden />
+  const portalBody = !sessionBootstrapped ? (
+    <div className="flex h-full min-h-0 w-full items-center justify-center">
+      <Loader2 className="h-11 w-11 animate-spin" style={{ color: C.blueL }} strokeWidth={2} aria-hidden />
+    </div>
+  ) : (
+    <>
+      <AnimatePresence mode="wait" initial={false}>
+        {view === 'home' ? (
+          <motion.div
+            key="home"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="absolute inset-0 flex min-h-0 flex-col"
+          >
+            <HomeScreen initialTab={homeInitialTab} />
+          </motion.div>
+        ) : (
+          <motion.div
+            key={`onboarding-${screen}`}
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -24 }}
+            transition={{ duration: 0.22, ease: 'easeInOut' }}
+            className="absolute inset-0 flex min-h-0 flex-col overflow-hidden"
+            style={{ backgroundColor: C.bg }}
+          >
+            {screenMap[screen]}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {view === 'onboarding' ? (
+        <div
+          className="pointer-events-none absolute bottom-0 left-0 right-0 z-10"
+          style={{ paddingBottom: 'var(--portal-bottom-inset, 12px)' }}
+        >
+          <div className="flex items-center justify-center gap-1.5 py-2">
+            {Array.from({ length: TOTAL_SCREENS }, (_, i) => {
+              const active = i + 1 === screen;
+              return (
+                <motion.div
+                  key={i}
+                  animate={{ width: active ? 20 : 6 }}
+                  transition={{ duration: 0.3, ease: 'easeOut' }}
+                  className="h-1.5 rounded-full"
+                  style={{ backgroundColor: active ? C.blue : C.border }}
+                />
+              );
+            })}
+          </div>
         </div>
-      </CandidatePortalShell>
-    );
-  }
+      ) : null}
+    </>
+  );
 
   return (
-    <CandidatePortalShell>
-        <AnimatePresence mode="wait" initial={false}>
-          {view === 'home' ? (
-            <motion.div key="home" initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.25, ease: 'easeInOut' }} className="absolute inset-0">
-              <HomeScreen initialTab={homeInitialTab} />
-            </motion.div>
-          ) : (
-            <motion.div
-              key={`onboarding-${screen}`}
-              initial={{ opacity: 0, x: 24 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -24 }}
-              transition={{ duration: 0.22, ease: 'easeInOut' }}
-              className="absolute inset-0 flex flex-col overflow-hidden"
-              style={{ backgroundColor: C.bg }}
-            >
-              {screenMap[screen]}
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {view === 'onboarding' ? (
-          <div className="pointer-events-none absolute bottom-0 left-0 right-0" style={{ paddingBottom: 8 }}>
-            <div className="flex items-center justify-center gap-1.5 py-3">
-              {Array.from({ length: TOTAL_SCREENS }, (_, i) => {
-                const active = i + 1 === screen;
-                return (
-                  <motion.div
-                    key={i}
-                    animate={{ width: active ? 20 : 6 }}
-                    transition={{ duration: 0.3, ease: 'easeOut' }}
-                    className="h-1.5 rounded-full"
-                    style={{ backgroundColor: active ? C.blue : C.border }}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        ) : null}
-    </CandidatePortalShell>
+    <PortalChromeContext.Provider value={portalChrome}>
+      <CandidatePortalShell chrome={portalChrome}>{portalBody}</CandidatePortalShell>
+    </PortalChromeContext.Provider>
   );
 }

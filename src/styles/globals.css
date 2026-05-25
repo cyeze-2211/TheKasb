@@ -54,6 +54,20 @@
   animation: kasb-glow-breathe 6s ease-in-out infinite;
 }
 
+/* Nomzod portali — faqat ichki scroll, kichik ekranda Keyingi tugmasi ko‘rinadi */
+.kasb-candidate-portal {
+  overscroll-behavior: none;
+}
+
+.kasb-portal-screen-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scroll-padding-top: 0.5rem;
+  scroll-padding-bottom: 0.5rem;
+}
+
 /* Dashboard premium vibe */
 .kasb-dash-shell {
   background:
