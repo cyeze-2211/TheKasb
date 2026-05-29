@@ -213,7 +213,6 @@ export function SettingsFiles() {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
             <h3 className="m-0 text-base font-semibold">Fayllar ro‘yxati</h3>
-            <p className="mt-1 text-xs text-text-muted">GET /api/file/get/all — sahifalangan ro‘yxat</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -370,14 +369,10 @@ export function SettingsFiles() {
                   Yangi fayl yuklash
                 </DialogTitle>
                 <DialogDescription className="mt-1.5 text-left text-xs leading-relaxed text-text-muted">
-                  Multipart <code className="rounded bg-background/80 px-1 py-0.5 font-mono text-[11px]">file</code> ·
-                  query:{' '}
-                  <code className="rounded bg-background/80 px-1 py-0.5 font-mono text-[11px]">category</code>,{' '}
-                  <code className="rounded bg-background/80 px-1 py-0.5 font-mono text-[11px]">userId</code>
                   {effectiveUserId != null ? (
-                    <span className="mt-1 block font-medium text-primary/90">userId: {effectiveUserId}</span>
+                    <span className="block font-medium text-primary/90">Foydalanuvchi ID: {effectiveUserId}</span>
                   ) : (
-                    <span className="mt-1 block text-warning">userId yo‘q — tizimga kiring.</span>
+                    <span className="block text-warning">Foydalanuvchi ID yo‘q — tizimga kiring.</span>
                   )}
                 </DialogDescription>
               </div>
@@ -464,7 +459,7 @@ export function SettingsFiles() {
           <AlertDialogHeader>
             <AlertDialogTitle>Faylni o‘chirish?</AlertDialogTitle>
             <AlertDialogDescription>
-              DELETE /api/file/delete — fileHashId va userId yuboriladi. Bu amalni qaytarib bo‘lmaydi.
+              Bu fayl butunlay o‘chirilsinmi? Bu amalni qaytarib bo‘lmaydi.
             </AlertDialogDescription>
           </AlertDialogHeader>
           {deleteRow ? (

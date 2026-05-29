@@ -24,7 +24,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -304,9 +303,6 @@ export function SettingsRegions() {
                   {dialogMode === 'create' ? 'Yangi viloyat' : 'Viloyatni tahrirlash'}
                 </DialogTitle>
               </div>
-              <DialogDescription className="text-xs text-text-muted">
-                {dialogMode === 'create' ? 'POST' : 'PATCH'} /api/admin/regions
-              </DialogDescription>
             </DialogHeader>
           </div>
           <form onSubmit={(e) => void handleSubmit(e)} className="flex max-h-[calc(92vh-10rem)] flex-col">

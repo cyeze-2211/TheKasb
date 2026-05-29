@@ -25,7 +25,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -266,7 +265,7 @@ export function SettingsRegionDistricts() {
   return (
     <SettingsSectionChrome
       title={`Tumanlar — ${regionTitle}`}
-      description={`GET /api/admin/districts?region_id=${regionId}`}
+      description="Bu viloyatga tegishli tumanlar ro‘yxati"
       backTo={`${SETTINGS_BASE}/regions`}
       backLabel="Viloyatlar"
       actions={
@@ -377,9 +376,6 @@ export function SettingsRegionDistricts() {
                   {dialogMode === 'create' ? 'Yangi tuman' : 'Tumanni tahrirlash'}
                 </DialogTitle>
               </div>
-              <DialogDescription className="text-xs text-text-muted">
-                {dialogMode === 'create' ? 'POST' : 'PATCH'} /api/admin/districts · region_id={regionId}
-              </DialogDescription>
             </DialogHeader>
           </div>
           <form onSubmit={(e) => void handleSubmit(e)} className="flex max-h-[calc(92vh-10rem)] flex-col">
