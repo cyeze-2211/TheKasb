@@ -20,6 +20,9 @@ const SettingsFiles = lazy(() =>
 const SettingsRegions = lazy(() =>
   import('./pages/settings/SettingsRegions').then((m) => ({ default: m.SettingsRegions })),
 );
+const SettingsRegionDistricts = lazy(() =>
+  import('./pages/settings/SettingsRegionDistricts').then((m) => ({ default: m.SettingsRegionDistricts })),
+);
 const SettingsUniversities = lazy(() =>
   import('./pages/settings/SettingsUniversities').then((m) => ({ default: m.SettingsUniversities })),
 );
@@ -221,6 +224,14 @@ export const router = createBrowserRouter([
                 element: (
                   <LazyBoundary>
                     <SettingsRegions />
+                  </LazyBoundary>
+                ),
+              },
+              {
+                path: 'regions/:id',
+                element: (
+                  <LazyBoundary>
+                    <SettingsRegionDistricts />
                   </LazyBoundary>
                 ),
               },

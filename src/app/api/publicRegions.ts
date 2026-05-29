@@ -1,7 +1,8 @@
 import { api } from './client';
+import { fetchAdminDistricts } from './districts';
 import { assertApiSuccess } from './users';
 
-/** Public — GET `/api/regions` */
+/** Katalog — GET `/api/admin/regions` (public `/regions` o‘rniga) */
 export type PublicRegion = {
   id: number;
   code?: string;
@@ -47,24 +48,6 @@ function normalizeRegionRow(row: Record<string, unknown>): PublicRegion | null {
   };
 }
 
-function normalizeDistrictRow(row: Record<string, unknown>): PublicDistrict | null {
-  const id = pickId(row);
-  if (id == null) return null;
-  const active = row.is_active ?? row.isActive;
-  const regionId = row.region_id ?? row.regionId;
-  let rid: number | undefined;
-  if (typeof regionId === 'number' && Number.isFinite(regionId)) rid = Math.trunc(regionId);
-  else if (typeof regionId === 'string' && /^\d+$/.test(regionId.trim())) rid = Number(regionId.trim());
-  return {
-    id,
-    code: pickStr(row, 'code') || undefined,
-    name_uz: pickStr(row, 'name_uz', 'nameUz') || undefined,
-    name_ru: pickStr(row, 'name_ru', 'nameRu') || undefined,
-    region_id: rid,
-    is_active: typeof active === 'boolean' ? active : undefined,
-  };
-}
-
 function extractListRows(data: unknown): Record<string, unknown>[] {
   if (Array.isArray(data)) return data as Record<string, unknown>[];
   if (!data || typeof data !== 'object') return [];
@@ -98,7 +81,7 @@ function sortByNameUz<T extends { name_uz?: string }>(list: T[]): T[] {
 }
 
 export async function fetchPublicRegions(): Promise<PublicRegion[]> {
-  const { data } = await api.get<unknown>('/regions');
+  const { data } = await api.get<unknown>('/admin/regions');
   assertApiSuccess(data);
   return sortByNameUz(
     extractListRows(data)
@@ -109,7 +92,7 @@ export async function fetchPublicRegions(): Promise<PublicRegion[]> {
 }
 
 export async function fetchPublicRegionById(id: number): Promise<PublicRegion | null> {
-  const { data } = await api.get<unknown>(`/regions/${id}`);
+  const { data } = await api.get<unknown>(`/admin/regions/${id}`);
   assertApiSuccess(data);
   const row = unwrapSingle(data);
   if (!row) return null;
@@ -119,12 +102,15 @@ export async function fetchPublicRegionById(id: number): Promise<PublicRegion | 
 }
 
 export async function fetchPublicRegionDistricts(regionId: number): Promise<PublicDistrict[]> {
-  const { data } = await api.get<unknown>(`/regions/${regionId}/districts`);
-  assertApiSuccess(data);
-  return sortByNameUz(
-    extractListRows(data)
-      .map(normalizeDistrictRow)
-      .filter((x): x is PublicDistrict => x != null)
-      .filter((d) => d.is_active !== false),
-  );
+  const list = await fetchAdminDistricts({ region_id: regionId });
+  return list
+    .filter((d) => d.is_active !== false)
+    .map((d) => ({
+      id: d.id,
+      code: d.code,
+      name_uz: d.name_uz,
+      name_ru: d.name_ru,
+      region_id: d.region_id,
+      is_active: d.is_active,
+    }));
 }

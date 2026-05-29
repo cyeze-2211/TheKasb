@@ -8,21 +8,25 @@ export function SettingsSectionChrome({
   title,
   description,
   actions,
+  backTo = SETTINGS_BASE,
+  backLabel = 'Sozlamalar',
   children,
 }: {
   title: string;
   description?: string;
   actions?: ReactNode;
+  backTo?: string;
+  backLabel?: string;
   children: ReactNode;
 }) {
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
       <Link
-        to={SETTINGS_BASE}
+        to={backTo}
         className="inline-flex items-center gap-1 text-sm font-medium text-text-muted transition-colors hover:text-primary"
       >
         <ChevronLeft className="h-4 w-4" aria-hidden />
-        Sozlamalar
+        {backLabel}
       </Link>
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

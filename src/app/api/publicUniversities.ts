@@ -1,7 +1,7 @@
 import { api } from './client';
 import { assertApiSuccess } from './users';
 
-/** Public — GET `/api/universities` */
+/** Katalog — GET `/api/admin/universities` (public `/universities` o‘rniga) */
 export type PublicUniversity = {
   id: number;
   name?: string;
@@ -79,7 +79,7 @@ export async function fetchPublicUniversities(
   const params: Record<string, string | number> = {};
   if (query.region_id != null && query.region_id > 0) params.region_id = query.region_id;
   if (query.type?.trim()) params.type = query.type.trim();
-  const { data } = await api.get<unknown>('/universities', { params });
+  const { data } = await api.get<unknown>('/admin/universities', { params });
   assertApiSuccess(data);
   const list = extractListRows(data)
     .map(normalizeRow)

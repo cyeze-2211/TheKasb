@@ -38,6 +38,7 @@ export const SETTINGS_NAV: SettingsNavItem[] = [
 ];
 
 export function settingsPageTitle(pathname: string): string {
+  if (/\/regions\/\d+/.test(pathname)) return 'Tumanlar';
   if (pathname.includes('/universities')) return 'Universitetlar';
   if (pathname.includes('/regions')) return 'Viloyatlar';
   if (pathname.includes('/deleted-users')) return 'O‘chirilgan foydalanuvchilar';

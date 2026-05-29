@@ -757,7 +757,7 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
   return finalizeProfileLocationFields(payload, body);
 }
 
-/** API `/regions` — viloyat id (musbat butun son) */
+/** API `/admin/regions` — viloyat id (musbat butun son) */
 export function normalizeCandidateRegionId(raw: unknown): number | undefined {
   if (raw == null || raw === '') return undefined;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
