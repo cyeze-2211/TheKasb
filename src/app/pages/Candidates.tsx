@@ -7,7 +7,9 @@ import {
   Search,
   UserRound,
 } from 'lucide-react';
-import { COUNTRIES, REGIONS } from '../data/mockData';
+import { COUNTRIES } from '../data/mockData';
+import { fetchAdminRegions } from '../api/regions';
+import { fetchAdminUniversities, type AdminUniversity } from '../api/universities';
 import {
   fetchProfessionCategories,
   fetchProfessionsFilterOptions,
@@ -62,19 +64,13 @@ const availabilityLabels: Record<string, string> = {
   WITHIN_3_MONTHS: '3 oy ichida',
 };
 
-/** mockData `REGIONS` — "1-Toshkent..." formatidan id */
-const REGION_FILTER_OPTIONS: { id: number; label: string }[] = REGIONS.map((r) => {
-  const m = /^(\d+)\s*[-–]\s*/.exec(r.trim()) ?? /^(\d+)/.exec(r.trim());
-  const id = m ? Number(m[1]) : NaN;
-  return { id, label: r };
-}).filter((x) => Number.isFinite(x.id) && x.id > 0);
-
 const initialQuery = (): CandidatesListQuery => ({
   page: 0,
   size: 20,
   profileStatus: '',
   regionId: undefined,
   regionName: '',
+  institutionName: '',
   educationLevel: '',
   categoryId: undefined,
   professionId: undefined,
@@ -182,6 +178,9 @@ export function Candidates() {
   const [professionOptions, setProfessionOptions] = useState<ProfessionFilterOption[]>([]);
   const [agentOptions, setAgentOptions] = useState<SdgUserDto[]>([]);
   const [filterMetaLoading, setFilterMetaLoading] = useState(false);
+  const [regionFilterOptions, setRegionFilterOptions] = useState<Array<{ id: number; label: string }>>([]);
+  const [universityFilterOptions, setUniversityFilterOptions] = useState<AdminUniversity[]>([]);
+  const [universitiesLoading, setUniversitiesLoading] = useState(false);
 
   const visibleProfessions = useMemo(() => {
     if (!q.categoryId) return professionOptions;
@@ -193,21 +192,31 @@ export function Candidates() {
     setFilterMetaLoading(true);
     void (async () => {
       try {
-        const [cats, profs, ag] = await Promise.all([
+        const [cats, profs, ag, regions] = await Promise.all([
           fetchProfessionCategories(),
           fetchProfessionsFilterOptions(),
           fetchAgentsForSelect(),
+          fetchAdminRegions(),
         ]);
         if (!cancelled) {
           setCategories(cats);
           setProfessionOptions(profs);
           setAgentOptions(ag);
+          setRegionFilterOptions(
+            regions
+              .filter((r) => r.is_active !== false)
+              .map((r) => ({
+                id: r.id,
+                label: r.name_uz ?? r.name_ru ?? String(r.id),
+              })),
+          );
         }
       } catch {
         if (!cancelled) {
           setCategories([]);
           setProfessionOptions([]);
           setAgentOptions([]);
+          setRegionFilterOptions([]);
         }
       } finally {
         if (!cancelled) setFilterMetaLoading(false);
@@ -217,6 +226,34 @@ export function Candidates() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const regionId = q.regionId;
+    if (regionId == null || regionId <= 0) {
+      setUniversityFilterOptions([]);
+      setUniversitiesLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setUniversitiesLoading(true);
+    void (async () => {
+      try {
+        const list = await fetchAdminUniversities({ region_id: regionId });
+        if (!cancelled) {
+          setUniversityFilterOptions(
+            list.filter((u) => u.is_active !== false && (u.name?.trim() ?? '').length > 0),
+          );
+        }
+      } catch {
+        if (!cancelled) setUniversityFilterOptions([]);
+      } finally {
+        if (!cancelled) setUniversitiesLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [q.regionId]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -293,37 +330,56 @@ export function Candidates() {
             </div>
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Hudud</span>
-              <input
-                type="search"
-                className={ctlInput}
-                list="candidates-region-filter"
-                placeholder="Hudud nomi yoki ro‘yxatdan tanlang"
+              <select
+                className={ctlSelect}
                 disabled={filterMetaLoading}
-                value={
-                  q.regionId != null
-                    ? (REGION_FILTER_OPTIONS.find((r) => r.id === q.regionId)?.label ?? q.regionName ?? '')
-                    : (q.regionName ?? '')
-                }
+                value={q.regionId ?? ''}
                 onChange={(e) => {
-                  const v = e.target.value;
-                  const match = REGION_FILTER_OPTIONS.find(
-                    (r) => r.label.toLowerCase() === v.trim().toLowerCase(),
-                  );
-                  if (match) {
-                    setField({ regionId: match.id, regionName: '' });
-                    return;
-                  }
+                  const v = e.target.value ? Number(e.target.value) : undefined;
                   setField({
-                    regionId: undefined,
-                    regionName: v,
+                    regionId: v,
+                    regionName: '',
+                    institutionName: '',
                   });
                 }}
-              />
-              <datalist id="candidates-region-filter">
-                {REGION_FILTER_OPTIONS.map((r) => (
-                  <option key={r.id} value={r.label} />
+              >
+                <option value="">Barchasi</option>
+                {q.regionId != null &&
+                !regionFilterOptions.some((r) => r.id === q.regionId) ? (
+                  <option value={q.regionId}>ID {q.regionId} (joriy filtr)</option>
+                ) : null}
+                {regionFilterOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}
+                  </option>
                 ))}
-              </datalist>
+              </select>
+            </div>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">OTM</span>
+              <select
+                className={ctlSelect}
+                disabled={!q.regionId || universitiesLoading || filterMetaLoading}
+                value={q.institutionName ?? ''}
+                onChange={(e) => setField({ institutionName: e.target.value })}
+              >
+                <option value="">
+                  {!q.regionId
+                    ? 'Avval hududni tanlang'
+                    : universitiesLoading
+                      ? 'Yuklanmoqda…'
+                      : 'Barchasi'}
+                </option>
+                {q.institutionName &&
+                !universityFilterOptions.some((u) => u.name === q.institutionName) ? (
+                  <option value={q.institutionName}>{q.institutionName} (joriy filtr)</option>
+                ) : null}
+                {universityFilterOptions.map((u) => (
+                  <option key={u.id} value={u.name ?? ''}>
+                    {u.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Ta’lim darajasi</span>

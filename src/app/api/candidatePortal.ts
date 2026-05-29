@@ -24,6 +24,13 @@ import {
   resolveTumanLabelUz,
   resolveViloyatLabelUz,
 } from '../lib/uzRegionsCodeSystem';
+import {
+  findPublicRegionByName,
+  getPublicRegionById,
+  resolvePublicDistrictNameUz,
+  resolvePublicRegionId,
+  resolvePublicRegionNameUz,
+} from '../lib/publicRegionCatalog';
 import { REGIONS } from '../data/mockData';
 import { normalizeUserFileCategory, type UserFileCategory } from '../lib/userFileCategories';
 import { assertApiSuccess } from './users';
@@ -750,22 +757,20 @@ function buildCandidateProfileCreatePayload(body: CandidateProfileCreateBody): R
   return finalizeProfileLocationFields(payload, body);
 }
 
-/** Backend viloyat id — `REGIONS` ro‘yxati (1…14) */
-export const CANDIDATE_REGION_ID_MAX = 14;
-
-/** Faqat 1…14 oralig‘idagi butun son; aks holda `undefined` */
+/** API `/regions` — viloyat id (musbat butun son) */
 export function normalizeCandidateRegionId(raw: unknown): number | undefined {
   if (raw == null || raw === '') return undefined;
-  let n: number;
   if (typeof raw === 'number' && Number.isFinite(raw)) {
-    n = Math.trunc(raw);
-  } else {
-    const s = String(raw).trim();
-    if (!/^\d{1,2}$/.test(s)) return undefined;
-    n = Math.trunc(Number(s));
+    const n = Math.trunc(raw);
+    return n > 0 ? n : undefined;
   }
-  if (!Number.isFinite(n) || n < 1 || n > CANDIDATE_REGION_ID_MAX) return undefined;
-  return n;
+  const s = String(raw).trim();
+  if (!s) return undefined;
+  if (/^\d+$/.test(s)) {
+    const n = Math.trunc(Number(s));
+    return n > 0 ? n : undefined;
+  }
+  return resolvePublicRegionId(s);
 }
 
 const CANDIDATE_REGION_LABELS: { id: number; label: string }[] = REGIONS.map((r) => {
@@ -785,12 +790,18 @@ function normalizeRegionMatchKey(s: string): string {
 }
 
 function regionCatalogLabelSansId(rid: number): string {
+  const api = getPublicRegionById(rid);
+  if (api?.name_uz) return api.name_uz;
+  if (api?.name_ru) return api.name_ru;
   const opt = CANDIDATE_REGION_LABELS.find((r) => r.id === rid);
   if (!opt) return '';
   return opt.label.replace(/^\d+\s*[-–]\s*/, '').trim() || opt.label.trim();
 }
 
 function resolveRegionIdFromViloyatName(uz: string): number | undefined {
+  const fromApi = findPublicRegionByName(uz)?.id ?? resolvePublicRegionId(uz);
+  if (fromApi != null) return fromApi;
+
   const lower = uz.toLowerCase();
   if (/qoraqalpo|qqr|karakalpak/i.test(lower)) return 14;
   if (/toshkent/.test(lower) && /shahri/.test(lower)) return 1;
@@ -828,12 +839,15 @@ export function candidateRegionFieldsFromInputs(input: {
   /** 4-qadam viloyat selecti */
   addressRegion?: string | null;
 }): Pick<CandidateProfileCreateBody, 'region_id' | 'region_name_uz'> | undefined {
-  const viloyat = resolveViloyatLabelUz(input.addressRegion).trim();
+  const viloyat =
+    resolvePublicRegionNameUz(input.addressRegion).trim() ||
+    resolveViloyatLabelUz(input.addressRegion).trim();
   const labelRaw = (input.regionLabelUz ?? '').trim();
   const labelSansNum = labelRaw.replace(/^\d+\s*[-–]\s*/, '').trim();
 
   let region_name_uz = viloyat || labelSansNum || labelRaw;
-  let region_id = normalizeCandidateRegionId(input.regionId);
+  let region_id =
+    normalizeCandidateRegionId(input.regionId) ?? resolvePublicRegionId(input.addressRegion);
 
   if (region_id == null && region_name_uz) {
     region_id = resolveRegionIdFromViloyatName(region_name_uz);
@@ -875,16 +889,25 @@ export function candidateLocationFieldsFromForm(input: {
   regionId?: number | string | null;
   regionLabelUz?: string | null;
 }): CandidateProfileLocationBody {
-  const viloyatName = resolveViloyatLabelUz(input.addressRegion).trim();
-  const groups = getUzRegionGroups();
-  const group = viloyatName ? findGroupByViloyatName(groups, viloyatName) : undefined;
-  const districtDisplay = resolveTumanLabelUz(input.addressDistrict, viloyatName).trim();
-  const tuman = findTumanInGroup(group, input.addressDistrict ?? districtDisplay);
+  const regionIdHint =
+    normalizeCandidateRegionId(input.regionId) ?? resolvePublicRegionId(input.addressRegion);
+  const viloyatName =
+    resolvePublicRegionNameUz(input.addressRegion ?? regionIdHint).trim() ||
+    resolveViloyatLabelUz(input.addressRegion).trim();
+
+  let districtName = resolvePublicDistrictNameUz(input.addressDistrict, regionIdHint).trim();
+  if (!districtName && input.addressDistrict) {
+    const groups = getUzRegionGroups();
+    const group = viloyatName ? findGroupByViloyatName(groups, viloyatName) : undefined;
+    const districtDisplay = resolveTumanLabelUz(input.addressDistrict, viloyatName).trim();
+    const tuman = findTumanInGroup(group, input.addressDistrict ?? districtDisplay);
+    districtName = tuman?.display ?? districtDisplay;
+  }
 
   const regionPart = candidateRegionFieldsFromInputs({
-    addressRegion: viloyatName || input.addressRegion,
-    regionId: input.regionId,
-    regionLabelUz: input.regionLabelUz,
+    addressRegion: input.addressRegion ?? (regionIdHint != null ? String(regionIdHint) : null),
+    regionId: input.regionId ?? regionIdHint,
+    regionLabelUz: input.regionLabelUz ?? viloyatName,
   });
 
   const out: CandidateProfileLocationBody = {};
@@ -893,8 +916,6 @@ export function candidateLocationFieldsFromForm(input: {
   if (regionPart?.region_id != null || regionPart?.region_name_uz) {
     out.region_code = null;
   }
-
-  const districtName = tuman?.display ?? districtDisplay;
   if (districtName) {
     out.district_name_uz = districtName;
     out.district_code = null;

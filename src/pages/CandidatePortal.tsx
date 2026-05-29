@@ -13,7 +13,17 @@ import { useSearchParams } from 'react-router';
 import toast from 'react-hot-toast';
 import { AnimatePresence, motion } from 'framer-motion';
 import FotonLogo from '../Img/e9ee15f1-3bc8-490d-941f-3b6a5ee4ce9c_removalai_preview.png';
-import { getUzRegionGroups, type UzRegionGroup } from '../app/lib/uzRegionsCodeSystem';
+import type { PublicDistrict, PublicRegion } from '../app/api/publicRegions';
+import {
+  fetchPublicUniversities,
+  filterPublicUniversities,
+  type PublicUniversity,
+} from '../app/api/publicUniversities';
+import {
+  ensurePublicDistrictsLoaded,
+  ensurePublicRegionsLoaded,
+  resolvePublicRegionId,
+} from '../app/lib/publicRegionCatalog';
 import type { LucideIcon } from 'lucide-react';
 import {
   Award,
@@ -109,15 +119,7 @@ import {
   maritalStatusUz,
   uzOrCode,
 } from '../app/lib/adminUiUz';
-import { REGIONS } from '../app/data/mockData';
 import { countryFlagEmoji, countryNameUz } from '../app/lib/regionFlags';
-import {
-  filterUniversities,
-  findOtmRegion,
-  getOtmRegions,
-  universitiesInRegion,
-  type OtmRegion,
-} from '../app/lib/uzbekistanOtm';
 import {
   getCachedCandidateSummary,
   getCandidateProfileId,
@@ -134,13 +136,6 @@ import {
   subscribeTelegramViewportInsets,
   telegramEntryContextLabel,
 } from '../app/lib/telegramWebApp';
-
-/** `mockData` REGIONS — "1-Toshkent..." → id */
-const REGION_OPTIONS: { id: number; label: string }[] = REGIONS.map((r) => {
-  const m = /^(\d+)\s*[-–]\s*/.exec(r.trim()) ?? /^(\d+)/.exec(r.trim());
-  const id = m ? Number(m[1]) : NaN;
-  return { id, label: r };
-}).filter((x) => Number.isFinite(x.id) && x.id > 0);
 
 // ─── Brand tokens ─────────────────────────────────────────────────────────────
 
@@ -496,7 +491,6 @@ const SALARY_USD_DEFAULT_MAX = 3500;
 
 const TOTAL_SCREENS = 9;
 
-const OTM_REGIONS = getOtmRegions();
 const GRADUATION_YEAR_OPTIONS = (() => {
   const y = new Date().getFullYear();
   return Array.from({ length: 55 }, (_, i) => y - i);
@@ -1185,6 +1179,39 @@ function Screen4Personal({
   const canContinue = fnOk && lnOk && dateOk;
   const dateMax = new Date().toISOString().slice(0, 10);
 
+  const [catalogRegions, setCatalogRegions] = useState<PublicRegion[]>([]);
+  const [catalogDistricts, setCatalogDistricts] = useState<PublicDistrict[]>([]);
+  const [districtsLoading, setDistrictsLoading] = useState(false);
+
+  const addressRegionId = resolvePublicRegionId(form.addressRegion);
+
+  useEffect(() => {
+    void ensurePublicRegionsLoaded()
+      .then(setCatalogRegions)
+      .catch(() => setCatalogRegions([]));
+  }, []);
+
+  useEffect(() => {
+    if (!catalogRegions.length || !form.addressRegion.trim()) return;
+    const id = resolvePublicRegionId(form.addressRegion);
+    if (id != null && form.addressRegion !== String(id)) {
+      setForm((f) => ({ ...f, addressRegion: String(id) }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- viloyat nomi → id bir marta
+  }, [catalogRegions]);
+
+  useEffect(() => {
+    if (addressRegionId == null) {
+      setCatalogDistricts([]);
+      return;
+    }
+    setDistrictsLoading(true);
+    void ensurePublicDistrictsLoaded(addressRegionId)
+      .then(setCatalogDistricts)
+      .catch(() => setCatalogDistricts([]))
+      .finally(() => setDistrictsLoading(false));
+  }, [addressRegionId]);
+
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
       <OnboardingHeader onBack={onBack} screen={4} />
@@ -1285,9 +1312,9 @@ function Screen4Personal({
             aria-label="Viloyat"
           >
             <option value="">Viloyatni tanlang</option>
-            {getUzRegionGroups().map((group) => (
-              <option key={group.viloyatCode} value={group.viloyatNameUz}>
-                {group.viloyatNameUz}
+            {catalogRegions.map((r) => (
+              <option key={r.id} value={String(r.id)}>
+                {r.name_uz ?? r.name_ru ?? r.id}
               </option>
             ))}
           </select>
@@ -1298,7 +1325,7 @@ function Screen4Personal({
           <select
             value={form.addressDistrict}
             onChange={(e) => setForm((f) => ({ ...f, addressDistrict: e.target.value }))}
-            disabled={!form.addressRegion}
+            disabled={!form.addressRegion || districtsLoading}
             className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
             style={{
               border: `1.5px solid ${form.addressDistrict ? C.blue : C.border}`,
@@ -1308,17 +1335,12 @@ function Screen4Personal({
             }}
             aria-label="Tuman"
           >
-            <option value="">Tumanni tanlang</option>
-            {getUzRegionGroups()
-              .find(
-                (group) =>
-                  group.viloyatNameUz === form.addressRegion || group.viloyatCode === form.addressRegion,
-              )
-              ?.tumanlar.map((t) => (
-                <option key={t.code} value={t.display}>
-                  {t.display}
-                </option>
-              ))}
+            <option value="">{districtsLoading ? 'Yuklanmoqda…' : 'Tumanni tanlang'}</option>
+            {catalogDistricts.map((d) => (
+              <option key={d.id} value={d.name_uz ?? d.name_ru ?? String(d.id)}>
+                {d.name_uz ?? d.name_ru ?? d.id}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -1385,6 +1407,27 @@ function Screen5Education({
 
   const [panel, setPanel] = useState<Panel>('level');
   const [uniSearch, setUniSearch] = useState('');
+  const [catalogRegions, setCatalogRegions] = useState<PublicRegion[]>([]);
+  const [apiUniversities, setApiUniversities] = useState<PublicUniversity[]>([]);
+  const [uniLoading, setUniLoading] = useState(false);
+
+  useEffect(() => {
+    void ensurePublicRegionsLoaded()
+      .then(setCatalogRegions)
+      .catch(() => setCatalogRegions([]));
+  }, []);
+
+  useEffect(() => {
+    if (panel !== 'university' || form.educationRegionId == null) {
+      setApiUniversities([]);
+      return;
+    }
+    setUniLoading(true);
+    void fetchPublicUniversities({ region_id: form.educationRegionId })
+      .then(setApiUniversities)
+      .catch(() => setApiUniversities([]))
+      .finally(() => setUniLoading(false));
+  }, [panel, form.educationRegionId]);
 
   /** Qoralama: foydalanuvchi darajani tanlagan bo‘lsa, qolgan qadamga qaytish */
   useEffect(() => {
@@ -1412,13 +1455,9 @@ function Screen5Education({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat sahifaga kirganda qoralama tiklash
   }, []);
 
-  const selectedRegion = useMemo(
-    () => findOtmRegion(OTM_REGIONS, form.educationRegionId),
-    [form.educationRegionId],
-  );
   const universities = useMemo(
-    () => filterUniversities(universitiesInRegion(selectedRegion), uniSearch),
-    [selectedRegion, uniSearch],
+    () => filterPublicUniversities(apiUniversities, uniSearch),
+    [apiUniversities, uniSearch],
   );
 
   const handleTopBack = () => {
@@ -1474,7 +1513,7 @@ function Screen5Education({
     setPanel(educationLevelUsesOtmPicker(level) ? 'region' : 'details');
   };
 
-  const selectRegion = (region: OtmRegion) => {
+  const selectRegion = (region: PublicRegion) => {
     setForm((f) => ({
       ...f,
       educationRegionId: region.id,
@@ -1485,11 +1524,11 @@ function Screen5Education({
     setPanel('university');
   };
 
-  const selectUniversity = (u: { id: number; name: string }) => {
+  const selectUniversity = (u: PublicUniversity) => {
     setForm((f) => ({
       ...f,
       educationUniversityId: u.id,
-      educationInstitutionName: u.name,
+      educationInstitutionName: u.name ?? '',
       educationCountry: 'UZB',
     }));
     setPanel('details');
@@ -1574,17 +1613,17 @@ function Screen5Education({
 
         {panel === 'region' && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
           <div className="grid gap-2 pb-2">
-            {OTM_REGIONS.map((region) => (
+            {catalogRegions.map((region) => (
               <OptionCard
                 key={region.id}
                 selected={form.educationRegionId === region.id}
                 onClick={() => selectRegion(region)}
                 left={
                   <span className="text-[13px] font-semibold tabular-nums" style={{ color: C.muted }}>
-                    {region.code}
+                    {region.code ?? region.id}
                   </span>
                 }
-                title={region.name_uz}
+                title={region.name_uz ?? region.name_ru ?? String(region.id)}
               />
             ))}
           </div>
@@ -1601,7 +1640,12 @@ function Screen5Education({
               style={fieldStyle}
             />
             <div className="mt-3 grid gap-2 pb-2">
-              {universities.length === 0 ? (
+              {uniLoading ? (
+                <p className="flex items-center justify-center gap-2 py-6 text-[13px]" style={{ color: C.muted }}>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  OTM yuklanmoqda…
+                </p>
+              ) : universities.length === 0 ? (
                 <p className="py-6 text-center text-[13px]" style={{ color: C.muted }}>
                   OTM topilmadi
                 </p>
@@ -1619,10 +1663,10 @@ function Screen5Education({
                           color: u.type === 'davlat' ? C.blueL : C.gold,
                         }}
                       >
-                        {u.type === 'davlat' ? 'Davlat' : 'Nodavlat'}
+                        {u.type === 'davlat' ? 'Davlat' : u.type === 'nodavlat' ? 'Nodavlat' : (u.type ?? '—')}
                       </span>
                     }
-                    title={u.name}
+                    title={u.name ?? '—'}
                   />
                 ))
               )}
@@ -4097,8 +4141,22 @@ function CandidateProfileUnifiedForm({
   const [salMax, setSalMax] = useState(SALARY_USD_DEFAULT_MAX);
   const [consent, setConsent] = useState(true);
   const [regionSelect, setRegionSelect] = useState<number | ''>('');
+  const [regionOptions, setRegionOptions] = useState<Array<{ id: number; label: string }>>([]);
   const [customProf, setCustomProf] = useState('');
   const [photoDeleting, setPhotoDeleting] = useState(false);
+
+  useEffect(() => {
+    void ensurePublicRegionsLoaded()
+      .then((list) =>
+        setRegionOptions(
+          list.map((r) => ({
+            id: r.id,
+            label: r.name_uz ?? r.name_ru ?? String(r.id),
+          })),
+        ),
+      )
+      .catch(() => setRegionOptions([]));
+  }, []);
 
   const applyServerToDraft = useCallback(() => {
     if (!profile) return;
@@ -4219,7 +4277,7 @@ function CandidateProfileUnifiedForm({
           setBusy(false);
           return;
         }
-        const selected = REGION_OPTIONS.find((r) => r.id === rid);
+        const selected = regionOptions.find((r) => r.id === rid);
         const locationFields = candidateLocationFieldsFromForm({
           regionId: rid,
           regionLabelUz: selected?.label,
@@ -4442,7 +4500,7 @@ function CandidateProfileUnifiedForm({
             }}
           >
             <option value="">{FIELD_EMPTY}</option>
-            {REGION_OPTIONS.map((r) => (
+            {regionOptions.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.label}
               </option>

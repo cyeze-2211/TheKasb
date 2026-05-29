@@ -45,6 +45,7 @@ import {
 } from '../../components/pageChrome';
 import { AdminPaginationBar } from '../../components/AdminPaginationBar';
 import { USER_FILE_CATEGORIES } from '../../lib/userFileCategories';
+import { SettingsSectionChrome } from './SettingsSectionChrome';
 
 type FileUploadCategory = (typeof USER_FILE_CATEGORIES)[number]['value'];
 
@@ -204,7 +205,10 @@ export function SettingsFiles() {
   }
 
   return (
-    <>
+    <SettingsSectionChrome
+      title="Fayllar"
+      description="Foydalanuvchi fayllarini ko‘rish, yuklash va o‘chirish"
+    >
       <div className={panelElite}>
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-6 py-4">
           <div>
@@ -485,6 +489,6 @@ export function SettingsFiles() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </SettingsSectionChrome>
   );
 }

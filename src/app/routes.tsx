@@ -11,8 +11,17 @@ const UserDetail = lazy(() => import('./pages/UserDetail').then((m) => ({ defaul
 const SettingsLayout = lazy(() =>
   import('./pages/settings/SettingsLayout').then((m) => ({ default: m.SettingsLayout })),
 );
+const SettingsHub = lazy(() =>
+  import('./pages/settings/SettingsHub').then((m) => ({ default: m.SettingsHub })),
+);
 const SettingsFiles = lazy(() =>
   import('./pages/settings/SettingsFiles').then((m) => ({ default: m.SettingsFiles })),
+);
+const SettingsRegions = lazy(() =>
+  import('./pages/settings/SettingsRegions').then((m) => ({ default: m.SettingsRegions })),
+);
+const SettingsUniversities = lazy(() =>
+  import('./pages/settings/SettingsUniversities').then((m) => ({ default: m.SettingsUniversities })),
 );
 const Candidates = lazy(() => import('./pages/Candidates').then((m) => ({ default: m.Candidates })));
 const CandidateDetail = lazy(() =>
@@ -185,7 +194,11 @@ export const router = createBrowserRouter([
             children: [
               {
                 index: true,
-                element: <Navigate to="/admin/settings/files" replace />,
+                element: (
+                  <LazyBoundary>
+                    <SettingsHub />
+                  </LazyBoundary>
+                ),
               },
               {
                 path: 'files',
@@ -195,11 +208,39 @@ export const router = createBrowserRouter([
                   </LazyBoundary>
                 ),
               },
+              {
+                path: 'deleted-users',
+                element: (
+                  <LazyBoundary>
+                    <DeletedUsers />
+                  </LazyBoundary>
+                ),
+              },
+              {
+                path: 'regions',
+                element: (
+                  <LazyBoundary>
+                    <SettingsRegions />
+                  </LazyBoundary>
+                ),
+              },
+              {
+                path: 'universities',
+                element: (
+                  <LazyBoundary>
+                    <SettingsUniversities />
+                  </LazyBoundary>
+                ),
+              },
             ],
           },
           {
             path: 'settings/deleted-users',
-            element: <Navigate to="/admin/users/deleted" replace />,
+            element: <Navigate to="/admin/settings/deleted-users" replace />,
+          },
+          {
+            path: 'users/deleted',
+            element: <Navigate to="/admin/settings/deleted-users" replace />,
           },
         ],
       },

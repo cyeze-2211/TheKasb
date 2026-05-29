@@ -25,6 +25,8 @@ export type CandidatesListQuery = {
   regionId?: number;
   /** Hudud nomi bo‘yicha qidiruv (qisman moslash) */
   regionName?: string;
+  /** Ta’lim muassasasi (OTM nomi) — GET query `institutionName` */
+  institutionName?: string;
   salaryMax?: number;
   salaryMin?: number;
   size?: number;
@@ -53,6 +55,11 @@ function cleanQuery(q: CandidatesListQuery): Record<string, string | number> {
   if (regionName) {
     out.regionName = regionName;
     out.region_name_uz = regionName;
+  }
+  const institutionName = q.institutionName?.trim();
+  if (institutionName) {
+    out.institutionName = institutionName;
+    out.institution_name = institutionName;
   }
   const educationLevel = q.educationLevel?.trim();
   if (educationLevel) {

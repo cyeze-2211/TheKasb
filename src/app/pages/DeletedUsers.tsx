@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 import { ChevronRight, Loader2, RefreshCw, RotateCcw } from 'lucide-react';
 import {
   axiosErrorMessage,
@@ -23,6 +23,7 @@ import {
 } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
 import { btnSecondary, pageKicker, panelElite, rowElite, theadElite } from '../components/pageChrome';
+import { SettingsSectionChrome } from './settings/SettingsSectionChrome';
 
 function roleForBadge(u: SdgUserDto): UserRole {
   const r = String(u.accountType ?? 'CANDIDATE');
@@ -31,6 +32,8 @@ function roleForBadge(u: SdgUserDto): UserRole {
 }
 
 export function DeletedUsers() {
+  const location = useLocation();
+  const inSettings = location.pathname.includes('/admin/settings/');
   const [rows, setRows] = useState<SdgUserDto[]>([]);
   const [pageMeta, setPageMeta] = useState<AdminUsersPageMeta | null>(null);
   const [page, setPage] = useState(0);
@@ -84,24 +87,19 @@ export function DeletedUsers() {
   const totalElements = pageMeta?.totalElements ?? rows.length;
   const totalPages = Math.max(1, pageMeta?.totalPages ?? 1);
 
-  return (
-    <div className="space-y-6 p-6 md:space-y-8 md:p-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
-          <h1 className="mb-1 text-2xl font-semibold tracking-tight">Foydalanuvchilar</h1>
-          <p className="text-sm text-text-muted">Soft-delete qilingan hisoblar — xato bo‘lsa tiklash mumkin</p>
-        </div>
-        <button type="button" className={btnSecondary} onClick={() => void load()} disabled={loading}>
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          ) : (
-            <RefreshCw className="h-4 w-4" aria-hidden />
-          )}
-          Yangilash
-        </button>
-      </div>
+  const refreshBtn = (
+    <button type="button" className={btnSecondary} onClick={() => void load()} disabled={loading}>
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+      ) : (
+        <RefreshCw className="h-4 w-4" aria-hidden />
+      )}
+      Yangilash
+    </button>
+  );
 
+  const body = (
+    <>
       {error ? (
         <div className="rounded-2xl border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-danger">{error}</div>
       ) : null}
@@ -226,6 +224,32 @@ export function DeletedUsers() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+    </>
+  );
+
+  if (inSettings) {
+    return (
+      <SettingsSectionChrome
+        title="O‘chirilgan foydalanuvchilar"
+        description="Soft-delete qilingan hisoblar — xato bo‘lsa tiklash mumkin"
+        actions={refreshBtn}
+      >
+        {body}
+      </SettingsSectionChrome>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-6 md:space-y-8 md:p-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
+          <h1 className="mb-1 text-2xl font-semibold tracking-tight">Foydalanuvchilar</h1>
+          <p className="text-sm text-text-muted">Soft-delete qilingan hisoblar — xato bo‘lsa tiklash mumkin</p>
+        </div>
+        {refreshBtn}
+      </div>
+      {body}
     </div>
   );
 }
