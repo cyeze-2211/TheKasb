@@ -378,6 +378,8 @@ const DOCUMENT_TYPES: Array<{ type: CandidateDocumentType; label: string; requir
   { type: 'OTHER', label: documentTypeUz.OTHER, required: false },
 ];
 
+
+
 interface FormState {
   phoneNational: string;
   otp: string[];
@@ -498,7 +500,7 @@ const GRADUATION_YEAR_OPTIONS = (() => {
 /** Backend SMS kodi uzunligi */
 const OTP_SLOT_COUNT = 5;
 /** Qayta yuborishgacha kutish (sekund) */
-const SMS_RESEND_COUNTDOWN_SEC = 120;
+const SMS_RESEND_COUNTDOWN_SEC = 180;
 
 /** O‘zbekiston mobil operatorlari — telefon maydoni ostidagi ko‘rsatma */
 const UZ_MOBILE_OPERATOR_LABELS = [
@@ -886,13 +888,10 @@ function Screen1({
       >
         <div
           className="mb-3 flex items-center justify-center"
-          
+
         >
-          <img className="" src={FotonLogo} alt="The Kasb logotipi" style={{ objectFit: 'contain', width: 100, height: 100 }} />
+          <img className="" src={FotonLogo} alt="The Kasb logotipi" style={{ objectFit: 'contain', width: 200 }} />
         </div>
-        <p className="mb-10 font-semibold" style={{ fontSize: 12, color: C.blue, letterSpacing: '1px' }}>
-          THE KASB
-        </p>
 
         <h1
           className="mb-3 w-full text-center"
@@ -919,7 +918,7 @@ function Screen1({
         <div className="mb-8 flex w-full flex-col gap-[10px]">
           {[
             'Germaniya, Koreya, Polsha va boshqa mamlakatlar',
-            '1800 – 4000 € oylik maosh',
+            '3000 – 7000 $ oylik maosh',
             'Rasmiy shartnoma va viza yordami',
           ].map((item) => (
             <div key={item} className="flex items-start gap-2.5">
@@ -953,9 +952,7 @@ function Screen1({
           <PrimaryButton onClick={onNext} disabled={lookupBusy} loading={lookupBusy}>
             Boshlash — 1 daqiqa
           </PrimaryButton>
-          <p className="text-center" style={{ fontSize: 14, color: C.muted }}>
-            Allaqachon akkauntim bor →
-          </p>
+
         </div>
       </ScreenFooter>
     </div>
@@ -1061,6 +1058,7 @@ function Screen3({
   setForm,
   busy,
   notice,
+  onResend, // now optional
 }: {
   onNext: () => void;
   onBack: () => void;
@@ -1068,9 +1066,13 @@ function Screen3({
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   busy: boolean;
   notice: SmsInlineNotice;
+  onResend?: () => Promise<void>; // optional
 }) {
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [timer, setTimer] = useState(SMS_RESEND_COUNTDOWN_SEC);
+  const [resendLoading, setResendLoading] = useState(false);
+
+  // Timer countdown
   useEffect(() => {
     if (timer <= 0) return;
     const t = window.setTimeout(() => setTimer((v) => v - 1), 1000);
@@ -1100,7 +1102,34 @@ function Screen3({
     if (e.key === 'Backspace' && !form.otp[idx] && idx > 0) inputRefs.current[idx - 1]?.focus();
   };
 
+  const resetOtpAndFocus = () => {
+    setForm((f) => ({ ...f, otp: Array(OTP_SLOT_COUNT).fill('') }));
+    inputRefs.current[0]?.focus();
+  };
+
+  const handleResend = async () => {
+    if (resendLoading) return;
+    setResendLoading(true);
+    try {
+      const phoneE164 = phoneE164FromNationalDigits(form.phoneNational);
+      if (phoneE164) {
+        await candidateSendOtp(phoneE164);
+      }
+      if (onResend) {
+        await onResend(); // call parent's resend API if provided
+      }
+      // Always reset UI
+      setTimer(SMS_RESEND_COUNTDOWN_SEC);
+      resetOtpAndFocus();
+    } catch (error) {
+      console.error('Resend failed', error);
+    } finally {
+      setResendLoading(false);
+    }
+  };
+
   const allFilled = form.otp.every((d) => d !== '');
+  const timerExpired = timer <= 0;
   const timerStr = `${String(Math.floor(timer / 60)).padStart(2, '0')}:${String(timer % 60).padStart(2, '0')}`;
 
   return (
@@ -1144,13 +1173,31 @@ function Screen3({
             />
           ))}
         </div>
-        <p className="text-center tabular-nums" style={{ fontSize: 12, color: C.muted }}>
-          Qayta yuborish: <span style={{ color: C.blue }}>{timerStr}</span>
-        </p>
+
+        {/* Show timer or resend prompt (only text, button will be in footer) */}
+        <div className="text-center">
+          {!timerExpired ? (
+            <p className="tabular-nums" style={{ fontSize: 12, color: C.muted }}>
+              Qayta yuborish: <span style={{ color: C.blue }}>{timerStr}</span>
+            </p>
+          ) : (
+            <p style={{ fontSize: 12, color: C.muted }}>Kod kelmadi?</p>
+          )}
+        </div>
       </ScreenScroll>
       <ScreenFooter>
         <InlineNoticeBar notice={notice} />
-        <PrimaryButton onClick={onNext} disabled={!allFilled} loading={busy}>
+
+        {/* Resend button – appears above Tasdiqlash when timer expired */}
+        <div className="mb-2">
+          {timerExpired && (
+            <PrimaryButton onClick={handleResend} loading={resendLoading} disabled={resendLoading}>
+              Qayta jo‘natish
+            </PrimaryButton>
+          )}
+        </div>
+
+        <PrimaryButton onClick={onNext} disabled={!allFilled || busy} loading={busy}>
           Tasdiqlash
         </PrimaryButton>
       </ScreenFooter>
@@ -1158,7 +1205,20 @@ function Screen3({
   );
 }
 
-function Screen4Personal({
+
+
+
+const MONTHS = [
+  'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+  'Iyul', 'Avgust', 'Sentabr', 'Oktabr', 'Noyabr', 'Dekabr',
+];
+
+const getDaysInMonth = (year: number, month: number) => {
+  // month is 1-based (1..12)
+  return new Date(year, month, 0).getDate();
+};
+
+export function Screen4Personal({
   onNext,
   onBack,
   form,
@@ -1175,14 +1235,122 @@ function Screen4Personal({
 }) {
   const fnOk = form.profileFirstName.trim().length > 0;
   const lnOk = form.profileLastName.trim().length > 0;
+
+  // ---------- Date picker state ----------
+  const [day, setDay] = useState<string>('');
+  const [month, setMonth] = useState<string>('');
+  const [year, setYear] = useState<string>('');
+  const [dateTouched, setDateTouched] = useState(false);
+  const isInternalUpdate = useRef(false); // prevents update loops
+
+  // Sync local state with form.profileDateBirth (external changes)
+  useEffect(() => {
+    if (isInternalUpdate.current) {
+      isInternalUpdate.current = false;
+      return;
+    }
+    if (form.profileDateBirth) {
+      const parts = form.profileDateBirth.split('-');
+      if (parts.length === 3) {
+        const [y, m, d] = parts;
+        setYear(y);
+        setMonth(m);
+        setDay(d);
+      } else {
+        setYear('');
+        setMonth('');
+        setDay('');
+      }
+    } else {
+      setYear('');
+      setMonth('');
+      setDay('');
+      setDateTouched(false);
+    }
+  }, [form.profileDateBirth]);
+
+  // Adjust day when month/year changes (if current day exceeds max days)
+  useEffect(() => {
+    if (year && month && day) {
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const d = parseInt(day, 10);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        const maxDays = getDaysInMonth(y, m);
+        if (d > maxDays) {
+          setDay(''); // reset invalid day
+        }
+      }
+    }
+  }, [year, month, day]);
+
+  // Update form when day/month/year change (if valid)
+  useEffect(() => {
+    if (year && month && day) {
+      const y = parseInt(year, 10);
+      const m = parseInt(month, 10);
+      const d = parseInt(day, 10);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+        const maxDays = getDaysInMonth(y, m);
+        if (d <= maxDays) {
+          const dateStr = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          if (form.profileDateBirth !== dateStr) {
+            isInternalUpdate.current = true;
+            setForm((f) => ({ ...f, profileDateBirth: dateStr }));
+          }
+          return;
+        }
+      }
+    }
+    // If date is incomplete or invalid, clear the form field
+    if (form.profileDateBirth !== '') {
+      isInternalUpdate.current = true;
+      setForm((f) => ({ ...f, profileDateBirth: '' }));
+    }
+  }, [day, month, year, setForm, form.profileDateBirth]);
+
   const dateOk = /^\d{4}-\d{2}-\d{2}$/.test(form.profileDateBirth);
   const canContinue = fnOk && lnOk && dateOk;
-  const dateMax = new Date().toISOString().slice(0, 10);
 
+  // Days list based on selected month/year
+  const days = useMemo(() => {
+    if (!year || !month) return Array.from({ length: 31 }, (_, i) => (i + 1).toString());
+    const y = parseInt(year, 10);
+    const m = parseInt(month, 10);
+    if (isNaN(y) || isNaN(m)) return Array.from({ length: 31 }, (_, i) => (i + 1).toString());
+    const maxDays = getDaysInMonth(y, m);
+    return Array.from({ length: maxDays }, (_, i) => (i + 1).toString());
+  }, [year, month]);
+
+  const currentYear = new Date().getFullYear();
+  const years = useMemo(() => {
+    const yrs = [];
+    for (let y = currentYear; y >= 1940; y--) {
+      yrs.push(y.toString());
+    }
+    return yrs;
+  }, [currentYear]);
+
+  // months as '01'..'12' for YYYY-MM-DD formatting
+  const months = useMemo(() => MONTHS.map((_, idx) => (idx + 1).toString().padStart(2, '0')), []);
+
+  const handleDayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setDateTouched(true);
+    setDay(e.target.value);
+  };
+  const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setDateTouched(true);
+    setMonth(e.target.value);
+  };
+  const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setDateTouched(true);
+    setYear(e.target.value);
+  };
+
+  // ---------- Region & district logic ----------
   const [catalogRegions, setCatalogRegions] = useState<PublicRegion[]>([]);
   const [catalogDistricts, setCatalogDistricts] = useState<PublicDistrict[]>([]);
   const [districtsLoading, setDistrictsLoading] = useState(false);
-
   const addressRegionId = resolvePublicRegionId(form.addressRegion);
 
   useEffect(() => {
@@ -1197,8 +1365,7 @@ function Screen4Personal({
     if (id != null && form.addressRegion !== String(id)) {
       setForm((f) => ({ ...f, addressRegion: String(id) }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- viloyat nomi → id bir marta
-  }, [catalogRegions]);
+  }, [catalogRegions, form.addressRegion, setForm]);
 
   useEffect(() => {
     if (addressRegionId == null) {
@@ -1253,50 +1420,121 @@ function Screen4Personal({
         <div className="mt-4 min-w-0">
           <SectionLabel>Jins</SectionLabel>
           <div className="mt-2 grid min-w-0 w-full grid-cols-2 gap-2.5">
-          {(['ERKAK', 'AYOL'] as const).map((g) => {
-            const sel = form.profileGender === g;
-            const label = g === 'ERKAK' ? 'Erkak' : 'Ayol';
-            return (
-              <button
-                key={g}
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, profileGender: g }))}
-                className="rounded-[14px] py-3.5 text-center text-sm font-semibold transition-all active:scale-[0.98]"
+            {(['ERKAK', 'AYOL'] as const).map((g) => {
+              const sel = form.profileGender === g;
+              const label = g === 'ERKAK' ? 'Erkak' : 'Ayol';
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, profileGender: g }))}
+                  className="rounded-[14px] py-3.5 text-center text-sm font-semibold transition-all active:scale-[0.98]"
+                  style={{
+                    border: `1.5px solid ${sel ? C.blue : C.border}`,
+                    backgroundColor: sel ? C.blueSelected : C.card,
+                    color: sel ? C.blueL : C.muted,
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Date picker – three selects with custom arrow */}
+        <div className="mt-4 min-w-0">
+          <SectionLabel>Tug'ilgan sana</SectionLabel>
+          <div className="mt-2 grid grid-cols-3 gap-2">
+            <div className="relative">
+              <select
+                value={day}
+                onChange={handleDayChange}
+                className="w-full box-border min-h-[52px] rounded-[14px] px-3 py-3 text-base outline-none appearance-none cursor-pointer"
                 style={{
-                  border: `1.5px solid ${sel ? C.blue : C.border}`,
-                  backgroundColor: sel ? C.blueSelected : C.card,
-                  color: sel ? C.blueL : C.muted,
+                  border: `1.5px solid ${day ? C.blue : C.border}`,
+                  backgroundColor: C.card,
+                  color: C.text,
+                  fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
                 }}
               >
-                {label}
-              </button>
-            );
-          })}
-        </div>
+                <option value="">Kun</option>
+                {days.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="relative">
+              <select
+                value={month}
+                onChange={handleMonthChange}
+                className="w-full box-border min-h-[52px] rounded-[14px] px-3 py-3 text-base outline-none appearance-none cursor-pointer"
+                style={{
+                  border: `1.5px solid ${month ? C.blue : C.border}`,
+                  backgroundColor: C.card,
+                  color: C.text,
+                  fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+                }}
+              >
+                <option value="">Oy</option>
+                {months.map((m) => {
+                  const idx = parseInt(m, 10);
+                  return (
+                    <option key={m} value={m}>
+                      {MONTHS[idx - 1]}
+                    </option>
+                  );
+                })}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+
+            <div className="relative">
+              <select
+                value={year}
+                onChange={handleYearChange}
+                className="w-full box-border min-h-[52px] rounded-[14px] px-3 py-3 text-base outline-none appearance-none cursor-pointer"
+                style={{
+                  border: `1.5px solid ${year ? C.blue : C.border}`,
+                  backgroundColor: C.card,
+                  color: C.text,
+                  fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+                }}
+              >
+                <option value="">Yil</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y}
+                  </option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </div>
+          </div>
+          {dateTouched && !dateOk && (day || month || year) && (
+            <p className="mt-1 text-xs" style={{ color: '#ef4444' }}>
+              Iltimos, to'liq va to'g'ri sanani tanlang
+            </p>
+          )}
         </div>
 
-        <div className="mt-4 min-w-0">
-          <SectionLabel>Tug‘ilgan sana</SectionLabel>
-          <input
-            type="date"
-            min="1940-01-01"
-            max={dateMax}
-            value={dateOk ? form.profileDateBirth : ''}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v) setForm((f) => ({ ...f, profileDateBirth: v }));
-            }}
-            className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
-            style={{
-              border: `1.5px solid ${dateOk ? C.blue : C.border}`,
-              backgroundColor: C.card,
-              color: C.text,
-              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
-            }}
-            aria-label="Tug‘ilgan sana"
-          />
-        </div>
-
+        {/* Address fields */}
         <div className="mt-4 min-w-0">
           <SectionLabel>Viloyat</SectionLabel>
           <select
@@ -1309,7 +1547,6 @@ function Screen4Personal({
               color: C.text,
               fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
             }}
-            aria-label="Viloyat"
           >
             <option value="">Viloyatni tanlang</option>
             {catalogRegions.map((r) => (
@@ -1333,7 +1570,6 @@ function Screen4Personal({
               color: C.text,
               fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
             }}
-            aria-label="Tuman"
           >
             <option value="">{districtsLoading ? 'Yuklanmoqda…' : 'Tumanni tanlang'}</option>
             {catalogDistricts.map((d) => (
@@ -1358,7 +1594,6 @@ function Screen4Personal({
               color: C.text,
               fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
             }}
-            aria-label="MFY"
           />
         </div>
 
@@ -1366,7 +1601,7 @@ function Screen4Personal({
           <SectionLabel>Manzil</SectionLabel>
           <input
             type="text"
-            placeholder="Ko‘cha, uy raqami"
+            placeholder="Ko'cha, uy raqami"
             value={form.address}
             onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
             className="mt-2 box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none transition-colors"
@@ -1376,19 +1611,24 @@ function Screen4Personal({
               color: C.text,
               fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
             }}
-            aria-label="Manzil"
           />
         </div>
       </ScreenScroll>
       <ScreenFooter>
         <InlineNoticeBar notice={notice} />
-        <PrimaryButton onClick={onNext} disabled={!canContinue} loading={busy}>
+        <PrimaryButton onClick={onNext} disabled={!canContinue || busy} loading={busy}>
           Keyingi
         </PrimaryButton>
       </ScreenFooter>
     </div>
   );
 }
+
+
+// Only PRIMARY and SECONDARY should NOT show the specialty field
+const LEVELS_WITHOUT_SPECIALTY: readonly string[] = ["PRIMARY", "SECONDARY"];
+
+
 
 function Screen5Education({
   onNext,
@@ -1403,10 +1643,10 @@ function Screen5Education({
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   busy?: boolean;
 }) {
-  type Panel = 'level' | 'region' | 'university' | 'details';
+  type Panel = "level" | "region" | "university" | "details";
 
-  const [panel, setPanel] = useState<Panel>('level');
-  const [uniSearch, setUniSearch] = useState('');
+  const [panel, setPanel] = useState<Panel>("level");
+  const [uniSearch, setUniSearch] = useState("");
   const [catalogRegions, setCatalogRegions] = useState<PublicRegion[]>([]);
   const [apiUniversities, setApiUniversities] = useState<PublicUniversity[]>([]);
   const [uniLoading, setUniLoading] = useState(false);
@@ -1418,7 +1658,7 @@ function Screen5Education({
   }, []);
 
   useEffect(() => {
-    if (panel !== 'university' || form.educationRegionId == null) {
+    if (panel !== "university" || form.educationRegionId == null) {
       setApiUniversities([]);
       return;
     }
@@ -1429,30 +1669,29 @@ function Screen5Education({
       .finally(() => setUniLoading(false));
   }, [panel, form.educationRegionId]);
 
-  /** Qoralama: foydalanuvchi darajani tanlagan bo‘lsa, qolgan qadamga qaytish */
+  // Restore panel based on existing form data
   useEffect(() => {
     if (!form.educationLevel.trim()) {
-      setPanel('level');
+      setPanel("level");
       return;
     }
     if (form.educationGraduationYear != null && form.educationInstitutionName.trim()) {
-      setPanel('details');
+      setPanel("details");
       return;
     }
     if (form.educationInstitutionName.trim() || form.educationUniversityId != null) {
-      setPanel('details');
+      setPanel("details");
       return;
     }
     if (form.educationRegionId != null && educationLevelUsesOtmPicker(form.educationLevel)) {
-      setPanel('university');
+      setPanel("university");
       return;
     }
     if (educationLevelUsesOtmPicker(form.educationLevel)) {
-      setPanel('region');
+      setPanel("region");
       return;
     }
-    setPanel('details');
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- faqat sahifaga kirganda qoralama tiklash
+    setPanel("details");
   }, []);
 
   const universities = useMemo(
@@ -1461,41 +1700,41 @@ function Screen5Education({
   );
 
   const handleTopBack = () => {
-    if (panel === 'level') {
+    if (panel === "level") {
       onBack();
       return;
     }
-    if (panel === 'region') {
-      setPanel('level');
+    if (panel === "region") {
+      setPanel("level");
       return;
     }
-    if (panel === 'details' && form.educationLevel && !educationLevelUsesOtmPicker(form.educationLevel)) {
-      setPanel('level');
+    if (panel === "details" && form.educationLevel && !educationLevelUsesOtmPicker(form.educationLevel)) {
+      setPanel("level");
       setForm((f) => ({
         ...f,
-        educationInstitutionName: '',
-        educationSpecialty: '',
+        educationInstitutionName: "",
+        educationSpecialty: "",
         educationGraduationYear: null,
       }));
       return;
     }
-    if (panel === 'university') {
-      setPanel('region');
-      setUniSearch('');
+    if (panel === "university") {
+      setPanel("region");
+      setUniSearch("");
       setForm((f) => ({
         ...f,
         educationRegionId: null,
         educationUniversityId: null,
-        educationInstitutionName: '',
+        educationInstitutionName: "",
       }));
       return;
     }
-    setPanel('university');
+    setPanel("university");
     setForm((f) => ({
       ...f,
       educationUniversityId: null,
-      educationInstitutionName: '',
-      educationSpecialty: '',
+      educationInstitutionName: "",
+      educationSpecialty: "",
       educationGraduationYear: null,
     }));
   };
@@ -1506,11 +1745,11 @@ function Screen5Education({
       educationLevel: level,
       educationRegionId: null,
       educationUniversityId: null,
-      educationInstitutionName: '',
-      educationSpecialty: '',
+      educationInstitutionName: "",
+      educationSpecialty: "",
       educationGraduationYear: null,
     }));
-    setPanel(educationLevelUsesOtmPicker(level) ? 'region' : 'details');
+    setPanel(educationLevelUsesOtmPicker(level) ? "region" : "details");
   };
 
   const selectRegion = (region: PublicRegion) => {
@@ -1518,20 +1757,20 @@ function Screen5Education({
       ...f,
       educationRegionId: region.id,
       educationUniversityId: null,
-      educationInstitutionName: '',
+      educationInstitutionName: "",
     }));
-    setUniSearch('');
-    setPanel('university');
+    setUniSearch("");
+    setPanel("university");
   };
 
   const selectUniversity = (u: PublicUniversity) => {
     setForm((f) => ({
       ...f,
       educationUniversityId: u.id,
-      educationInstitutionName: u.name ?? '',
-      educationCountry: 'UZB',
+      educationInstitutionName: u.name ?? "",
+      educationCountry: "UZB",
     }));
-    setPanel('details');
+    setPanel("details");
   };
 
   const canFinish =
@@ -1547,7 +1786,10 @@ function Screen5Education({
     fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
   };
   const ctl =
-    'mt-2 box-border min-h-[48px] w-full rounded-[14px] border px-3.5 py-2.5 text-[15px] outline-none focus:border-[#2980B9]';
+    "mt-2 box-border min-h-[48px] w-full rounded-[14px] border px-3.5 py-2.5 text-[15px] outline-none focus:border-[#2980B9]";
+
+  // Show specialty for all levels except PRIMARY and SECONDARY
+  const showSpecialty = form.educationLevel && !LEVELS_WITHOUT_SPECIALTY.includes(form.educationLevel);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -1560,24 +1802,24 @@ function Screen5Education({
               fontSize: 28,
               fontWeight: 700,
               color: C.text,
-              letterSpacing: '-0.5px',
+              letterSpacing: "-0.5px",
               fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
             }}
           >
-            {panel === 'level'
-              ? 'Ta’lim darajasi'
-              : panel === 'region'
-                ? 'Viloyat'
-                : panel === 'university'
-                  ? 'OTM'
-                  : 'Ta’lim tafsilotlari'}
+            {panel === "level"
+              ? "Ta’lim darajasi"
+              : panel === "region"
+                ? "Viloyat"
+                : panel === "university"
+                  ? "OTM"
+                  : "Ta’lim tafsilotlari"}
           </h2>
         </div>
 
-        {panel !== 'level' && form.educationLevel ? (
+        {panel !== "level" && form.educationLevel ? (
           <button
             type="button"
-            onClick={() => setPanel('level')}
+            onClick={() => setPanel("level")}
             className="mb-3 flex w-full items-center justify-between rounded-[12px] border px-3 py-2.5 text-left transition-all active:scale-[0.98]"
             style={{ borderColor: C.border, backgroundColor: C.card2 }}
           >
@@ -1590,7 +1832,7 @@ function Screen5Education({
           </button>
         ) : null}
 
-        {panel === 'level' ? (
+        {panel === "level" ? (
           <div className="grid gap-2 pb-2">
             {EDUCATION_LEVEL_SELECT_ORDER.map((code) => (
               <OptionCard
@@ -1611,7 +1853,7 @@ function Screen5Education({
           </div>
         ) : null}
 
-        {panel === 'region' && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
+        {panel === "region" && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
           <div className="grid gap-2 pb-2">
             {catalogRegions.map((region) => (
               <OptionCard
@@ -1629,7 +1871,7 @@ function Screen5Education({
           </div>
         ) : null}
 
-        {panel === 'university' && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
+        {panel === "university" && form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
           <div className="pb-2">
             <input
               type="search"
@@ -1659,14 +1901,14 @@ function Screen5Education({
                       <span
                         className="rounded-md px-1.5 py-0.5 text-[10px] font-semibold uppercase"
                         style={{
-                          backgroundColor: u.type === 'davlat' ? `${C.blue}22` : `${C.gold}22`,
-                          color: u.type === 'davlat' ? C.blueL : C.gold,
+                          backgroundColor: u.type === "davlat" ? `${C.blue}22` : `${C.gold}22`,
+                          color: u.type === "davlat" ? C.blueL : C.gold,
                         }}
                       >
-                        {u.type === 'davlat' ? 'Davlat' : u.type === 'nodavlat' ? 'Nodavlat' : (u.type ?? '—')}
+                        {u.type === "davlat" ? "Davlat" : u.type === "nodavlat" ? "Nodavlat" : (u.type ?? "—")}
                       </span>
                     }
-                    title={u.name ?? '—'}
+                    title={u.name ?? "—"}
                   />
                 ))
               )}
@@ -1674,14 +1916,14 @@ function Screen5Education({
           </div>
         ) : null}
 
-        {panel === 'details' ? (
+        {panel === "details" ? (
           <div className="pb-2">
             {form.educationLevel && educationLevelUsesOtmPicker(form.educationLevel) ? (
               <p
                 className="mb-3 rounded-[12px] border px-3 py-2.5 text-[13px]"
                 style={{ borderColor: C.border, color: C.text, backgroundColor: C.card2 }}
               >
-                {form.educationInstitutionName || '—'}
+                {form.educationInstitutionName || "—"}
               </p>
             ) : (
               <label className="mb-3 block">
@@ -1695,30 +1937,35 @@ function Screen5Education({
                     setForm((f) => ({
                       ...f,
                       educationInstitutionName: e.target.value,
-                      educationCountry: 'UZB',
+                      educationCountry: "UZB",
                     }))
                   }
                   placeholder="Maktab, kollej yoki boshqa muassasa"
                 />
               </label>
             )}
-            <label className="block">
-              <SectionLabel>Mutaxassislik</SectionLabel>
-              <input
-                type="text"
-                className={ctl}
-                style={fieldStyle}
-                value={form.educationSpecialty}
-                onChange={(e) => setForm((f) => ({ ...f, educationSpecialty: e.target.value }))}
-                placeholder="Masalan: Iqtisodiyot"
-              />
-            </label>
-            <label className="mt-4 block">
+
+            {/* Specialty field – shown for all levels except PRIMARY and SECONDARY */}
+            {showSpecialty && (
+              <label className="block">
+                <SectionLabel>Mutaxassislik</SectionLabel>
+                <input
+                  type="text"
+                  className={ctl}
+                  style={fieldStyle}
+                  value={form.educationSpecialty}
+                  onChange={(e) => setForm((f) => ({ ...f, educationSpecialty: e.target.value }))}
+                  placeholder="Masalan: Iqtisodiyot"
+                />
+              </label>
+            )}
+
+            <label className={`block ${showSpecialty ? "mt-4" : ""}`}>
               <SectionLabel>Tugatgan yili</SectionLabel>
               <select
                 className={ctl}
                 style={fieldStyle}
-                value={form.educationGraduationYear ?? ''}
+                value={form.educationGraduationYear ?? ""}
                 onChange={(e) => {
                   const v = e.target.value;
                   setForm((f) => ({
@@ -1739,7 +1986,7 @@ function Screen5Education({
         ) : null}
       </ScreenScroll>
       <ScreenFooter>
-        {panel === 'details' ? (
+        {panel === "details" ? (
           <PrimaryButton
             onClick={() => void Promise.resolve(onNext())}
             disabled={!canFinish || busy}
@@ -1755,6 +2002,14 @@ function Screen5Education({
   );
 }
 
+
+
+
+// Years range: 0 to 40
+const YEAR_OPTIONS = Array.from({ length: 41 }, (_, i) => i);
+// Months range: 0 to 11
+const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
+
 function Screen6Work({
   onNext,
   onBack,
@@ -1768,24 +2023,38 @@ function Screen6Work({
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
   busy?: boolean;
 }) {
-  type Panel = 'category' | 'profession' | 'otherDetail' | 'experience';
+  type Panel = "category" | "profession" | "otherDetail" | "experience";
 
   const [panel, setPanel] = useState<Panel>(() => {
     const years = form.workExperienceYears;
-    const hasNamedProfession = form.workProfessionId != null && form.workProfessionId > 0;
+    const hasNamedProfession =
+      form.workProfessionId != null && form.workProfessionId > 0;
     const hasOtherReady =
       form.workIsOtherProfession && form.workCustomProfessionName.trim().length > 0;
-    if (years != null && (hasNamedProfession || hasOtherReady)) return 'experience';
-    if (form.workIsOtherProfession) return 'otherDetail';
-    if (form.workProfessionCategoryId != null) return 'profession';
-    return 'category';
+    if (years != null && (hasNamedProfession || hasOtherReady)) return "experience";
+    if (form.workIsOtherProfession) return "otherDetail";
+    if (form.workProfessionCategoryId != null) return "profession";
+    return "category";
   });
+
+  // Local state for experience picker (years + months)
+  const [expYears, setExpYears] = useState<number>(() => {
+    if (form.workExperienceYears == null) return 0;
+    return Math.floor(form.workExperienceYears);
+  });
+  const [expMonths, setExpMonths] = useState<number>(() => {
+    if (form.workExperienceYears == null) return 0;
+    const fractional = form.workExperienceYears - Math.floor(form.workExperienceYears);
+    return Math.round(fractional * 12);
+  });
+
   const [categories, setCategories] = useState<ProfessionCategoryDto[]>([]);
   const [professions, setProfessions] = useState<ProfessionDto[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
   const [profsLoading, setProfsLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
+  // Load categories on mount
   useEffect(() => {
     let cancelled = false;
     setCatsLoading(true);
@@ -1795,7 +2064,7 @@ function Screen6Work({
         if (!cancelled) setCategories(c);
       })
       .catch((e) => {
-        if (!cancelled) setLoadErr(candidatePortalError(e, 'Kasb kategoriyalari yuklanmadi.'));
+        if (!cancelled) setLoadErr(candidatePortalError(e, "Kasb kategoriyalari yuklanmadi."));
       })
       .finally(() => {
         if (!cancelled) setCatsLoading(false);
@@ -1805,6 +2074,7 @@ function Screen6Work({
     };
   }, []);
 
+  // Load professions when category changes
   useEffect(() => {
     const catId = form.workProfessionCategoryId;
     if (catId == null) {
@@ -1819,7 +2089,7 @@ function Screen6Work({
         if (!cancelled) setProfessions(list);
       })
       .catch((e) => {
-        if (!cancelled) setLoadErr(candidatePortalError(e, 'Kasblar ro‘yxati yuklanmadi.'));
+        if (!cancelled) setLoadErr(candidatePortalError(e, "Kasblar ro‘yxati yuklanmadi."));
       })
       .finally(() => {
         if (!cancelled) setProfsLoading(false);
@@ -1829,37 +2099,55 @@ function Screen6Work({
     };
   }, [form.workProfessionCategoryId]);
 
+  // Update form.workExperienceYears whenever expYears or expMonths change
+  useEffect(() => {
+    const totalYears = expYears + expMonths / 12;
+    // Avoid rounding errors: keep 2 decimals
+    const rounded = Math.round(totalYears * 100) / 100;
+    if (form.workExperienceYears !== rounded) {
+      setForm((f) => ({ ...f, workExperienceYears: rounded }));
+    }
+  }, [expYears, expMonths, setForm, form.workExperienceYears]);
+
+  // Navigation handlers
   const handleTopBack = () => {
-    if (panel === 'category') {
+    if (panel === "category") {
       onBack();
       return;
     }
-    if (panel === 'profession') {
-      setPanel('category');
+    if (panel === "profession") {
+      setPanel("category");
       setProfessions([]);
       setForm((f) => ({
         ...f,
         workProfessionCategoryId: null,
         workProfessionId: null,
         workIsOtherProfession: false,
-        workCustomProfessionName: '',
+        workCustomProfessionName: "",
         workExperienceYears: null,
       }));
+      setExpYears(0);
+      setExpMonths(0);
       return;
     }
-    if (panel === 'otherDetail') {
-      setPanel('profession');
+    if (panel === "otherDetail") {
+      setPanel("profession");
       setForm((f) => ({
         ...f,
         workIsOtherProfession: false,
-        workCustomProfessionName: '',
+        workCustomProfessionName: "",
         workProfessionId: null,
         workExperienceYears: null,
       }));
+      setExpYears(0);
+      setExpMonths(0);
       return;
     }
-    setPanel(form.workIsOtherProfession ? 'otherDetail' : 'profession');
+    // from experience → back to profession/otherDetail
+    setPanel(form.workIsOtherProfession ? "otherDetail" : "profession");
     setForm((f) => ({ ...f, workExperienceYears: null }));
+    setExpYears(0);
+    setExpMonths(0);
   };
 
   const selectCategory = (catId: number) => {
@@ -1868,10 +2156,12 @@ function Screen6Work({
       workProfessionCategoryId: catId,
       workProfessionId: null,
       workIsOtherProfession: false,
-      workCustomProfessionName: '',
+      workCustomProfessionName: "",
       workExperienceYears: null,
     }));
-    setPanel('profession');
+    setExpYears(0);
+    setExpMonths(0);
+    setPanel("profession");
   };
 
   const selectProfessionRow = (p: ProfessionDto) => {
@@ -1880,10 +2170,12 @@ function Screen6Work({
       workProfessionId: p.id,
       workProfessionCategoryId: p.category_id,
       workIsOtherProfession: false,
-      workCustomProfessionName: '',
+      workCustomProfessionName: "",
       workExperienceYears: null,
     }));
-    setPanel('experience');
+    setExpYears(0);
+    setExpMonths(0);
+    setPanel("experience");
   };
 
   const selectOtherProfession = () => {
@@ -1891,10 +2183,12 @@ function Screen6Work({
       ...f,
       workProfessionId: 0,
       workIsOtherProfession: true,
-      workCustomProfessionName: '',
+      workCustomProfessionName: "",
       workExperienceYears: null,
     }));
-    setPanel('otherDetail');
+    setExpYears(0);
+    setExpMonths(0);
+    setPanel("otherDetail");
   };
 
   const otherNameOk = form.workCustomProfessionName.trim().length > 0;
@@ -1913,10 +2207,12 @@ function Screen6Work({
       workProfessionCategoryId: null,
       workProfessionId: null,
       workIsOtherProfession: false,
-      workCustomProfessionName: '',
+      workCustomProfessionName: "",
       workExperienceYears: null,
     }));
-    setPanel('category');
+    setExpYears(0);
+    setExpMonths(0);
+    setPanel("category");
     setProfessions([]);
   };
 
@@ -1926,7 +2222,7 @@ function Screen6Work({
       ? [...form.workExperienceEntries, addition]
       : [...form.workExperienceEntries];
     if (merged.length === 0) {
-      toast.error('Kamida bitta ish tajribasini tanlang.');
+      toast.error("Kamida bitta ish tajribasini tanlang.");
       return;
     }
     setForm((f) => ({
@@ -1935,19 +2231,31 @@ function Screen6Work({
       workProfessionCategoryId: null,
       workProfessionId: null,
       workIsOtherProfession: false,
-      workCustomProfessionName: '',
+      workCustomProfessionName: "",
       workExperienceYears: null,
     }));
     void Promise.resolve(onNext());
   };
 
   const primaryDisabled =
-    panel === 'otherDetail' ? !otherNameOk : panel === 'experience' ? false : true;
+    panel === "otherDetail" ? !otherNameOk : panel === "experience" ? false : true;
+
   const primaryAction = () => {
-    if (panel === 'otherDetail' && otherNameOk) {
-      setPanel('experience');
+    if (panel === "otherDetail" && otherNameOk) {
+      setPanel("experience");
       return;
     }
+  };
+
+  // Format the selected experience for display
+  const formatExperience = (totalYears: number | null): string => {
+    if (totalYears == null) return "";
+    const years = Math.floor(totalYears);
+    const months = Math.round((totalYears - years) * 12);
+    if (years === 0 && months === 0) return "0 yil";
+    if (years === 0) return `${months} oy`;
+    if (months === 0) return `${years} yil`;
+    return `${years} yil ${months} oy`;
   };
 
   return (
@@ -1960,26 +2268,31 @@ function Screen6Work({
             fontSize: 28,
             fontWeight: 700,
             color: C.text,
-            letterSpacing: '-0.5px',
+            letterSpacing: "-0.5px",
             fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
           }}
         >
-          {panel === 'category'
-            ? 'Kasb yo‘nalishingiz'
-            : panel === 'profession'
-              ? 'Aniq kasbingiz'
-              : panel === 'otherDetail'
-                ? 'Kasb nomi'
-                : 'Ish tajribangiz'}
+          {panel === "category"
+            ? "Ish tajribangiz"
+            : panel === "profession"
+              ? "Aniq yoʻnalishingiz"
+              : panel === "otherDetail"
+                ? "Kasb nomi"
+                : "Ish tajribangiz"}
         </h2>
+
         {loadErr ? (
-          <p className="mb-3 rounded-xl px-3 py-2.5 text-center text-[13px]" style={{ backgroundColor: `${C.red}18`, color: C.text }}>
+          <p
+            className="mb-3 rounded-xl px-3 py-2.5 text-center text-[13px]"
+            style={{ backgroundColor: `${C.red}18`, color: C.text }}
+          >
             {loadErr}
           </p>
         ) : null}
 
-        {panel === 'category' ? (
-          catsLoading ? (
+        {/* Category selection */}
+        {panel === "category" &&
+          (catsLoading ? (
             <div className="flex flex-col items-center justify-start gap-3 py-12">
               <Loader2 className="h-8 w-8 animate-spin" style={{ color: C.blueL }} />
               <span style={{ fontSize: 14, color: C.muted }}>Kasblar yuklanmoqda…</span>
@@ -1992,16 +2305,16 @@ function Screen6Work({
                   selected={false}
                   onClick={() => selectCategory(c.id)}
                   left={<ProfessionCategoryIcon icon={c.icon} />}
-                  title={c.name_uz || c.name_ru || 'Kategoriya'}
-                  desc={c.name_ru && c.name_uz !== c.name_ru ? c.name_ru : 'Tanlash'}
+                  title={c.name_uz || c.name_ru || "Kategoriya"}
+                  desc={c.name_ru && c.name_uz !== c.name_ru ? c.name_ru : "Tanlash"}
                 />
               ))}
             </div>
-          )
-        ) : null}
+          ))}
 
-        {panel === 'profession' ? (
-          profsLoading ? (
+        {/* Profession selection */}
+        {panel === "profession" &&
+          (profsLoading ? (
             <div className="flex flex-col items-center justify-start gap-3 py-12">
               <Loader2 className="h-7 w-7 animate-spin" style={{ color: C.blueL }} />
               <span style={{ fontSize: 13, color: C.muted }}>Kasblar yuklanmoqda…</span>
@@ -2021,8 +2334,8 @@ function Screen6Work({
                       💼
                     </div>
                   }
-                  title={p.name_uz || p.name_ru || 'Kasb'}
-                  desc={p.name_ru && p.name_uz !== p.name_ru ? p.name_ru : 'Tanlash'}
+                  title={p.name_uz || p.name_ru || "Kasb"}
+                  desc={p.name_ru && p.name_uz !== p.name_ru ? p.name_ru : "Tanlash"}
                 />
               ))}
               <OptionCard
@@ -2040,17 +2353,23 @@ function Screen6Work({
                 desc="Ro‘yxatda yo‘q"
               />
             </div>
-          )
-        ) : null}
+          ))}
 
-        {panel === 'otherDetail' ? (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.2 }}>
+        {/* Custom profession name input */}
+        {panel === "otherDetail" && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+          >
             <input
               type="text"
               autoFocus
               placeholder="Masalan: CNC operator"
               value={form.workCustomProfessionName}
-              onChange={(e) => setForm((f) => ({ ...f, workCustomProfessionName: e.target.value }))}
+              onChange={(e) =>
+                setForm((f) => ({ ...f, workCustomProfessionName: e.target.value }))
+              }
               className="box-border min-h-[52px] w-full min-w-0 max-w-full rounded-[14px] px-4 py-3 text-base outline-none"
               style={{
                 border: `1.5px solid ${otherNameOk ? C.blue : C.border}`,
@@ -2060,74 +2379,138 @@ function Screen6Work({
               }}
             />
           </motion.div>
-        ) : null}
+        )}
 
-        {panel === 'experience' ? (
-          <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22 }} className="pb-2">
-            <div className="grid grid-cols-3 gap-2.5">
-              {WORK_EXPERIENCE_YEAR_OPTIONS.map((y) => {
-                const sel = form.workExperienceYears === y;
-                return (
-                  <button
-                    key={y}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, workExperienceYears: y }))}
-                    className="rounded-[14px] py-4 text-center text-[15px] font-bold tabular-nums transition-all active:scale-[0.98]"
-                    style={{
-                      border: `1.5px solid ${sel ? C.blue : C.border}`,
-                      backgroundColor: sel ? C.blueSelected : C.card,
-                      color: sel ? C.blueL : C.text,
-                      fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
-                    }}
-                  >
-                    {y} yil
-                  </button>
-                );
-              })}
+        {/* Experience picker: years + months */}
+        {panel === "experience" && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22 }}
+            className="pb-2"
+          >
+            <div className="grid grid-cols-2 gap-3">
+              {/* Years select */}
+              <div className="relative">
+                <select
+                  value={expYears}
+                  onChange={(e) => setExpYears(Number(e.target.value))}
+                  className="w-full box-border min-h-[52px] rounded-[14px] px-3 py-3 text-base outline-none appearance-none cursor-pointer"
+                  style={{
+                    border: `1.5px solid ${expYears !== undefined ? C.blue : C.border}`,
+                    backgroundColor: C.card,
+                    color: C.text,
+                    fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+                  }}
+                >
+                  <option value="">Yil</option>
+                  {YEAR_OPTIONS.map((y) => (
+                    <option key={y} value={y}>
+                      {y} {y === 1 ? "yil" : "yil"}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Months select */}
+              <div className="relative">
+                <select
+                  value={expMonths}
+                  onChange={(e) => setExpMonths(Number(e.target.value))}
+                  className="w-full box-border min-h-[52px] rounded-[14px] px-3 py-3 text-base outline-none appearance-none cursor-pointer"
+                  style={{
+                    border: `1.5px solid ${expMonths !== undefined ? C.blue : C.border}`,
+                    backgroundColor: C.card,
+                    color: C.text,
+                    fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+                  }}
+                >
+                  <option value="">Oy</option>
+                  {MONTH_OPTIONS.map((m) => (
+                    <option key={m} value={m}>
+                      {m} {m === 1 ? "oy" : "oy"}
+                    </option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 9l-7 7-7-7"
+                    />
+                  </svg>
+                </div>
+              </div>
             </div>
+
+            {/* Display selected total experience */}
+            {form.workExperienceYears != null && (
+              <p className="mt-3 text-center text-[13px]" style={{ color: C.blueL }}>
+                Tanlangan tajriba: {formatExperience(form.workExperienceYears)}
+              </p>
+            )}
           </motion.div>
-        ) : null}
+        )}
       </ScreenScroll>
-      {panel === 'otherDetail' ? (
+
+      {/* Footer actions */}
+      {panel === "otherDetail" ? (
         <ScreenFooter>
-          <PrimaryButton onClick={() => primaryAction()} disabled={primaryDisabled}>
+          <PrimaryButton onClick={primaryAction} disabled={primaryDisabled}>
             Davom etish
           </PrimaryButton>
         </ScreenFooter>
-      ) : panel === 'experience' ? (
+      ) : panel === "experience" ? (
         <ScreenFooter>
           <div className="flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={() => addAnotherWork()}
-            disabled={!canFinishExperience}
-            className="h-14 w-full rounded-2xl font-semibold transition-all active:scale-[0.98] disabled:opacity-45 disabled:active:scale-100"
-            style={{
-              fontSize: 15,
-              letterSpacing: '-0.2px',
-              backgroundColor: C.card,
-              color: C.text,
-              border: `1.5px solid ${C.border}`,
-              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
-            }}
-          >
-            Yana ish qo‘shish
-          </button>
-          <PrimaryButton
-            onClick={() => goNextWithWorkExperiences()}
-            disabled={(!canFinishExperience && form.workExperienceEntries.length === 0) || busy}
-            loading={busy}
-          >
-            Keyingi
-          </PrimaryButton>
+            <button
+              type="button"
+              onClick={addAnotherWork}
+              disabled={!canFinishExperience}
+              className="h-14 w-full rounded-2xl font-semibold transition-all active:scale-[0.98] disabled:opacity-45 disabled:active:scale-100"
+              style={{
+                fontSize: 15,
+                letterSpacing: "-0.2px",
+                backgroundColor: C.card,
+                color: C.text,
+                border: `1.5px solid ${C.border}`,
+                fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+              }}
+            >
+              Yana ish qo‘shish
+            </button>
+            <PrimaryButton
+              onClick={goNextWithWorkExperiences}
+              disabled={(!canFinishExperience && form.workExperienceEntries.length === 0) || busy}
+              loading={busy}
+            >
+              Keyingi
+            </PrimaryButton>
           </div>
         </ScreenFooter>
       ) : (
-        <div className="shrink-0" style={{ paddingBottom: 'var(--portal-footer-extra, 0px)' }} aria-hidden />
+        <div
+          className="shrink-0"
+          style={{ paddingBottom: "var(--portal-footer-extra, 0px)" }}
+          aria-hidden
+        />
       )}
     </div>
   );
 }
+
 
 function LanguageCertificateFileInput({
   inputId,
@@ -2556,6 +2939,10 @@ function Screen6({
   );
 }
 
+
+// Document definitions (adjust labels/types as needed)
+
+
 function Screen7Documents({
   onNext,
   onBack,
@@ -2571,6 +2958,7 @@ function Screen7Documents({
 }) {
   const [error, setError] = useState<string | null>(null);
 
+  // Required documents check (only passport & photo)
   const requiredMissing = DOCUMENT_TYPES.filter((d) => d.required && !form.documents[d.type]);
   const langsNeedingCert = form.languageSelections.filter((s) => s.hasCertificate);
   const langsCertMissing = langsNeedingCert.filter((s) => !s.certificateFile);
@@ -2591,17 +2979,25 @@ function Screen7Documents({
 
   const handleSubmit = () => {
     if (requiredMissing.length > 0) {
-      setError(`Iltimos, quyidagi hujjatlarni tanlang: ${requiredMissing.map((d) => d.label).join(', ')}`);
+      setError(
+        `Iltimos, quyidagi majburiy hujjatlarni tanlang: ${requiredMissing
+          .map((d) => d.label)
+          .join(", ")}`
+      );
       return;
     }
     const filesToUpload = DOCUMENT_TYPES.filter((d) => !!form.documents[d.type]);
-    if (filesToUpload.length === 0) {
-      setError('Hech qanday hujjat tanlanmadi.');
+    if (filesToUpload.length === 0 && langsNeedingCert.length === 0) {
+      setError("Hech qanday hujjat tanlanmadi.");
       return;
     }
     setError(null);
     void Promise.resolve(onNext());
   };
+
+  // Split documents into required and optional for ordering
+  const requiredDocs = DOCUMENT_TYPES.filter((d) => d.required);
+  const optionalDocs = DOCUMENT_TYPES.filter((d) => !d.required);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -2613,35 +3009,15 @@ function Screen7Documents({
             fontSize: 28,
             fontWeight: 700,
             color: C.text,
-            letterSpacing: '-0.5px',
+            letterSpacing: "-0.5px",
             fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
           }}
         >
           Hujjatlar
         </h2>
         <div className="mb-4 flex flex-col gap-4 pb-4">
-          {langsNeedingCert.length > 0 ? (
-            <div className="rounded-[16px] border p-4" style={{ borderColor: C.border, backgroundColor: C.card2 }}>
-              <p className="mb-3 font-semibold" style={{ color: C.text }}>
-                Til sertifikatlari
-              </p>
-              <div className="flex flex-col gap-3">
-                {langsNeedingCert.map((s) => (
-                  <div key={`doc-lang-${s.name}`}>
-                    <p className="mb-1 text-[13px] font-medium" style={{ color: C.text }}>
-                      {s.name} · {s.level}
-                    </p>
-                    <LanguageCertificateFileInput
-                      inputId={`doc-step-lang-cert-${s.name.replace(/\s+/g, '-')}`}
-                      file={s.certificateFile}
-                      onChange={(file) => setLanguageCertificateFile(s.name, file)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : null}
-          {DOCUMENT_TYPES.map((doc) => {
+          {/* Required documents (passport + photo) - shown first */}
+          {requiredDocs.map((doc) => {
             const selectedFile = form.documents[doc.type];
             const inputId = `doc-file-${doc.type}`;
             return (
@@ -2654,8 +3030,11 @@ function Screen7Documents({
                   <span className="font-semibold" style={{ color: C.text }}>
                     {doc.label}
                   </span>
-                  <span className="text-[11px] font-semibold uppercase" style={{ color: doc.required ? C.blue : C.muted }}>
-                    {doc.required ? 'Majburiy' : 'Ixtiyoriy'}
+                  <span
+                    className="text-[11px] font-semibold uppercase"
+                    style={{ color: C.blue }}
+                  >
+                    Majburiy
                   </span>
                 </div>
                 <input
@@ -2668,24 +3047,106 @@ function Screen7Documents({
                 <label
                   htmlFor={inputId}
                   className="flex min-h-[48px] cursor-pointer items-center justify-center rounded-[14px] border px-4 py-3 text-center text-sm font-semibold transition-all active:scale-[0.98]"
-                  style={{ borderColor: C.blue, backgroundColor: C.blueSelected, color: C.blueL }}
+                  style={{
+                    borderColor: C.blue,
+                    backgroundColor: selectedFile ? C.blueSelected : C.card,
+                    color: C.blueL,
+                  }}
                 >
-                  {selectedFile ? 'Boshqa fayl tanlash' : 'Fayl tanlash'}
+                  {selectedFile ? "Boshqa fayl tanlash" : "Fayl tanlash"}
                 </label>
                 <p className="mt-2 text-[12px]" style={{ color: C.muted }}>
                   {selectedFile
                     ? `Tanlangan: ${selectedFile.name}`
-                    : 'Rasm yoki PDF (maks. bir fayl)'}
+                    : "Rasm yoki PDF (maks. 10MB)"}
                 </p>
               </div>
             );
           })}
+
+          {/* Optional documents (diploma, certificate, other) */}
+          {optionalDocs.map((doc) => {
+            const selectedFile = form.documents[doc.type];
+            const inputId = `doc-file-${doc.type}`;
+            return (
+              <div
+                key={doc.type}
+                className="rounded-[16px] border p-4"
+                style={{ borderColor: C.border, backgroundColor: C.card2 }}
+              >
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <span className="font-semibold" style={{ color: C.text }}>
+                    {doc.label}
+                  </span>
+                  <span
+                    className="text-[11px] font-semibold uppercase"
+                    style={{ color: C.muted }}
+                  >
+                    Ixtiyoriy
+                  </span>
+                </div>
+                <input
+                  id={inputId}
+                  type="file"
+                  accept="image/*,.pdf"
+                  className="sr-only"
+                  onChange={(e) => handleFileChange(doc.type, e.target.files?.[0] ?? null)}
+                />
+                <label
+                  htmlFor={inputId}
+                  className="flex min-h-[48px] cursor-pointer items-center justify-center rounded-[14px] border px-4 py-3 text-center text-sm font-semibold transition-all active:scale-[0.98]"
+                  style={{
+                    borderColor: C.border,
+                    backgroundColor: C.card,
+                    color: C.text,
+                  }}
+                >
+                  {selectedFile ? "Boshqa fayl tanlash" : "Fayl tanlash"}
+                </label>
+                <p className="mt-2 text-[12px]" style={{ color: C.muted }}>
+                  {selectedFile
+                    ? `Tanlangan: ${selectedFile.name}`
+                    : "Rasm yoki PDF (maks. 10MB)"}
+                </p>
+              </div>
+            );
+          })}
+
+          {/* Language certificates section (if any) */}
+          {langsNeedingCert.length > 0 && (
+            <div
+              className="rounded-[16px] border p-4"
+              style={{ borderColor: C.border, backgroundColor: C.card2 }}
+            >
+              <p className="mb-3 font-semibold" style={{ color: C.text }}>
+                Til sertifikatlari
+              </p>
+              <div className="flex flex-col gap-3">
+                {langsNeedingCert.map((s) => (
+                  <div key={`doc-lang-${s.name}`}>
+                    <p className="mb-1 text-[13px] font-medium" style={{ color: C.text }}>
+                      {s.name} · {s.level}
+                    </p>
+                    <LanguageCertificateFileInput
+                      inputId={`doc-step-lang-cert-${s.name.replace(/\s+/g, "-")}`}
+                      file={s.certificateFile}
+                      onChange={(file) => setLanguageCertificateFile(s.name, file)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-        {error ? (
-          <p className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-100" role="alert">
+
+        {error && (
+          <p
+            className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-100"
+            role="alert"
+          >
             {error}
           </p>
-        ) : null}
+        )}
       </ScreenScroll>
       <ScreenFooter>
         <PrimaryButton onClick={handleSubmit} disabled={!canContinue} loading={busy}>
@@ -2695,6 +3156,7 @@ function Screen7Documents({
     </div>
   );
 }
+
 
 function DesiredSalaryRangeBlock({
   form,
@@ -2922,7 +3384,7 @@ function Screen8({
             fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
           }}
         >
-          Qiziqishlar va maosh
+          Qaysi davlatda ishlamoqchisiz?
         </h2>
         <div className="mt-2">
           <SectionLabel>Qiziqishlar</SectionLabel>
@@ -2971,7 +3433,7 @@ function Screen8({
 
         <div className="mb-5 h-px w-full" style={{ backgroundColor: C.border }} aria-hidden />
 
-        <SectionLabel>Bandlik tayyorgarligi</SectionLabel>
+        <SectionLabel>Qachon migratsiya qilishga tayyorsiz?</SectionLabel>
         <div className="mb-6 mt-2 flex flex-col gap-2.5">
           {AVAILABILITY.map((a) => (
             <OptionCard
@@ -3304,7 +3766,7 @@ function summarizeProfileCompletion(profile: Record<string, unknown> | null): {
   const tc = profile.target_countries ?? profile.targetCountries;
   const countryEarned =
     (Array.isArray(tc) && tc.length > 0) ||
-    !!pickStr(profile, 'target_country_code', 'targetCountryCode', 'primary_target_country')
+      !!pickStr(profile, 'target_country_code', 'targetCountryCode', 'primary_target_country')
       ? 15
       : 0;
 
@@ -4698,16 +5160,16 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
     weList.length === 0
       ? ''
       : weList
-          .map((row, i) => {
-            if (!row || typeof row !== 'object') return '';
-            const o = row as Record<string, unknown>;
-            const d = pickStr(o, 'description');
-            const dur = formatWorkExperienceDuration(o);
-            const bits = [dur !== FIELD_EMPTY ? dur : '', d].filter(Boolean);
-            return bits.join(' — ') || `Qator ${i + 1}`;
-          })
-          .filter(Boolean)
-          .join(' · ');
+        .map((row, i) => {
+          if (!row || typeof row !== 'object') return '';
+          const o = row as Record<string, unknown>;
+          const d = pickStr(o, 'description');
+          const dur = formatWorkExperienceDuration(o);
+          const bits = [dur !== FIELD_EMPTY ? dur : '', d].filter(Boolean);
+          return bits.join(' — ') || `Qator ${i + 1}`;
+        })
+        .filter(Boolean)
+        .join(' · ');
 
   const firstVac = vacancies[0];
   const ccFirst = firstVac ? vacancyCountryCode(firstVac) : '';
@@ -5170,19 +5632,6 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="rounded-lg p-2 transition-colors active:scale-95"
-            style={{ color: C.muted }}
-            aria-label="Yangilash"
-          >
-            <Loader2 className={`h-5 w-5 ${loading ? 'animate-spin' : ''}`} strokeWidth={1.6} />
-          </button>
-          <div className="relative">
-            <Bell size={20} color={C.muted} strokeWidth={1.6} />
-            <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full" style={{ backgroundColor: C.red }} />
-          </div>
           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: C.blue }}>
             <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{initials}</span>
           </div>
