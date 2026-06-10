@@ -81,7 +81,7 @@ function sortByNameUz<T extends { name_uz?: string }>(list: T[]): T[] {
 }
 
 export async function fetchPublicRegions(): Promise<PublicRegion[]> {
-  const { data } = await api.get<unknown>('/admin/regions');
+  const { data } = await api.get<unknown>('/regions');
   assertApiSuccess(data);
   return sortByNameUz(
     extractListRows(data)
@@ -92,7 +92,7 @@ export async function fetchPublicRegions(): Promise<PublicRegion[]> {
 }
 
 export async function fetchPublicRegionById(id: number): Promise<PublicRegion | null> {
-  const { data } = await api.get<unknown>(`/admin/regions/${id}`);
+  const { data } = await api.get<unknown>(`/regions/${id}`);
   assertApiSuccess(data);
   const row = unwrapSingle(data);
   if (!row) return null;

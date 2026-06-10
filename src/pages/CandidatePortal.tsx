@@ -777,13 +777,6 @@ function TopBar({ onBack }: { onBack?: () => void }) {
       className="flex shrink-0 items-center gap-2 px-5 pb-2"
       style={{ paddingTop: 'max(var(--portal-top-inset, 12px), env(safe-area-inset-top, 0px))' }}
     >
-      <img
-        src={LOGO_URL}
-        alt="The Kasb logotipi"
-        width={32}
-        height={32}
-        style={{ objectFit: 'contain', width: 32, height: 32, borderRadius: 8 }}
-      />
       <span
         className="font-bold tracking-tight"
         style={{ fontSize: 15, color: C.text, fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui" }}
