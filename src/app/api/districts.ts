@@ -102,7 +102,7 @@ export async function fetchAdminDistricts(
 ): Promise<AdminDistrict[]> {
   const params: Record<string, number> = {};
   if (query.region_id != null && query.region_id > 0) params.region_id = query.region_id;
-  const { data } = await api.get<unknown>('/admin/districts', { params });
+  const { data } = await api.get<unknown>('/districts', { params });
   assertApiSuccess(data);
   const list = extractListRows(data)
     .map(normalizeRow)
