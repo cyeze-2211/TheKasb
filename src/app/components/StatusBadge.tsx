@@ -1,3 +1,4 @@
+import React from 'react';
 import {
   Archive,
   CheckCircle2,
@@ -27,26 +28,10 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, type }: StatusBadgeProps) {
   if (type === 'profile') {
     const config = {
-      PENDING: {
-        label: 'Kutilmoqda',
-        color: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-        Icon: Clock,
-      },
-      REVIEWING: {
-        label: "Ko'rib chiqilmoqda",
-        color: 'bg-blue-100 text-blue-700 border-blue-200',
-        Icon: Eye,
-      },
-      APPROVED: {
-        label: 'Tasdiqlangan',
-        color: 'bg-green-100 text-green-700 border-green-200',
-        Icon: CheckCircle2,
-      },
-      REJECTED: {
-        label: 'Rad etilgan',
-        color: 'bg-red-100 text-red-700 border-red-200',
-        Icon: XCircle,
-      },
+      PENDING: { label: 'Kutilmoqda', color: 'bg-yellow-100 text-yellow-700 border-yellow-200', Icon: Clock },
+      REVIEWING: { label: "Ko'rib chiqilmoqda", color: 'bg-blue-100 text-blue-700 border-blue-200', Icon: Eye },
+      APPROVED: { label: 'Tasdiqlangan', color: 'bg-green-100 text-green-700 border-green-200', Icon: CheckCircle2 },
+      REJECTED: { label: 'Rad etilgan', color: 'bg-red-100 text-red-700 border-red-200', Icon: XCircle },
     };
     const c = config[status as ProfileStatus];
     const Icon = c.Icon;
@@ -59,26 +44,10 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
   }
 
   const config = {
-    DRAFT: {
-      label: 'Qoralama',
-      color: 'bg-gray-100 text-gray-700 border-gray-200',
-      Icon: FileEdit,
-    },
-    ACTIVE: {
-      label: 'Faol',
-      color: 'bg-green-100 text-green-700 border-green-200',
-      Icon: CircleDot,
-    },
-    CLOSED: {
-      label: 'Yopiq',
-      color: 'bg-red-100 text-red-700 border-red-200',
-      Icon: XCircle,
-    },
-    ARCHIVED: {
-      label: 'Arxiv',
-      color: 'bg-slate-100 text-slate-700 border-slate-200',
-      Icon: Archive,
-    },
+    DRAFT: { label: 'Qoralama', color: 'bg-gray-100 text-gray-700 border-gray-200', Icon: FileEdit },
+    ACTIVE: { label: 'Faol', color: 'bg-green-100 text-green-700 border-green-200', Icon: CircleDot },
+    CLOSED: { label: 'Yopiq', color: 'bg-red-100 text-red-700 border-red-200', Icon: XCircle },
+    ARCHIVED: { label: 'Arxiv', color: 'bg-slate-100 text-slate-700 border-slate-200', Icon: Archive },
   };
   const c = config[status as VacancyStatus];
   const Icon = c.Icon;
@@ -92,33 +61,33 @@ export function StatusBadge({ status, type }: StatusBadgeProps) {
 
 interface RoleBadgeProps {
   role: UserRole;
+  candidateId?: string | null;
 }
 
-export function RoleBadge({ role }: RoleBadgeProps) {
+export function RoleBadge({ role, candidateId }: RoleBadgeProps) {
   const config = {
-    CANDIDATE: {
-      label: accountTypeUz.CANDIDATE,
-      color: 'bg-blue-100 text-blue-700 border-blue-200',
-      Icon: User,
-    },
-    ADMIN: {
-      label: accountTypeUz.ADMIN,
-      color: 'bg-purple-100 text-purple-700 border-purple-200',
-      Icon: Shield,
-    },
-    SUPER_ADMIN: {
-      label: accountTypeUz.SUPER_ADMIN,
-      color: 'bg-amber-100 text-amber-700 border-amber-200',
-      Icon: Star,
-    },
-    AGENT: {
-      label: accountTypeUz.AGENT,
-      color: 'bg-teal-100 text-teal-700 border-teal-200',
-      Icon: Briefcase,
-    },
+    CANDIDATE: { label: accountTypeUz.CANDIDATE, color: 'bg-blue-100 text-blue-700 border-blue-200', Icon: User },
+    ADMIN: { label: accountTypeUz.ADMIN, color: 'bg-purple-100 text-purple-700 border-purple-200', Icon: Shield },
+    SUPER_ADMIN: { label: accountTypeUz.SUPER_ADMIN, color: 'bg-amber-100 text-amber-700 border-amber-200', Icon: Star },
+    AGENT: { label: accountTypeUz.AGENT, color: 'bg-teal-100 text-teal-700 border-teal-200', Icon: Briefcase },
   };
+
   const c = config[role];
   const Icon = c.Icon;
+
+  if (role === 'CANDIDATE' && candidateId) {
+    return (
+      <a
+        href={`/admin/candidates/${candidateId}`}
+        className={`${badgeShell} ${c.color} cursor-pointer hover:opacity-80`}
+        onClick={function (e) { e.stopPropagation(); }}
+      >
+        <Icon className={iconSm} strokeWidth={2} aria-hidden />
+        {c.label}
+      </a>
+    );
+  }
+
   return (
     <span className={`${badgeShell} ${c.color}`}>
       <Icon className={iconSm} strokeWidth={2} aria-hidden />

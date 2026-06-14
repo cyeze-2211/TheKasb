@@ -29,6 +29,8 @@ export type SdgUserDto = {
   lastLoginAt?: string | null;
   deleted?: boolean | null;
   usernote?: string | null;
+  candidateId?: string | null; // ← shu qatorni qo'shing
+
   /** Telegram chat id (backend: `chatId` / `chat_id`) */
   chatId?: number | null;
   [key: string]: unknown;

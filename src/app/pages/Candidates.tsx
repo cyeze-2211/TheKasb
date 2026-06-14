@@ -52,6 +52,17 @@ import {
 } from '../lib/adminUiUz';
 import { languageLabelUz, parseLanguageCodesFromCell } from '../lib/languageUi';
 
+// Default User avatar (just an emoji, can change to image if you have)
+const DefaultUserAvatar = () => (
+  <span
+    className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-2xl text-slate-400 ring-1 ring-slate-200 select-none"
+    aria-label="No user photo"
+    title="Avatar yo‘q"
+  >
+    <span role="img" aria-label="user">👤</span>
+  </span>
+);
+
 const experienceLabels: Record<string, string> = {
   YEAR_1_3: '1-3 yil',
   YEAR_3_5: '3-5 yil',
@@ -68,8 +79,10 @@ const initialQuery = (): CandidatesListQuery => ({
   page: 0,
   size: 20,
   profileStatus: '',
-  regionId: undefined,
-  regionName: '',
+  candidateRegionId: undefined,    // Must be separate for candidate region
+  candidateRegionName: '',
+  universityRegionId: undefined,   // Must be separate for university region
+  universityRegionName: '',
   institutionName: '',
   educationLevel: '',
   categoryId: undefined,
@@ -83,6 +96,7 @@ const initialQuery = (): CandidatesListQuery => ({
   salaryMin: undefined,
   salaryMax: undefined,
   sort: '',
+  internationalCountry: '', // <-- yangi filter
 });
 
 function statusColor(s: string): string {
@@ -165,6 +179,75 @@ function ProfileMetrics({
   );
 }
 
+// Helper to render candidate avatar image according to new logic.
+function CandidateAvatar({
+  row,
+  name,
+  phone,
+}: {
+  row: Record<string, unknown>;
+  name: string;
+  phone: string;
+}) {
+  // Check for personal photo (original_photo_url or original_photo_file_id),
+  // then ai_photo (ai_passport_photo_url or ai_passport_photo_file_id),
+  // else fallback to initials/user avatar.
+
+  const originalPhotoUrl =
+    row['original_photo_url'] ||
+    row['original_photo'] ||
+    row['original_photo_file_url'] || // in case of different naming
+    null;
+
+  const aiPhotoUrl =
+    row['ai_passport_photo_url'] ||
+    row['ai_photo'] ||
+    row['ai_passport_photo_file_url'] ||
+    null;
+
+  // May be file_id, but if file_id and URL are both present, prefer URL.
+  // In real world, you may add backend URL prefix if only file ID.
+  // Here, only handling URLs due to context in this file.
+
+  if (typeof originalPhotoUrl === 'string' && originalPhotoUrl.trim().length) {
+    // User's own photo present.
+    return (
+      <img
+        src={originalPhotoUrl}
+        alt={name || 'Nomzod'}
+        className="h-10 w-10 flex-shrink-0 rounded-2xl bg-gray-100 object-cover ring-1 ring-primary/15 group-hover:ring-primary/30"
+        style={{ objectFit: 'cover' }}
+        aria-hidden
+      />
+    );
+  } else if (typeof aiPhotoUrl === 'string' && aiPhotoUrl.trim().length) {
+    return (
+      <img
+        src={aiPhotoUrl}
+        alt={name || 'AI Photo'}
+        className="h-10 w-10 flex-shrink-0 rounded-2xl bg-gray-50 object-cover ring-1 ring-primary/10 group-hover:ring-primary/30"
+        style={{ objectFit: 'cover' }}
+        aria-hidden
+      />
+    );
+  } else {
+    // No photo: fallback to initials, and if not present, use default avatar
+    const initials = initialsFromRow(name, phone);
+    if (initials && initials !== "?") {
+      return (
+        <div
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15 group-hover:ring-primary/30"
+          aria-hidden
+        >
+          {initials}
+        </div>
+      );
+    } else {
+      return <DefaultUserAvatar />;
+    }
+  }
+}
+
 export function Candidates() {
   const [showFilters, setShowFilters] = useState(true);
   const [q, setQ] = useState<CandidatesListQuery>(initialQuery);
@@ -178,7 +261,8 @@ export function Candidates() {
   const [professionOptions, setProfessionOptions] = useState<ProfessionFilterOption[]>([]);
   const [agentOptions, setAgentOptions] = useState<SdgUserDto[]>([]);
   const [filterMetaLoading, setFilterMetaLoading] = useState(false);
-  const [regionFilterOptions, setRegionFilterOptions] = useState<Array<{ id: number; label: string }>>([]);
+  const [candidateRegionOptions, setCandidateRegionOptions] = useState<Array<{ id: number; label: string }>>([]);
+  const [universityRegionOptions, setUniversityRegionOptions] = useState<Array<{ id: number; label: string }>>([]);
   const [universityFilterOptions, setUniversityFilterOptions] = useState<AdminUniversity[]>([]);
   const [universitiesLoading, setUniversitiesLoading] = useState(false);
 
@@ -187,6 +271,7 @@ export function Candidates() {
     return professionOptions.filter((p) => p.categoryId === q.categoryId);
   }, [professionOptions, q.categoryId]);
 
+  // Fetch filter data (regions, profession cat, etc)
   useEffect(() => {
     let cancelled = false;
     setFilterMetaLoading(true);
@@ -202,21 +287,23 @@ export function Candidates() {
           setCategories(cats);
           setProfessionOptions(profs);
           setAgentOptions(ag);
-          setRegionFilterOptions(
-            regions
-              .filter((r) => r.is_active !== false)
-              .map((r) => ({
-                id: r.id,
-                label: r.name_uz ?? r.name_ru ?? String(r.id),
-              })),
-          );
+          // OTM uchun ham, Candidate uchun ham regionlarni ajratib olish
+          const candidateRegions = regions
+            .filter((r) => r.is_active !== false)
+            .map((r) => ({
+              id: r.id,
+              label: r.name_uz ?? r.name_ru ?? String(r.id),
+            }));
+          setCandidateRegionOptions(candidateRegions);
+          setUniversityRegionOptions(candidateRegions);
         }
       } catch {
         if (!cancelled) {
           setCategories([]);
           setProfessionOptions([]);
           setAgentOptions([]);
-          setRegionFilterOptions([]);
+          setCandidateRegionOptions([]);
+          setUniversityRegionOptions([]);
         }
       } finally {
         if (!cancelled) setFilterMetaLoading(false);
@@ -227,9 +314,10 @@ export function Candidates() {
     };
   }, []);
 
+  // Universitetlar filtri uchun regionga ulang
   useEffect(() => {
-    const regionId = q.regionId;
-    if (regionId == null || regionId <= 0) {
+    const universityRegionId = q.universityRegionId;
+    if (universityRegionId == null || universityRegionId <= 0) {
       setUniversityFilterOptions([]);
       setUniversitiesLoading(false);
       return;
@@ -238,7 +326,7 @@ export function Candidates() {
     setUniversitiesLoading(true);
     void (async () => {
       try {
-        const list = await fetchAdminUniversities({ region_id: regionId });
+        const list = await fetchAdminUniversities({ region_id: universityRegionId });
         if (!cancelled) {
           setUniversityFilterOptions(
             list.filter((u) => u.is_active !== false && (u.name?.trim() ?? '').length > 0),
@@ -253,13 +341,21 @@ export function Candidates() {
     return () => {
       cancelled = true;
     };
-  }, [q.regionId]);
+  }, [q.universityRegionId]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const page = await fetchCandidatesList(applied);
+      // Cross-mapping filter fields for API
+      const queryToSend = {
+        ...applied,
+        regionId: applied.candidateRegionId,
+        regionName: applied.candidateRegionName,
+        internationalCountry: applied.internationalCountry,
+      };
+      setRows([]);
+      const page = await fetchCandidatesList(queryToSend);
       setRows(page.content);
       setTotalElements(page.totalElements);
       setTotalPages(page.totalPages);
@@ -295,8 +391,7 @@ export function Candidates() {
       <div>
         <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
         <h1 className="mb-1">Nomzodlar</h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-text-muted">
-        </p>
+        <p className="max-w-2xl text-sm leading-relaxed text-text-muted"></p>
       </div>
 
       {error ? (
@@ -309,8 +404,10 @@ export function Candidates() {
         expanded={showFilters}
         onToggle={() => setShowFilters((v) => !v)}
       >
+        {/* Filter: Birinchi qatorda umumiy, candidate region va kasbiy */}
         <div className="space-y-4">
-          <div className={filterFieldGrid}>
+          <div className={`${filterFieldGrid} grid-cols-1 md:grid-cols-3 lg:grid-cols-4`}>
+            {/* Profil holati */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Profil holati</span>
               <select
@@ -328,50 +425,79 @@ export function Candidates() {
                 ))}
               </select>
             </div>
+            {/* Candidate uchun hudud */}
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">Hudud</span>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Nomzod hududi</span>
               <select
                 className={ctlSelect}
                 disabled={filterMetaLoading}
-                value={q.regionId ?? ''}
+                value={q.candidateRegionId ?? ''}
                 onChange={(e) => {
                   const v = e.target.value ? Number(e.target.value) : undefined;
                   setField({
-                    regionId: v,
-                    regionName: '',
-                    institutionName: '',
+                    candidateRegionId: v,
+                    candidateRegionName: '',
                   });
                 }}
               >
                 <option value="">Barchasi</option>
-                {q.regionId != null &&
-                !regionFilterOptions.some((r) => r.id === q.regionId) ? (
-                  <option value={q.regionId}>ID {q.regionId} (joriy filtr)</option>
+                {q.candidateRegionId != null &&
+                  !candidateRegionOptions.some((r) => r.id === q.candidateRegionId) ? (
+                  <option value={q.candidateRegionId}>ID {q.candidateRegionId} (joriy filtr)</option>
                 ) : null}
-                {regionFilterOptions.map((r) => (
+                {candidateRegionOptions.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.label}
                   </option>
                 ))}
               </select>
             </div>
+            {/* OTM uchun hudud */}
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">OTM hududi</span>
+              <select
+                className={ctlSelect}
+                disabled={filterMetaLoading}
+                value={q.universityRegionId ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value ? Number(e.target.value) : undefined;
+                  setField({
+                    universityRegionId: v,
+                    universityRegionName: '',
+                    institutionName: '', // region o'zgarsa otm bo'sh bo'lsin
+                  });
+                }}
+              >
+                <option value="">Barchasi</option>
+                {q.universityRegionId != null &&
+                  !universityRegionOptions.some((r) => r.id === q.universityRegionId) ? (
+                  <option value={q.universityRegionId}>ID {q.universityRegionId} (joriy filtr)</option>
+                ) : null}
+                {universityRegionOptions.map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* OTM (faqat university region tanlanganda) */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">OTM</span>
               <select
                 className={ctlSelect}
-                disabled={!q.regionId || universitiesLoading || filterMetaLoading}
+                disabled={!q.universityRegionId || universitiesLoading || filterMetaLoading}
                 value={q.institutionName ?? ''}
                 onChange={(e) => setField({ institutionName: e.target.value })}
               >
                 <option value="">
-                  {!q.regionId
-                    ? 'Avval hududni tanlang'
+                  {!q.universityRegionId
+                    ? 'Avval OTM hududini tanlang'
                     : universitiesLoading
                       ? 'Yuklanmoqda…'
                       : 'Barchasi'}
                 </option>
                 {q.institutionName &&
-                !universityFilterOptions.some((u) => u.name === q.institutionName) ? (
+                  !universityFilterOptions.some((u) => u.name === q.institutionName) ? (
                   <option value={q.institutionName}>{q.institutionName} (joriy filtr)</option>
                 ) : null}
                 {universityFilterOptions.map((u) => (
@@ -381,6 +507,7 @@ export function Candidates() {
                 ))}
               </select>
             </div>
+            {/* Ta’lim darajasi */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Ta’lim darajasi</span>
               <select
@@ -396,6 +523,7 @@ export function Candidates() {
                 ))}
               </select>
             </div>
+            {/* Kategoriya */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Kategoriya</span>
               <select
@@ -415,6 +543,7 @@ export function Candidates() {
                 ))}
               </select>
             </div>
+            {/* Kasb */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Kasb</span>
               <select
@@ -429,7 +558,7 @@ export function Candidates() {
               >
                 <option value="">Barchasi</option>
                 {q.professionId != null &&
-                !visibleProfessions.some((p) => p.id === q.professionId) ? (
+                  !visibleProfessions.some((p) => p.id === q.professionId) ? (
                   <option value={q.professionId}>ID {q.professionId} (joriy filtr)</option>
                 ) : null}
                 {visibleProfessions.map((p) => (
@@ -439,6 +568,7 @@ export function Candidates() {
                 ))}
               </select>
             </div>
+            {/* Agent */}
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Agent</span>
               <select
@@ -463,43 +593,53 @@ export function Candidates() {
             </div>
           </div>
 
-          <div className={filterFieldGrid}>
-            <select
-              className={ctlSelect}
-              value={q.experienceRange ?? ''}
-              onChange={(e) => setField({ experienceRange: e.target.value as CandidatesListQuery['experienceRange'] })}
-            >
-              <option value="">Tajriba — barchasi</option>
-              <option value="YEAR_1_3">1-3 yil</option>
-              <option value="YEAR_3_5">3-5 yil</option>
-              <option value="YEAR_5_PLUS">5+ yil</option>
-            </select>
-            <select
-              className={ctlSelect}
-              value={q.availabilityStatus ?? ''}
-              onChange={(e) =>
-                setField({ availabilityStatus: e.target.value as CandidatesListQuery['availabilityStatus'] })
-              }
-            >
-              <option value="">Mavjudlik — barchasi</option>
-              <option value="READY_NOW">Hozir tayyor</option>
-              <option value="WITHIN_1_MONTH">1 oy ichida</option>
-              <option value="WITHIN_3_MONTHS">3 oy ichida</option>
-            </select>
-            <select
-              className={ctlSelect}
-              value={q.countryCode ?? ''}
-              onChange={(e) => setField({ countryCode: e.target.value })}
-            >
-              <option value="">Maqsad mamlakat (kod)</option>
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {c.flag} {c.name} ({c.code})
-                </option>
-              ))}
-            </select>
+          {/* Ikkinchi qatorda: tajriba, mavjudlik, mamlakat, til, til darajasi, xalqaro exp davlat */}
+          <div className={`${filterFieldGrid} grid-cols-1 md:grid-cols-3 lg:grid-cols-6`}>
             <div>
-           
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Tajriba</span>
+              <select
+                className={ctlSelect}
+                value={q.experienceRange ?? ''}
+                onChange={(e) => setField({ experienceRange: e.target.value as CandidatesListQuery['experienceRange'] })}
+              >
+                <option value="">Barchasi</option>
+                <option value="YEAR_1_3">1-3 yil</option>
+                <option value="YEAR_3_5">3-5 yil</option>
+                <option value="YEAR_5_PLUS">5+ yil</option>
+              </select>
+            </div>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Mavjudlik</span>
+              <select
+                className={ctlSelect}
+                value={q.availabilityStatus ?? ''}
+                onChange={(e) =>
+                  setField({ availabilityStatus: e.target.value as CandidatesListQuery['availabilityStatus'] })
+                }
+              >
+                <option value="">Barchasi</option>
+                <option value="READY_NOW">Hozir tayyor</option>
+                <option value="WITHIN_1_MONTH">1 oy ichida</option>
+                <option value="WITHIN_3_MONTHS">3 oy ichida</option>
+              </select>
+            </div>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Maqsad mamlakat</span>
+              <select
+                className={ctlSelect}
+                value={q.countryCode ?? ''}
+                onChange={(e) => setField({ countryCode: e.target.value })}
+              >
+                <option value="">Barchasi</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Til</span>
               <select
                 className={ctlSelect}
                 value={q.language ?? ''}
@@ -513,18 +653,37 @@ export function Candidates() {
                 ))}
               </select>
             </div>
-            <select
-              className={ctlSelect}
-              value={q.languageLevel ?? ''}
-              onChange={(e) => setField({ languageLevel: e.target.value as CandidatesListQuery['languageLevel'] })}
-            >
-              <option value="">Til darajasi</option>
-              {(Object.keys(cefrLevelUz) as (keyof typeof cefrLevelUz)[]).map((k) => (
-                <option key={k} value={k}>
-                  {cefrLevelUz[k]}
-                </option>
-              ))}
-            </select>
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Til darajasi</span>
+              <select
+                className={ctlSelect}
+                value={q.languageLevel ?? ''}
+                onChange={(e) => setField({ languageLevel: e.target.value as CandidatesListQuery['languageLevel'] })}
+              >
+                <option value="">Barchasi</option>
+                {(Object.keys(cefrLevelUz) as (keyof typeof cefrLevelUz)[]).map((k) => (
+                  <option key={k} value={k}>
+                    {cefrLevelUz[k]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {/* Xalqaro exp: Davlat bo'yicha filter */}
+            <div>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Xalqaro exp. davlati</span>
+              <select
+                className={ctlSelect}
+                value={q.internationalCountry ?? ''}
+                onChange={(e) => setField({ internationalCountry: e.target.value })}
+              >
+                <option value="">Barchasi</option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.flag} {c.name} ({c.code})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex flex-wrap items-end gap-3 border-t border-border pt-4">
@@ -608,6 +767,9 @@ export function Candidates() {
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Til</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Maosh</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Xalqaro
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Profil</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Holat</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold uppercase text-text-muted">
@@ -618,14 +780,14 @@ export function Candidates() {
             <tbody>
               {loading && rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-16 text-center text-sm text-text-muted">
+                  <td colSpan={11} className="px-4 py-16 text-center text-sm text-text-muted">
                     <Loader2 className="mx-auto mb-2 h-6 w-6 animate-spin text-primary" aria-hidden />
                     Yuklanmoqda…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-text-muted">
+                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-text-muted">
                     Natija yo‘q
                   </td>
                 </tr>
@@ -684,6 +846,33 @@ export function Candidates() {
                     'desired_salary_max',
                     'desiredSalaryMax',
                   );
+                  // Custom for Xalqaro tajriba
+                  // Try to extract international_experiences (possible array or null)
+                  const internationalExperiences = row['international_experiences'];
+                  // Format value based on instructions.
+                  let internationalExperienceCell: React.ReactNode = null;
+                  if (internationalExperiences == null) {
+                    internationalExperienceCell = <span>yo‘q</span>;
+                  } else if (Array.isArray(internationalExperiences) && internationalExperiences.length > 0) {
+                    // You can format more detail here. Example: join country names.
+                    // If needed, we can use country code mapping as with COUNTRIES.
+                    internationalExperienceCell = (
+                      <span>
+                        {internationalExperiences
+                          .map((item: any) =>
+                            item.country
+                              ? (COUNTRIES.find(c => c.code === item.country)?.flag || '') +
+                                  ' ' +
+                                  (COUNTRIES.find(c => c.code === item.country)?.name || item.country)
+                              : ''
+                          )
+                          .filter(Boolean)
+                          .join(', ')}
+                      </span>
+                    );
+                  } else {
+                    internationalExperienceCell = <span>yo‘q</span>;
+                  }
                   const score = pickNum(row, 'score', 'profile_score', 'profileScore', 'match_score');
                   const completeness = pickNum(
                     row,
@@ -705,12 +894,8 @@ export function Candidates() {
                             className="group flex items-center gap-3 rounded-xl py-0.5 pr-1 text-left outline-none ring-primary/25 transition-colors hover:bg-primary/[0.06] focus-visible:ring-2"
                             title="Batafsil profil"
                           >
-                            <div
-                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15 group-hover:ring-primary/30"
-                              aria-hidden
-                            >
-                              {initialsFromRow(name, phone)}
-                            </div>
+                            {/* Replaced avatar logic here: */}
+                            <CandidateAvatar row={row} name={name} phone={phone} />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 truncate">
                                 <span className="truncate text-sm font-semibold text-primary group-hover:underline">
@@ -727,12 +912,7 @@ export function Candidates() {
                           </Link>
                         ) : (
                           <div className="flex items-center gap-3">
-                            <div
-                              className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-primary/5 text-xs font-bold text-primary ring-1 ring-primary/15"
-                              aria-hidden
-                            >
-                              {initialsFromRow(name, phone)}
-                            </div>
+                            <CandidateAvatar row={row} name={name} phone={phone} />
                             <div className="min-w-0">
                               <div className="truncate text-sm font-semibold text-text-primary">
                                 {name || 'Nomzod'}
@@ -772,6 +952,10 @@ export function Candidates() {
                         {salMin != null && salMax != null
                           ? `${salMin.toLocaleString()} – ${salMax.toLocaleString()}`
                           : '—'}
+                      </td>
+                      {/* Xalqaro tajriba */}
+                      <td className="px-4 py-3 text-sm text-text-muted">
+                        {internationalExperienceCell}
                       </td>
                       <td className="px-4 py-3">
                         <ProfileMetrics score={score} completeness={completeness} />

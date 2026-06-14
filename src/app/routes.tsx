@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate } from 'react-router';
 import { AppLayout } from './components/AppLayout';
 import { RequireAuth } from './components/RequireAuth';
+import Face from '../pages/Face';
 const LoginPage = lazy(() => import('../pages/LoginPage'));
 const CandidatePortal = lazy(() => import('../pages/CandidatePortal'));
 const DashboardPage = lazy(() => import('../pages/Dashboard'));
@@ -61,6 +62,14 @@ export const router = createBrowserRouter([
     element: (
       <LazyBoundary>
         <CandidatePortal />
+      </LazyBoundary>
+    ),
+  },
+  {
+    path: '/face',
+    element: (
+      <LazyBoundary>
+        <Face />
       </LazyBoundary>
     ),
   },
@@ -131,6 +140,7 @@ export const router = createBrowserRouter([
               </LazyBoundary>
             ),
           },
+
           {
             path: 'vacancies',
             element: (

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router';
-import { COUNTRIES } from '../data/mockData';
 import {
   adminCandidateIdFromListRow,
   assignCandidateAgent,
   axiosErrorMessage,
   deleteCandidate,
   fetchCandidateById,
+  fetchCandidateCvHtml,
   parseAdminTargetCountries,
   pickCandidateField,
   pickNum,
@@ -27,6 +27,8 @@ import {
   Loader2,
   MapPin,
   Pencil,
+  Printer,
+  RefreshCw,
   Trash2,
   UserCog,
   UserRound,
@@ -65,16 +67,28 @@ import { LanguageIcon } from '../components/LanguageIcon';
 import { languageLabelUz } from '../lib/languageUi';
 import { countryFlagEmoji, countryNameUz } from '../lib/regionFlags';
 
+// Helper to unwrap API response if it contains { success: true, object: ... }
+function unwrapApiResponse(data: unknown): Record<string, unknown> {
+  if (data && typeof data === 'object' && 'success' in data && data.success === true && 'object' in data) {
+    return (data as { object: Record<string, unknown> }).object;
+  }
+  return data as Record<string, unknown>;
+}
+
 const experienceLabels: Record<string, string> = {
   YEAR_1_3: '1-3 yil',
   YEAR_3_5: '3-5 yil',
   YEAR_5_PLUS: '5+ yil',
+  LESS_THAN_1_YEAR: '1 yildan kam',
+  NO_EXPERIENCE: 'Tajribasiz',
 };
 
 const availabilityLabels: Record<string, string> = {
   READY_NOW: 'Hozir tayyor',
   WITHIN_1_MONTH: '1 oy ichida',
   WITHIN_3_MONTHS: '3 oy ichida',
+  WITHIN_6_MONTHS: '6 oy ichida',
+  IMMEDIATELY: 'Darhol',
 };
 
 function fmtDateTime(iso?: string): string {
@@ -104,14 +118,44 @@ function ProfileSection({ title, children }: { title: string; children: ReactNod
   );
 }
 
-function initialsFromName(name: string): string {
-  return name
+function Avatar({ name, size = 96 }: { name: string; size?: number }) {
+  const initials = name
     .split(/\s+/)
     .filter(Boolean)
     .map((p) => p[0])
     .join('')
-    .slice(0, 3)
+    .slice(0, 2)
     .toUpperCase();
+
+  if (initials) {
+    return (
+      <div
+        style={{ width: size, height: size, fontSize: size * 0.33 }}
+        className="flex items-center justify-center rounded-full bg-gradient-to-br from-primary/30 to-primary/10 font-bold text-primary ring-2 ring-primary/25 ring-offset-2 ring-offset-background"
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{ width: size, height: size }}
+      className="flex items-center justify-center rounded-full bg-gradient-to-br from-muted/60 to-muted/30 ring-2 ring-border/40 ring-offset-2 ring-offset-background"
+    >
+      <svg
+        width={size * 0.55}
+        height={size * 0.55}
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className="text-text-muted opacity-60"
+      >
+        <circle cx="12" cy="8" r="4" fill="currentColor" />
+        <path d="M4 20c0-4 3.6-7 8-7s8 3 8 7" fill="currentColor" opacity="0.7" />
+      </svg>
+    </div>
+  );
 }
 
 export function CandidateDetail() {
@@ -137,6 +181,11 @@ export function CandidateDetail() {
   const [categoryLabel, setCategoryLabel] = useState<string | null>(null);
   const [professionLabel, setProfessionLabel] = useState<string | null>(null);
 
+  const [cvHtml, setCvHtml] = useState<string | null>(null);
+  const [cvLoading, setCvLoading] = useState(false);
+  const [cvError, setCvError] = useState<string | null>(null);
+  const [cvPrintLoading, setCvPrintLoading] = useState(false);
+
   const listRowSnapshot = useMemo((): Record<string, unknown> | null => {
     const st = location.state as { candidateListRow?: Record<string, unknown> } | null;
     const r = st?.candidateListRow;
@@ -150,7 +199,7 @@ export function CandidateDetail() {
 
   const load = useCallback(async () => {
     if (!candidateRouteId) {
-      setErr('Noto‘g‘ri ID');
+      setErr("Notoʻgʻri ID");
       setLoading(false);
       return;
     }
@@ -159,30 +208,32 @@ export function CandidateDetail() {
     setActionMsg(null);
     setListFallbackNotice(null);
     try {
-      const d = await fetchCandidateById(candidateRouteId);
-      if (d && Object.keys(d).length > 0) {
-        setDetail(d);
+      const rawData = await fetchCandidateById(candidateRouteId);
+      // Unwrap if the API returns { success: true, object: ... }
+      const unwrapped = unwrapApiResponse(rawData);
+      if (unwrapped && Object.keys(unwrapped).length > 0) {
+        setDetail(unwrapped);
         setListFallbackNotice(null);
-        const ag = pickNum(d, 'agent_id', 'agentId', 'assigned_agent_id');
+        const ag = pickNum(unwrapped, 'agent_id', 'agentId', 'assigned_agent_id');
         if (ag != null) setAgentIdInput(String(ag));
       } else if (listRowSnapshot) {
         setDetail(listRowSnapshot);
         setErr(null);
         setListFallbackNotice(
-          'To‘liq profil API dan kelmadi — ro‘yxatdagi ma’lumot ko‘rsatiladi. Sahifani yangilab ko‘ring.',
+          "To'liq profil API dan kelmadi — ro'yxatdagi ma'lumot ko'rsatiladi. Sahifani yangilab ko'ring.",
         );
         const ag = pickNum(listRowSnapshot, 'agent_id', 'agentId', 'assigned_agent_id');
         if (ag != null) setAgentIdInput(String(ag));
       } else {
         setDetail(null);
-        setErr('Ma’lumot topilmadi.');
+        setErr("Ma'lumot topilmadi.");
       }
     } catch (e) {
       if (listRowSnapshot) {
         setDetail(listRowSnapshot);
         setErr(null);
         setListFallbackNotice(
-          axiosErrorMessage(e, 'Profilni yuklashda xato — ro‘yxatdagi ma’lumot ko‘rsatiladi.'),
+          axiosErrorMessage(e, "Profilni yuklashda xato — ro'yxatdagi ma'lumot ko'rsatiladi."),
         );
         const ag = pickNum(listRowSnapshot, 'agent_id', 'agentId', 'assigned_agent_id');
         if (ag != null) setAgentIdInput(String(ag));
@@ -277,16 +328,35 @@ export function CandidateDetail() {
     };
   }, []);
 
+  useEffect(() => {
+    if (activeTab !== 'cv' || !candidateRouteId) return;
+    if (cvHtml !== null) return;
+    let cancelled = false;
+    setCvLoading(true);
+    setCvError(null);
+    void (async () => {
+      try {
+        const html = await fetchCandidateCvHtml(candidateRouteId);
+        if (!cancelled) setCvHtml(html);
+      } catch (e) {
+        if (!cancelled) setCvError(axiosErrorMessage(e, 'CV yuklanmadi.'));
+      } finally {
+        if (!cancelled) setCvLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, candidateRouteId, cvHtml]);
+
   const displayName = useMemo(() => {
     if (!detail) return '';
-    return pickStr(
-      detail,
-      'full_name',
-      'fullName',
-      'name',
-      'first_name',
-      'firstName',
-    );
+    const full = pickStr(detail, 'full_name', 'fullName', 'name');
+    if (full) return full;
+    const first = pickStr(detail, 'first_name', 'firstName');
+    const last = pickStr(detail, 'last_name', 'lastName');
+    if (first || last) return [first, last].filter(Boolean).join(' ');
+    return '';
   }, [detail]);
 
   const phone = useMemo(
@@ -334,9 +404,9 @@ export function CandidateDetail() {
     try {
       await updateCandidateProfileStatus(candidateRouteId, next);
       await load();
-      setActionMsg(checked ? 'Profil faollashtirildi.' : 'Profil to‘xtatildi.');
+      setActionMsg(checked ? "Profil faollashtirildi." : "Profil to'xtatildi.");
     } catch (e) {
-      setActionMsg(axiosErrorMessage(e, 'Holatni saqlab bo‘lmadi.'));
+      setActionMsg(axiosErrorMessage(e, "Holatni saqlab bo'lmadi."));
     } finally {
       setStatusSaving(false);
     }
@@ -346,7 +416,7 @@ export function CandidateDetail() {
     if (!candidateRouteId) return;
     const n = Number(agentIdInput.trim());
     if (!Number.isFinite(n) || n <= 0) {
-      setActionMsg('Agent ID musbat son bo‘lishi kerak.');
+      setActionMsg("Agent ID musbat son bo'lishi kerak.");
       return;
     }
     setAgentSaving(true);
@@ -354,9 +424,9 @@ export function CandidateDetail() {
     try {
       await assignCandidateAgent(candidateRouteId, n);
       await load();
-      setActionMsg('Agent biriktirildi.');
+      setActionMsg("Agent biriktirildi.");
     } catch (e) {
-      setActionMsg(axiosErrorMessage(e, 'Agent biriktirishda xato.'));
+      setActionMsg(axiosErrorMessage(e, "Agent biriktirishda xato."));
     } finally {
       setAgentSaving(false);
     }
@@ -371,41 +441,71 @@ export function CandidateDetail() {
       setDeleteOpen(false);
       navigate('/admin/candidates', { replace: true });
     } catch (e) {
-      setDeleteErr(axiosErrorMessage(e, 'O‘chirishda xato.'));
+      setDeleteErr(axiosErrorMessage(e, "O'chirishda xato."));
     } finally {
       setDeleting(false);
     }
   }
 
+  function handleCvPrint() {
+    if (!cvHtml) return;
+    setCvPrintLoading(true);
+    try {
+      const win = window.open('', '_blank');
+      if (!win) {
+        setCvError("Yangi oyna ochilmadi. Pop-up blokerini tekshiring.");
+        return;
+      }
+      win.document.write(`<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CV — ${displayName || 'Nomzod'}</title>
+  <style>
+    @media print {
+      body { margin: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>${cvHtml}</body>
+</html>`);
+      win.document.close();
+      win.addEventListener('load', () => {
+        setTimeout(() => {
+          win.focus();
+          win.print();
+        }, 300);
+      });
+    } finally {
+      setCvPrintLoading(false);
+    }
+  }
+
+  // Data extraction from detail (already unwrapped)
   const languages = useMemo(() => {
-    const raw = detail ? pickCandidateField(detail, 'languages', 'language_items') : undefined;
+    const raw = detail ? pickCandidateField(detail, 'languages') : undefined;
     return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
   const targetCountryRows = useMemo(() => {
     if (!detail) return [];
-    const raw = pickCandidateField(
-      detail,
-      'target_countries',
-      'targetCountries',
-      'country_codes',
-      'targetCountryCodes',
-    );
+    const raw = pickCandidateField(detail, 'target_countries', 'targetCountries');
     return parseAdminTargetCountries(raw);
   }, [detail]);
 
   const educations = useMemo(() => {
-    const raw = detail ? pickCandidateField(detail, 'educations', 'education_items') : undefined;
+    const raw = detail ? pickCandidateField(detail, 'educations') : undefined;
     return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
   const skills = useMemo(() => {
-    const raw = detail ? pickCandidateField(detail, 'skills', 'skill_items') : undefined;
+    const raw = detail ? pickCandidateField(detail, 'skills') : undefined;
     return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
   const documents = useMemo(() => {
-    const raw = detail ? pickCandidateField(detail, 'documents', 'document_items') : undefined;
+    const raw = detail ? pickCandidateField(detail, 'documents') : undefined;
     return Array.isArray(raw) ? raw : [];
   }, [detail]);
 
@@ -418,10 +518,11 @@ export function CandidateDetail() {
     { id: 'basic', label: 'Asosiy' },
     { id: 'languages', label: `Tillar (${languages.length})` },
     { id: 'countries', label: `Mamlakatlar (${targetCountryRows.length})` },
-    { id: 'education', label: `Ta’lim (${educations.length})` },
+    { id: 'education', label: `Ta'lim (${educations.length})` },
     { id: 'work', label: `Ish tajribasi (${workExperiences.length})` },
-    { id: 'skills', label: `Ko‘nikmalar (${skills.length})` },
+    { id: 'skills', label: `Ko'nikmalar (${skills.length})` },
     { id: 'documents', label: `Hujjatlar (${documents.length})` },
+    { id: 'cv', label: 'CV' },
   ];
 
   if (loading && !detail) {
@@ -439,7 +540,7 @@ export function CandidateDetail() {
         <p className={`${pageKicker} mb-1`}>The Kasb · Profil</p>
         <p className="text-sm text-danger">{err}</p>
         <Link to="/admin/candidates" className="text-sm font-medium text-primary hover:underline">
-          Ro‘yxatga qaytish
+          Ro'yxatga qaytish
         </Link>
       </div>
     );
@@ -449,27 +550,12 @@ export function CandidateDetail() {
 
   const exp = pickStr(detail, 'experience_range', 'experienceRange', 'experience');
   const avail = pickStr(detail, 'availability_status', 'availabilityStatus', 'availability');
-  const salMin = pickNum(
-    detail,
-    'salary_min',
-    'salaryMin',
-    'expected_salary_min',
-    'desired_salary_min',
-    'desiredSalaryMin',
-  );
-  const salMax = pickNum(
-    detail,
-    'salary_max',
-    'salaryMax',
-    'expected_salary_max',
-    'desired_salary_max',
-    'desiredSalaryMax',
-  );
+  const salMin = pickNum(detail, 'salary_min', 'salaryMin', 'expected_salary_min', 'desired_salary_min', 'desiredSalaryMin');
+  const salMax = pickNum(detail, 'salary_max', 'salaryMax', 'expected_salary_max', 'desired_salary_max', 'desiredSalaryMax');
   const currency = pickStr(detail, 'currency', 'salary_currency', 'salaryCurrency') || 'USD';
   const score = pickNum(detail, 'score', 'profile_score', 'profileScore');
   const categoryDisplay = categoryLabel ?? pickStr(detail, 'category_name', 'categoryName', 'category');
-  const professionDisplay =
-    professionLabel ?? pickStr(detail, 'profession_name', 'professionName', 'profession');
+  const professionDisplay = professionLabel ?? pickStr(detail, 'profession_name', 'professionName', 'profession');
   const registeredAt = pickStr(detail, 'created_at', 'createdAt', 'registered_at', 'registeredAt');
   const lastLogin = pickStr(detail, 'last_login_at', 'lastLoginAt', 'last_login', 'lastLogin');
   const dateBirth = pickStr(detail, 'date_birth', 'dateBirth');
@@ -498,9 +584,7 @@ export function CandidateDetail() {
           Nomzodlar
         </Link>
         <span className="mx-1.5 text-text-muted">/</span>
-        <span className="text-text-primary">
-          {displayName || phone || 'Nomzod'}
-        </span>
+        <span className="text-text-primary">{displayName || phone || 'Nomzod'}</span>
       </nav>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -513,7 +597,7 @@ export function CandidateDetail() {
               Nomzod profili
             </h1>
             <p className="truncate text-xs text-text-muted">
-              Ko‘rish, holat va agentni boshqarish, bog‘langan akkaunt
+              Ko'rish, holat va agentni boshqarish, bog'langan akkaunt
             </p>
           </div>
         </div>
@@ -548,7 +632,7 @@ export function CandidateDetail() {
             }}
           >
             <Trash2 className="h-4 w-4" strokeWidth={2} aria-hidden />
-            O‘chirish
+            O'chirish
           </button>
         </div>
       </div>
@@ -574,11 +658,11 @@ export function CandidateDetail() {
                   className="absolute -inset-1 rounded-full bg-primary/25 blur-lg motion-reduce:blur-none"
                   aria-hidden
                 />
-                <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary/25 to-primary/10 text-3xl font-bold text-primary ring-2 ring-primary/25 ring-offset-2 ring-offset-background">
-                  {initialsFromName(displayName) || '∑'}
+                <div className="relative">
+                  <Avatar name={displayName} size={96} />
                 </div>
               </div>
-              <h2 className="mb-1 text-center">{displayName || '—'}</h2>
+              <h2 className="mb-1 text-center">{displayName || phone || 'Nomzod'}</h2>
               <div className="mono mb-1 text-sm text-text-muted">{phone || '—'}</div>
               <div className="flex items-center justify-center gap-1.5 text-sm text-text-muted">
                 <MapPin className="h-4 w-4 flex-shrink-0 opacity-80" strokeWidth={2} aria-hidden />
@@ -592,7 +676,7 @@ export function CandidateDetail() {
                   <Label htmlFor="profile-active" className="text-sm font-medium text-text-primary">
                     Profil faol
                   </Label>
-                  <p className="text-xs text-text-muted">O‘chiq — profil to‘xtatilgan; yoqilgan — faol.</p>
+                  <p className="text-xs text-text-muted">O'chiq — profil to'xtatilgan; yoqilgan — faol.</p>
                 </div>
                 <Switch
                   id="profile-active"
@@ -616,10 +700,9 @@ export function CandidateDetail() {
                     onChange={(e) => setAgentIdInput(e.target.value)}
                   >
                     <option value="">— Agent tanlang —</option>
-                    {agentIdInput &&
-                    !agents.some((a) => String(a.id) === agentIdInput) ? (
+                    {agentIdInput && !agents.some((a) => String(a.id) === agentIdInput) ? (
                       <option value={agentIdInput}>
-                        ID {agentIdInput} (joriy / ro‘yxatda yo‘q)
+                        ID {agentIdInput} (joriy / ro'yxatda yo'q)
                       </option>
                     ) : null}
                     {agents.map((a) => (
@@ -651,7 +734,7 @@ export function CandidateDetail() {
               ) : null}
               <div className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 flex-shrink-0 text-text-muted" strokeWidth={2} aria-hidden />
-                <span className="text-text-muted">Ro‘yxatdan:</span>
+                <span className="text-text-muted">Ro'yxatdan:</span>
                 <span className="text-text-primary">{fmtDateTime(registeredAt)}</span>
               </div>
               <div className="flex items-center gap-2">
@@ -670,7 +753,7 @@ export function CandidateDetail() {
                   Ball: <span className="font-semibold tabular-nums text-text-primary">{score}%</span>
                   {completenessPct != null ? (
                     <>
-                      {' · '}To‘liqlik:{' '}
+                      {' · '}To'liqlik:{' '}
                       <span className="font-semibold tabular-nums text-text-primary">{completenessPct}%</span>
                     </>
                   ) : null}
@@ -684,7 +767,7 @@ export function CandidateDetail() {
               onClick={() => void load()}
               disabled={loading}
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Ma’lumotni yangilash'}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Ma'lumotni yangilash"}
             </button>
           </div>
         </div>
@@ -709,320 +792,166 @@ export function CandidateDetail() {
             </div>
 
             <div className="animate-in fade-in p-6 duration-300" key={activeTab}>
+              {/* ========== BASIC TAB ========== */}
               {activeTab === 'basic' && (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:gap-x-12">
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Kategoriya</div>
-                    <div className="text-sm text-text-primary">{categoryDisplay || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Kasb</div>
-                    <div className="text-sm text-text-primary">{professionDisplay || customProfessionName || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Tajriba</div>
-                    <div className="text-sm text-text-primary">
-                      {exp ? experienceLabels[exp] ?? exp : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Mavjudlik</div>
-                    <div className="text-sm text-text-primary">
-                      {avail ? availabilityLabels[avail] ?? avail : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Maosh kutishi</div>
-                    <div className="text-sm text-text-primary">
-                      {salMin != null && salMax != null
-                        ? `${salMin.toLocaleString()} – ${salMax.toLocaleString()} ${currency}`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Ball</div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full bg-success transition-all duration-500"
-                          style={{ width: `${Math.min(100, score ?? 0)}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium text-text-primary">{score ?? 0}%</span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Profil to‘liqligi</div>
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full bg-sky-500 transition-all duration-500"
-                          style={{ width: `${Math.min(100, completenessPct ?? 0)}%` }}
-                        />
-                      </div>
-                      <span className="text-sm font-medium text-text-primary tabular-nums">
-                        {completenessPct ?? 0}%
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Tug‘ilgan sana</div>
-                    <div className="text-sm text-text-primary">{dateBirth || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Oilaviy holat</div>
-                    <div className="text-sm text-text-primary">
-                      {marital ? uzOrCode(maritalStatusUz, marital) : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Ta’lim darajasi (profil)</div>
-                    <div className="text-sm text-text-primary">
-                      {eduLevel ? uzOrCode(educationLevelUz, eduLevel) : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Ma’lumotlar roziligi</div>
-                    <div className="text-sm text-text-primary">
-                      {typeof dataConsentRaw === 'boolean' ? (dataConsentRaw ? 'Ha' : 'Yo‘q') : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Oxirgi yangilanish</div>
-                    <div className="text-sm text-text-primary">{fmtDateTime(updatedAt)}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Profil ID</div>
-                    <div className="break-all font-mono text-xs text-text-primary">{profileId || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Foydalanuvchi ID</div>
-                    <div className="text-sm text-text-primary">
-                      {linkedUserId != null && linkedUserId > 0 ? (
-                        <Link to={`/admin/users/${linkedUserId}`} className="text-primary hover:underline">
-                          {linkedUserId}
-                        </Link>
-                      ) : (
-                        '—'
-                      )}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Viloyat ID</div>
-                    <div className="text-sm text-text-primary">{regionId != null ? regionId : '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Kategoriya ID</div>
-                    <div className="text-sm text-text-primary">{categoryId != null ? categoryId : '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Kasb ID</div>
-                    <div className="text-sm text-text-primary">{professionId != null ? professionId : '—'}</div>
-                  </div>
-                  {customProfessionId || customProfessionName ? (
-                    <div>
-                      <div className="mb-1 text-xs text-text-muted">Maxsus kasb</div>
-                      <div className="text-sm text-text-primary">
-                        {customProfessionName || '—'}
-                        {customProfessionId ? (
-                          <span className="mt-1 block font-mono text-xs text-text-muted">{customProfessionId}</span>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Tajriba (yil)</div>
-                    <div className="text-sm text-text-primary">
-                      {experienceYears != null ? `${experienceYears} yil` : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Profil holati</div>
-                    <div className="text-sm text-text-primary">
-                      {profileStatus ? uzOrCode(candidateProfileStatusUz, profileStatus) : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Agent</div>
-                    <div className="text-sm text-text-primary">
-                      {assignedAgent
-                        ? `${getUserDisplayName(assignedAgent)} (ID ${agentId})`
-                        : agentId != null
-                          ? `ID ${agentId}`
-                          : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Agent izohi</div>
-                    <div className="text-sm text-text-primary">{agentNotes || '—'}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Rozilik vaqti</div>
-                    <div className="text-sm text-text-primary">{fmtDateTime(dataConsentAt)}</div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-text-muted">Yaratilgan</div>
-                    <div className="text-sm text-text-primary">{fmtDateTime(registeredAt)}</div>
-                  </div>
+                  <ProfileField label="To‘liq ism">{displayName || '—'}</ProfileField>
+                  <ProfileField label="Telefon">{phone || '—'}</ProfileField>
+                  <ProfileField label="Tug‘ilgan sana">{dateBirth || '—'}</ProfileField>
+                  <ProfileField label="Oilaviy holat">
+                    {marital ? uzOrCode(maritalStatusUz, marital) : '—'}
+                  </ProfileField>
+                  <ProfileField label="Viloyat / Tuman">
+                    {region ? `${region} / ${pickStr(detail, 'district_name_uz', 'districtNameUz') || '—'}` : '—'}
+                  </ProfileField>
+                  <ProfileField label="Ta’lim darajasi">
+                    {eduLevel ? uzOrCode(educationLevelUz, eduLevel) : '—'}
+                  </ProfileField>
+                  <ProfileField label="Ish tajribasi">
+                    {exp ? experienceLabels[exp] || exp : (experienceYears ? `${experienceYears} yil` : '—')}
+                  </ProfileField>
+                  <ProfileField label="Mavjudlik">
+                    {avail ? availabilityLabels[avail] || avail : '—'}
+                  </ProfileField>
+                  <ProfileField label="Kutilayotgan maosh">
+                    {salMin != null && salMax != null
+                      ? `${salMin.toLocaleString()} – ${salMax.toLocaleString()} ${currency}`
+                      : salMin != null
+                      ? `${salMin.toLocaleString()} ${currency}`
+                      : salMax != null
+                      ? `≤ ${salMax.toLocaleString()} ${currency}`
+                      : '—'}
+                  </ProfileField>
+                  <ProfileField label="Kasb sohasi">{categoryDisplay || '—'}</ProfileField>
+                  <ProfileField label="Kasb / mutaxassislik">
+                    {professionDisplay || customProfessionName || '—'}
+                  </ProfileField>
+                  <ProfileField label="Agent">
+                    {assignedAgent ? getUserDisplayName(assignedAgent) : agentId ? `ID ${agentId}` : 'Biriktirilmagan'}
+                  </ProfileField>
+                  {agentNotes && (
+                    <ProfileField label="Agent eslatmasi">{agentNotes}</ProfileField>
+                  )}
+                  <ProfileField label="Profil to‘liqlik foizi">
+                    {completenessPct != null ? `${completenessPct}%` : '—'}
+                  </ProfileField>
+                  <ProfileField label="Ma’lumotlarga rozilik">
+                    {dataConsentRaw === true ? 'Ha' : dataConsentRaw === false ? "Yo‘q" : '—'}
+                    {dataConsentAt && ` (${fmtDateTime(dataConsentAt)})`}
+                  </ProfileField>
+                  <ProfileField label="Oxirgi yangilanish">{fmtDateTime(updatedAt)}</ProfileField>
                 </div>
               )}
 
+              {/* ========== LANGUAGES TAB ========== */}
               {activeTab === 'languages' && (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {languages.length === 0 ? (
-                    <p className="text-sm text-text-muted">Tillar ro‘yxati yo‘q.</p>
+                    <p className="text-sm text-text-muted">Tillar maʼlumoti yo‘q.</p>
                   ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {languages.map((lang, i) => {
-                        const L = lang as Record<string, unknown>;
-                        const rowId = pickStr(L, 'id') || `lang-${i}`;
-                        const code = pickStr(L, 'language', 'lang', 'code');
-                        const level = pickStr(L, 'level', 'language_level', 'languageLevel');
-                        const cert = pickCandidateField(L, 'has_certificate', 'hasCertificate', 'certified');
-                        return (
-                          <div
-                            key={rowId}
-                            className="flex gap-4 rounded-2xl border border-border/80 bg-gradient-to-br from-muted/30 to-transparent p-4 shadow-[var(--elite-shadow-xs)] transition-colors hover:border-primary/25"
-                          >
-                            <div
-                              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-surface shadow-inner ring-1 ring-border/60"
-                              aria-hidden
-                            >
-                              <LanguageIcon code={code} size={30} />
-                            </div>
-                            <div className="min-w-0 flex-1 space-y-2">
-                              <div className="text-base font-semibold text-text-primary">
-                                {code ? languageLabelUz(code) : '—'}
+                    languages.map((lang, idx) => {
+                      const L = lang as Record<string, unknown>;
+                      const langName = pickStr(L, 'language');
+                      const level = pickStr(L, 'level');
+                      const hasCert = pickCandidateField(L, 'has_certificate') === true;
+                      const certUrl = pickStr(L, 'certificate_file_url');
+                      return (
+                        <div key={pickStr(L, 'id') || idx} className="flex items-center justify-between rounded-2xl border border-border/80 bg-muted/20 p-4">
+                          <div className="flex items-center gap-3">
+                            <LanguageIcon language={langName} className="h-8 w-8" />
+                            <div>
+                              <div className="font-semibold text-text-primary">
+                                {langName ? languageLabelUz(langName) : '—'}
                               </div>
-                              {rowId && !rowId.startsWith('lang-') ? (
-                                <p className="font-mono text-[10px] text-text-muted">{rowId}</p>
-                              ) : null}
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
-                                  {level ? uzOrCode(cefrLevelUz, level) : '—'}
-                                </span>
-                                {typeof cert === 'boolean' ? (
-                                  <span
-                                    className={`inline-flex items-center gap-1 text-xs font-medium ${cert ? 'text-success' : 'text-text-muted'}`}
-                                  >
-                                    {cert ? (
-                                      <CheckCircle2 className="h-3.5 w-3.5" aria-hidden />
-                                    ) : (
-                                      <XCircle className="h-3.5 w-3.5 opacity-70" aria-hidden />
-                                    )}
-                                    Sertifikat: {cert ? 'bor' : 'yo‘q'}
-                                  </span>
-                                ) : null}
+                              <div className="text-xs text-text-muted">
+                                Daraja: {level ? uzOrCode(cefrLevelUz, level) : level || '—'}
+                                {hasCert && <span className="ml-2 text-success">✓ Sertifikat</span>}
                               </div>
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
+                          {certUrl && (
+                            <a href={certUrl} target="_blank" rel="noopener noreferrer" className={`${btnSecondary} text-xs`}>
+                              Sertifikat
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
 
+              {/* ========== COUNTRIES (TARGET COUNTRIES) TAB ========== */}
               {activeTab === 'countries' && (
                 <div className="space-y-3">
                   {targetCountryRows.length === 0 ? (
-                    <p className="text-sm text-text-muted">Maqsad mamlakatlar kiritilmagan.</p>
+                    <p className="text-sm text-text-muted">Maqsadli davlatlar belgilanmagan.</p>
                   ) : (
-                    <ul className="space-y-2">
-                      {targetCountryRows.map((row) => {
-                        const label =
-                          row.nameUz ||
-                          row.nameRu ||
-                          COUNTRIES.find((c) => c.code === row.countryCode)?.name ||
-                          countryNameUz(row.countryCode) ||
-                          row.countryCode;
-                        const flag = row.flagEmoji || countryFlagEmoji(row.countryCode);
-                        const salaryStr =
-                          row.salaryMin != null && row.salaryMax != null
-                            ? `${row.salaryMin.toLocaleString('ru-RU')}–${row.salaryMax.toLocaleString('ru-RU')} ${row.salaryCurrency}${row.salarySymbol ? ` (${row.salarySymbol})` : ''}`
-                            : null;
-                        return (
-                          <li
-                            key={row.rowId}
-                            className="flex items-center gap-4 rounded-2xl border border-border/80 bg-muted/20 px-4 py-3 transition-all hover:border-primary/30 hover:bg-muted/35"
-                          >
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-sm font-bold text-primary tabular-nums">
-                              {row.priority}
-                            </div>
-                            <span className="text-2xl leading-none" aria-hidden>
-                              {flag}
-                            </span>
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="text-sm font-semibold text-text-primary">{label}</div>
+                    targetCountryRows.map((tc, idx) => {
+                      const country = tc.destination_country as Record<string, unknown> | undefined;
+                      const code = pickStr(country, 'country_code');
+                      const name = pickStr(country, 'name_uz') || pickStr(country, 'name_ru') || code;
+                      const flag = pickStr(country, 'flag_emoji') || countryFlagEmoji(code);
+                      const salMinC = pickNum(country, 'salary_min');
+                      const salMaxC = pickNum(country, 'salary_max');
+                      const salCurr = pickStr(country, 'salary_currency');
+                      const langReq = pickStr(country, 'language_req');
+                      const priority = tc.priority;
+                      return (
+                        <div key={tc.id || idx} className="rounded-2xl border border-border/80 bg-muted/20 p-4">
+                          <div className="flex items-center gap-3">
+                            <span className="text-3xl">{flag || '🌍'}</span>
+                            <div className="flex-1">
+                              <div className="font-semibold text-text-primary">{name || code}</div>
                               <div className="text-xs text-text-muted">
-                                {row.countryCode}
-                                {row.nameRu && row.nameUz && row.nameRu !== row.nameUz
-                                  ? ` · ${row.nameRu}`
-                                  : ''}
+                                {salMinC != null && salMaxC != null
+                                  ? `💰 ${salMinC.toLocaleString()} – ${salMaxC.toLocaleString()} ${salCurr || 'USD'}`
+                                  : salMinC != null
+                                  ? `💰 ${salMinC.toLocaleString()} ${salCurr || 'USD'}`
+                                  : salMaxC != null
+                                  ? `💰 ≤ ${salMaxC.toLocaleString()} ${salCurr || 'USD'}`
+                                  : '💰 Maʼlumot yo‘q'}
                               </div>
-                              {salaryStr ? (
-                                <div className="text-xs font-medium text-text-primary">{salaryStr}</div>
-                              ) : null}
-                              {row.languageReq ? (
-                                <div className="text-xs text-text-muted">Til talabi: {row.languageReq}</div>
-                              ) : null}
-                              {row.note ? <div className="text-xs text-text-muted">{row.note}</div> : null}
-                              {row.isActive === false ? (
-                                <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
-                                  Nofaol
-                                </span>
-                              ) : null}
+                              {langReq && <div className="text-xs text-text-muted mt-1">📢 {langReq}</div>}
                             </div>
-                          </li>
-                        );
-                      })}
-                    </ul>
+                            {priority != null && (
+                              <div className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                                Priority {priority}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
 
+              {/* ========== EDUCATION TAB ========== */}
               {activeTab === 'education' && (
                 <div className="space-y-3">
                   {educations.length === 0 ? (
-                    <p className="text-sm text-text-muted">Ta’lim yozuvlari yo‘q.</p>
+                    <p className="text-sm text-text-muted">Taʼlim maʼlumotlari yo‘q.</p>
                   ) : (
-                    educations.map((ed, i) => {
-                      const E = ed as Record<string, unknown>;
-                      const eid = pickStr(E, 'id') || `ed-${i}`;
-                      const level = pickStr(E, 'level');
+                    educations.map((edu, idx) => {
+                      const E = edu as Record<string, unknown>;
+                      const instName = pickStr(E, 'institution_name');
                       const specialty = pickStr(E, 'specialty');
-                      const institution = pickStr(E, 'institution_name', 'institutionName');
+                      const level = pickStr(E, 'level');
+                      const gradYear = pickNum(E, 'graduation_year');
                       const country = pickStr(E, 'country');
-                      const year = pickNum(E, 'graduation_year', 'graduationYear');
                       return (
-                        <div
-                          key={eid}
-                          className="rounded-2xl border border-border/80 bg-surface/80 p-4 shadow-[var(--elite-shadow-xs)]"
-                        >
-                          <div className="mb-2 flex items-start gap-3">
-                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/12 text-primary">
-                              <GraduationCap className="h-5 w-5" strokeWidth={2} aria-hidden />
-                            </div>
-                            <div className="min-w-0 flex-1 space-y-1">
-                              <div className="text-sm font-semibold text-text-primary">
-                                {specialty || 'Mutaxassislik ko‘rsatilmagan'}
+                        <div key={pickStr(E, 'id') || idx} className="rounded-2xl border border-border/80 bg-muted/20 p-4">
+                          <div className="flex items-start gap-3">
+                            <GraduationCap className="mt-0.5 h-5 w-5 text-primary" strokeWidth={2} />
+                            <div className="flex-1">
+                              <div className="font-semibold text-text-primary">{instName || '—'}</div>
+                              {specialty && <div className="text-sm text-text-muted">{specialty}</div>}
+                              <div className="mt-1 flex flex-wrap gap-x-3 text-xs text-text-muted">
+                                {level && <span>📘 {uzOrCode(educationLevelUz, level)}</span>}
+                                {gradYear && <span>🎓 {gradYear}</span>}
+                                {country && <span>🌍 {countryNameUz(country) || country}</span>}
                               </div>
-                              <div className="text-xs text-text-muted">
-                                {level ? uzOrCode(educationLevelUz, level) : '—'}
-                                {year != null ? ` · ${year}` : ''}
-                                {country ? (
-                                  <>
-                                    {' · '}
-                                    <span className="inline-flex items-center gap-1">
-                                      <span aria-hidden>{countryFlagEmoji(country)}</span>
-                                      <span>{countryNameUz(country) ?? country}</span>
-                                    </span>
-                                  </>
-                                ) : null}
-                              </div>
-                              {institution ? (
-                                <div className="text-sm text-text-primary">{institution}</div>
-                              ) : null}
                             </div>
                           </div>
                         </div>
@@ -1032,30 +961,32 @@ export function CandidateDetail() {
                 </div>
               )}
 
+              {/* ========== WORK EXPERIENCE TAB ========== */}
               {activeTab === 'work' && (
                 <div className="space-y-3">
                   {workExperiences.length === 0 ? (
                     <p className="text-sm text-text-muted">Ish tajribasi kiritilmagan.</p>
                   ) : (
-                    workExperiences.map((wx, i) => {
-                      const W = wx as Record<string, unknown>;
-                      const wid = pickStr(W, 'id') || `wx-${i}`;
-                      const title = pickStr(W, 'position', 'title', 'job_title', 'jobTitle', 'employer_name');
-                      const org = pickStr(W, 'company', 'organization', 'employer');
-                      const period = pickStr(W, 'period', 'duration', 'start_date', 'startDate');
+                    workExperiences.map((exp, idx) => {
+                      const W = exp as Record<string, unknown>;
+                      const company = pickStr(W, 'company', 'employer');
+                      const position = pickStr(W, 'position', 'job_title');
+                      const start = pickStr(W, 'start_date', 'date_from');
+                      const end = pickStr(W, 'end_date', 'date_to');
                       const desc = pickStr(W, 'description', 'responsibilities');
                       return (
-                        <div
-                          key={wid}
-                          className="rounded-2xl border border-border/80 bg-muted/15 p-4 shadow-[var(--elite-shadow-xs)]"
-                        >
-                          <div className="flex gap-3">
-                            <Briefcase className="h-5 w-5 shrink-0 text-primary" strokeWidth={2} aria-hidden />
-                            <div className="min-w-0 space-y-1">
-                              <div className="text-sm font-semibold text-text-primary">{title || '—'}</div>
-                              {org ? <div className="text-sm text-text-muted">{org}</div> : null}
-                              {period ? <div className="text-xs text-text-muted">{period}</div> : null}
-                              {desc ? <p className="mt-2 text-sm leading-relaxed text-text-primary">{desc}</p> : null}
+                        <div key={idx} className="rounded-2xl border border-border/80 bg-muted/20 p-4">
+                          <div className="flex items-start gap-3">
+                            <Briefcase className="mt-0.5 h-5 w-5 text-primary" strokeWidth={2} />
+                            <div className="flex-1">
+                              <div className="font-semibold text-text-primary">{position || 'Lavozim ko‘rsatilmagan'}</div>
+                              {company && <div className="text-sm text-text-muted">{company}</div>}
+                              {(start || end) && (
+                                <div className="text-xs text-text-muted">
+                                  {start || '?'} – {end || 'hozirgacha'}
+                                </div>
+                              )}
+                              {desc && <div className="mt-2 text-sm text-text-primary">{desc}</div>}
                             </div>
                           </div>
                         </div>
@@ -1065,38 +996,31 @@ export function CandidateDetail() {
                 </div>
               )}
 
+              {/* ========== SKILLS TAB ========== */}
               {activeTab === 'skills' && (
                 <div className="flex flex-wrap gap-2">
                   {skills.length === 0 ? (
-                    <p className="text-sm text-text-muted">Ko‘nikmalar ro‘yxati bo‘sh.</p>
+                    <p className="text-sm text-text-muted">Ko‘nikmalar kiritilmagan.</p>
                   ) : (
-                    skills.map((sk, i) => {
-                      const S = sk as Record<string, unknown>;
-                      const sid = pickStr(S, 'id') || `sk-${i}`;
-                      const name = pickStr(S, 'skill_name', 'skillName', 'name');
-                      const verified = pickCandidateField(S, 'is_verified', 'isVerified');
-                      const v = verified === true;
+                    skills.map((skill, idx) => {
+                      const S = skill as Record<string, unknown>;
+                      const skillName = pickStr(S, 'skill_name', 'name');
+                      const verified = pickCandidateField(S, 'is_verified') === true;
                       return (
-                        <span
-                          key={sid}
-                          className="inline-flex items-center gap-2 rounded-full border border-border/90 bg-surface px-3 py-1.5 text-sm font-medium text-text-primary shadow-[var(--elite-shadow-xs)]"
+                        <div
+                          key={pickStr(S, 'id') || idx}
+                          className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-1.5 text-sm font-medium text-primary"
                         >
-                          <Award className="h-3.5 w-3.5 text-amber-600/90" strokeWidth={2} aria-hidden />
-                          {name || '—'}
-                          {typeof verified === 'boolean' ? (
-                            v ? (
-                              <CheckCircle2 className="h-3.5 w-3.5 text-success" aria-hidden />
-                            ) : (
-                              <span className="text-[10px] font-normal text-text-muted">tekshirilmagan</span>
-                            )
-                          ) : null}
-                        </span>
+                          {skillName || '—'}
+                          {verified && <CheckCircle2 className="h-3.5 w-3.5 text-success" strokeWidth={2} />}
+                        </div>
                       );
                     })
                   )}
                 </div>
               )}
 
+              {/* ========== DOCUMENTS TAB ========== */}
               {activeTab === 'documents' && (
                 <div className="space-y-3">
                   {documents.length === 0 ? (
@@ -1110,8 +1034,7 @@ export function CandidateDetail() {
                       const fileName = pickStr(D, 'file_name', 'fileName');
                       const uploaded = pickStr(D, 'uploaded_at', 'uploadedAt');
                       const expires = pickStr(D, 'expires_at', 'expiresAt');
-                      const verified = pickCandidateField(D, 'is_verified', 'isVerified');
-                      const v = verified === true;
+                      const verified = pickCandidateField(D, 'is_verified') === true;
                       return (
                         <div
                           key={did}
@@ -1123,17 +1046,13 @@ export function CandidateDetail() {
                               <div className="text-sm font-semibold text-text-primary">
                                 {docType ? uzOrCode(documentTypeUz, docType) : fileName || 'Hujjat'}
                               </div>
-                              {fileName ? (
-                                <div className="truncate text-xs text-text-muted">{fileName}</div>
-                              ) : null}
+                              {fileName ? <div className="truncate text-xs text-text-muted">{fileName}</div> : null}
                               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
                                 {uploaded ? <span>Yuklangan: {uploaded}</span> : null}
                                 {expires ? <span>Muddati: {expires}</span> : null}
-                                {typeof verified === 'boolean' ? (
-                                  <span className={v ? 'text-success' : ''}>
-                                    {v ? 'Tasdiqlangan' : 'Tasdiqlanmagan'}
-                                  </span>
-                                ) : null}
+                                <span className={verified ? 'text-success' : ''}>
+                                  {verified ? 'Tasdiqlangan' : 'Tasdiqlanmagan'}
+                                </span>
                               </div>
                             </div>
                           </div>
@@ -1154,38 +1073,128 @@ export function CandidateDetail() {
                   )}
                 </div>
               )}
+
+              {/* ========== CV TAB ========== */}
+              {activeTab === 'cv' && (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/20 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <FileText className="h-4 w-4" strokeWidth={2} aria-hidden />
+                      </div>
+                      <div>
+                        <div className="text-sm font-semibold text-text-primary">
+                          {displayName || 'Nomzod'} — CV
+                        </div>
+                        <div className="text-xs text-text-muted">
+                          HTML format · brauzer orqali PDF saqlash mumkin
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={cvLoading}
+                        onClick={() => { setCvHtml(null); setCvError(null); }}
+                        className={`${btnSecondary} inline-flex items-center gap-2`}
+                        title="CV ni qayta yuklash"
+                      >
+                        {cvLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        Yangilash
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!cvHtml || cvLoading || cvPrintLoading}
+                        onClick={handleCvPrint}
+                        className={`${btnPrimary} inline-flex items-center gap-2`}
+                        title="Chop etish / PDF saqlash"
+                      >
+                        {cvPrintLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+                        Chop etish / PDF
+                      </button>
+                    </div>
+                  </div>
+
+                  {cvLoading && (
+                    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 rounded-2xl border border-border/60 bg-muted/10 text-text-muted">
+                      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                      <p className="text-sm">CV yuklanmoqda…</p>
+                    </div>
+                  )}
+
+                  {cvError && !cvLoading && (
+                    <div className="flex items-start gap-3 rounded-2xl border border-danger/30 bg-danger/5 px-5 py-4">
+                      <XCircle className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="text-sm font-medium text-danger">{cvError}</p>
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-primary hover:underline"
+                          onClick={() => { setCvHtml(null); setCvError(null); }}
+                        >
+                          Qayta urinish
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {cvHtml && !cvLoading && (
+                    <div className="overflow-hidden rounded-2xl border border-border/80 shadow-[var(--elite-shadow-sm)]">
+                      <div className="flex items-center justify-between border-b border-border/60 bg-muted/20 px-5 py-2.5">
+                        <div className="flex items-center gap-2 text-xs text-text-muted">
+                          <div className="h-2.5 w-2.5 rounded-full bg-danger/70" />
+                          <div className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
+                          <div className="h-2.5 w-2.5 rounded-full bg-success/70" />
+                          <span className="ml-2">CV Preview</span>
+                        </div>
+                        <span className="text-xs text-text-muted">{displayName || 'Nomzod'}.cv</span>
+                      </div>
+                      <iframe
+                        srcDoc={cvHtml}
+                        title={`CV — ${displayName || 'Nomzod'}`}
+                        className="h-[80vh] w-full bg-white"
+                        sandbox="allow-same-origin allow-popups"
+                      />
+                    </div>
+                  )}
+
+                  {!cvHtml && !cvLoading && !cvError && (
+                    <div className="flex min-h-[25vh] flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border/60 bg-muted/10 text-text-muted">
+                      <FileText className="h-12 w-12 opacity-20" strokeWidth={1.5} aria-hidden />
+                      <p className="text-sm font-medium">CV hali yuklanmagan yoki mavjud emas</p>
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-primary hover:underline"
+                        onClick={() => { setCvHtml(null); setCvError(null); }}
+                      >
+                        Yuklashga urinish
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      <AlertDialog
-        open={deleteOpen}
-        onOpenChange={(open) => {
-          setDeleteOpen(open);
-          if (!open) setDeleteErr(null);
-        }}
-      >
+      <AlertDialog open={deleteOpen} onOpenChange={(open) => { setDeleteOpen(open); if (!open) setDeleteErr(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Bu nomzodni o‘chirish?</AlertDialogTitle>
+            <AlertDialogTitle>Bu nomzodni o'chirish?</AlertDialogTitle>
             <AlertDialogDescription className="space-y-2">
               <span className="block">
                 <strong className="text-text-primary">{displayName || phone || 'Nomzod'}</strong> — barcha
-                bog‘langan profil ma’lumotlari o‘chiriladi.
+                bog'langan profil ma'lumotlari o'chiriladi.
               </span>
               {deleteErr ? <span className="block text-sm text-danger">{deleteErr}</span> : null}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleting}>Bekor qilish</AlertDialogCancel>
-            <Button
-              variant="destructive"
-              disabled={deleting}
-              onClick={() => void handleDeleteCandidate()}
-            >
-              {deleting ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
-              Ha, o‘chirish
+            <Button variant="destructive" disabled={deleting} onClick={() => void handleDeleteCandidate()}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              Ha, o'chirish
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>

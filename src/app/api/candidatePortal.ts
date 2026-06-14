@@ -1408,6 +1408,13 @@ export async function candidateUploadDocument(
   await candidateMultipartRequest('/candidate/profile/documents', fd);
 }
 
+/** Обработка фото паспорта/лица на сервере — multipart POST */
+export async function candidateProcessPassportPhoto(file: File): Promise<unknown> {
+  const fd = new FormData();
+  fd.append('file', file);
+  return await candidateMultipartRequest('/passport-photo/process', fd);
+}
+
 /** Profilni yakuniy yuborish — `POST /api/candidate/profile/submit` */
 export async function candidateSubmitProfile(): Promise<void> {
   const token = getCandidateToken();

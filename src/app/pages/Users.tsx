@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { CheckCircle2, ChevronRight, Loader2, RefreshCw, UserPlus, XCircle } from 'lucide-react';
 import type { UserRole } from '../data/mockData';
 import {
@@ -14,7 +14,16 @@ import { UserFormDialog } from '../components/users/UserFormDialog';
 import { RoleBadge } from '../components/StatusBadge';
 import { AdminPaginationBar } from '../components/AdminPaginationBar';
 import { FilterPanel } from '../components/FilterPanel';
-import { btnPrimary, btnSecondary, ctlInput, ctlSelect, pageKicker, panelElite, rowElite, theadElite } from '../components/pageChrome';
+import {
+  btnPrimary,
+  btnSecondary,
+  ctlInput,
+  ctlSelect,
+  pageKicker,
+  panelElite,
+  rowElite,
+  theadElite,
+} from '../components/pageChrome';
 import { accountTypeUz } from '../lib/adminUiUz';
 
 function roleForBadge(u: SdgUserDto): UserRole {
@@ -54,6 +63,8 @@ export function Users() {
   const [createOpen, setCreateOpen] = useState(false);
   const fetchSeq = useRef(0);
 
+  const navigate = useNavigate();
+
   const patchFilters = useCallback((patch: Partial<typeof filters>) => {
     setFilters((prev) => ({ ...prev, ...patch }));
     setPage(0);
@@ -86,7 +97,7 @@ export function Users() {
       if (meta != null) setPage(meta.pageNumber);
     } catch (e) {
       if (seq !== fetchSeq.current) return;
-      setError(axiosErrorMessage(e, 'Ro‘yxatni yuklashda xato.'));
+      setError(axiosErrorMessage(e, 'Royxatni yuklashda xato.'));
       setRows([]);
       setPageMeta(null);
     } finally {
@@ -119,7 +130,6 @@ export function Users() {
         <div>
           <p className={`${pageKicker} mb-2`}>The Kasb · Admin</p>
           <h1 className="mb-1">Foydalanuvchilar</h1>
-    
         </div>
         <button type="button" className={btnPrimary} onClick={() => setCreateOpen(true)}>
           <UserPlus className="h-4 w-4" strokeWidth={2} aria-hidden />
@@ -199,7 +209,9 @@ export function Users() {
             </select>
           </div>
           <div className="min-w-[10rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Hech qachon tizimga kirmagan</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">
+              Hech qachon tizimga kirmagan
+            </label>
             <select
               value={filters.neverLoggedIn}
               onChange={(e) => patchFilters({ neverLoggedIn: e.target.value })}
@@ -211,7 +223,9 @@ export function Users() {
             </select>
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Ro‘yxatdan — boshlanish</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">
+              Ro&apos;yxatdan — boshlanish
+            </label>
             <input
               type="date"
               value={filters.registeredFrom}
@@ -220,7 +234,9 @@ export function Users() {
             />
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Ro‘yxatdan — tugash</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">
+              Ro&apos;yxatdan — tugash
+            </label>
             <input
               type="date"
               value={filters.registeredTo}
@@ -229,7 +245,9 @@ export function Users() {
             />
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Oxirgi kirish — boshlanish</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">
+              Oxirgi kirish — boshlanish
+            </label>
             <input
               type="date"
               value={filters.lastLoginFrom}
@@ -238,7 +256,9 @@ export function Users() {
             />
           </div>
           <div className="min-w-[12rem] flex-1 sm:max-w-[14rem]">
-            <label className="mb-1.5 block text-xs font-medium text-text-muted">Oxirgi kirish — tugash</label>
+            <label className="mb-1.5 block text-xs font-medium text-text-muted">
+              Oxirgi kirish — tugash
+            </label>
             <input
               type="date"
               value={filters.lastLoginTo}
@@ -250,7 +270,9 @@ export function Users() {
       </FilterPanel>
 
       {error ? (
-        <div className="rounded-2xl border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-danger">{error}</div>
+        <div className="rounded-2xl border border-danger/40 bg-danger/5 px-4 py-3 text-sm text-danger">
+          {error}
+        </div>
       ) : null}
 
       <div className={panelElite}>
@@ -266,14 +288,30 @@ export function Users() {
           <table className="w-full">
             <thead className={theadElite}>
               <tr>
-                <th className="w-16 px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">#</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Telefon</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Ism Familiya</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Rol</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Aktiv</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Tasdiqlangan</th>
-                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">Oxirgi kirish</th>
-                <th className="w-28 px-6 py-3 text-right text-xs font-semibold uppercase text-text-muted">Amallar</th>
+                <th className="w-16 px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  #
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Telefon
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Ism Familiya
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Rol
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Aktiv
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Tasdiqlangan
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase text-text-muted">
+                  Oxirgi kirish
+                </th>
+                <th className="w-28 px-6 py-3 text-right text-xs font-semibold uppercase text-text-muted">
+                  Amallar
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -287,61 +325,92 @@ export function Users() {
               ) : rows.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="px-6 py-12 text-center text-sm text-text-muted">
-                    Ma’lumot yo‘q yoki filtrga mos kelmaydi.
+                    Ma&apos;lumot yo&apos;q yoki filtrga mos kelmaydi.
                   </td>
                 </tr>
               ) : (
-                rows.map((user, index) => (
-                  <tr key={user.id} className={rowElite}>
-                    <td className="px-6 py-3 text-sm text-text-muted">{page * pageSize + index + 1}</td>
-                    <td className="mono px-6 py-3 text-sm text-text-primary">{user.phoneNumber ?? '—'}</td>
-                    <td className="px-6 py-3 text-sm text-text-primary">{getUserDisplayName(user)}</td>
-                    <td className="px-6 py-3">
-                      <RoleBadge role={roleForBadge(user)} />
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {user.isActive === true ? (
-                        <span className="inline-flex items-center gap-1.5 text-success">
-                          <CheckCircle2 className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
-                          Ha
-                        </span>
-                      ) : user.isActive === false ? (
-                        <span className="inline-flex items-center gap-1.5 text-danger">
-                          <XCircle className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
-                          Yo&apos;q
-                        </span>
-                      ) : (
-                        <span className="text-text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {user.isVerified === true ? (
-                        <span className="inline-flex items-center gap-1.5 text-success">
-                          <CheckCircle2 className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
-                          Ha
-                        </span>
-                      ) : user.isVerified === false ? (
-                        <span className="inline-flex items-center gap-1.5 text-text-muted">
-                          <XCircle className="h-4 w-4 flex-shrink-0 opacity-70" strokeWidth={2} aria-hidden />
-                          Yo&apos;q
-                        </span>
-                      ) : (
-                        <span className="text-text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-3 text-sm text-text-muted">{fmtLastLogin(user.lastLoginAt ?? undefined)}</td>
-                    <td className="px-6 py-3 text-right">
-                      <Link
-                        to={`/admin/users/${user.id}`}
-                        className={`${btnSecondary} h-8 px-3 text-xs`}
-                        aria-label="Batafsil"
-                      >
-                        Batafsil
-                        <ChevronRight className="h-3.5 w-3.5 opacity-80" aria-hidden />
-                      </Link>
-                    </td>
-                  </tr>
-                ))
+                rows.map((user, index) => {
+                  const candidateId =
+                    (user['candidate_id'] as string | null) ?? user.candidateId ?? null;
+                  return (
+                    <tr key={user.id} className={rowElite}>
+                      <td className="px-6 py-3 text-sm text-text-muted">
+                        {page * pageSize + index + 1}
+                      </td>
+                      <td className="mono px-6 py-3 text-sm text-text-primary">
+                        {user.phoneNumber ?? '—'}
+                      </td>
+                      <td className="px-6 py-3 text-sm text-text-primary">
+                        {getUserDisplayName(user)}
+                      </td>
+                      {/* --- BEGIN: CHANGED THIS BLOCK FOR THE ROLE BADGE --- */}
+                      <td className="px-6 py-3">
+                        {candidateId ? (
+                          <Link
+                            to={`/admin/candidates/${candidateId}`}
+                            className="inline-block cursor-pointer"
+                            style={{ textDecoration: 'none' }}
+                            tabIndex={0}
+                          >
+                            <RoleBadge
+                              role={roleForBadge(user)}
+                              candidateId={candidateId}
+                            />
+                          </Link>
+                        ) : (
+                          <RoleBadge
+                            role={roleForBadge(user)}
+                            candidateId={candidateId}
+                          />
+                        )}
+                      </td>
+                      {/* --- END: CHANGED THIS BLOCK FOR THE ROLE BADGE --- */}
+                      <td className="px-6 py-3 text-sm">
+                        {user.isActive === true ? (
+                          <span className="inline-flex items-center gap-1.5 text-success">
+                            <CheckCircle2 className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
+                            Ha
+                          </span>
+                        ) : user.isActive === false ? (
+                          <span className="inline-flex items-center gap-1.5 text-danger">
+                            <XCircle className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
+                            Yo&apos;q
+                          </span>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-sm">
+                        {user.isVerified === true ? (
+                          <span className="inline-flex items-center gap-1.5 text-success">
+                            <CheckCircle2 className="h-4 w-4 flex-shrink-0" strokeWidth={2} aria-hidden />
+                            Ha
+                          </span>
+                        ) : user.isVerified === false ? (
+                          <span className="inline-flex items-center gap-1.5 text-text-muted">
+                            <XCircle className="h-4 w-4 flex-shrink-0 opacity-70" strokeWidth={2} aria-hidden />
+                            Yo&apos;q
+                          </span>
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-3 text-sm text-text-muted">
+                        {fmtLastLogin(user.lastLoginAt ?? undefined)}
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        <Link
+                          to={`/admin/users/${user.id}`}
+                          className={`${btnSecondary} h-8 px-3 text-xs`}
+                          aria-label="Batafsil"
+                        >
+                          Batafsil
+                          <ChevronRight className="h-3.5 w-3.5 opacity-80" aria-hidden />
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

@@ -23,9 +23,9 @@ export type CandidatesListQuery = {
   professionId?: number;
   profileStatus?: AdminProfileStatus | '';
   regionId?: number;
-  /** Hudud nomi bo‘yicha qidiruv (qisman moslash) */
+  /** Hudud nomi bo'yicha qidiruv (qisman moslash) */
   regionName?: string;
-  /** Ta’lim muassasasi (OTM nomi) — GET query `institutionName` */
+  /** Ta'lim muassasasi (OTM nomi) — GET query `institutionName` */
   institutionName?: string;
   salaryMax?: number;
   salaryMin?: number;
@@ -130,6 +130,43 @@ export async function fetchCandidateById(id: string | number): Promise<Record<st
   return o as Record<string, unknown>;
 }
 
+/**
+ * Nomzod CV ni HTML matn sifatida qaytaradi.
+ *
+ * Asosiy:  GET /api/candidate/cv/html/{candidateId}
+ * Fallback: GET /api/candidate/cv/html/user/{userId}  (ixtiyoriy)
+ *
+ * `api` baseURL `/api` bo'lsa, path `/candidate/cv/html/...` to'g'ri bo'ladi.
+ * Agar backend `/api/admin/...` prefixi talab qilsa, pastdagi yo'lni moslashtiring.
+ */
+export async function fetchCandidateCvHtml(
+  candidateId: string | number,
+  fallbackUserId?: number,
+): Promise<string> {
+  try {
+    const { data } = await api.get<string>(
+      `/candidate/cv/html/${encodeURIComponent(String(candidateId))}`,
+      { responseType: 'text' },
+    );
+    return typeof data === 'string' ? data : String(data ?? '');
+  } catch (primaryErr) {
+    // userId orqali fallback
+    if (fallbackUserId != null && fallbackUserId > 0) {
+      try {
+        const { data } = await api.get<string>(
+          `/candidate/cv/html/user/${encodeURIComponent(String(fallbackUserId))}`,
+          { responseType: 'text' },
+        );
+        return typeof data === 'string' ? data : String(data ?? '');
+      } catch {
+        // fallback ham ishlamasa — asl xatoni tashlaymiz
+        throw primaryErr;
+      }
+    }
+    throw primaryErr;
+  }
+}
+
 /** Profil holati — PATCH body: { profile_status } */
 export async function updateCandidateProfileStatus(
   id: string | number,
@@ -146,13 +183,12 @@ export async function updateCandidateProfileStatus(
 export async function assignCandidateAgent(candidateId: string | number, agent_id: number): Promise<void> {
   const { data } = await api.post<unknown>(
     `/admin/candidates/${encodeURIComponent(String(candidateId))}/assign-agent`,
-    {
-    agent_id,
-  });
+    { agent_id },
+  );
   assertApiSuccess(data);
 }
 
-/** Nomzod profilini o‘chirish — DELETE /api/admin/candidates/{id} */
+/** Nomzod profilini o'chirish — DELETE /api/admin/candidates/{id} */
 export async function deleteCandidate(id: string | number): Promise<void> {
   const { data } = await api.delete<unknown>(`/admin/candidates/${encodeURIComponent(String(id))}`);
   assertApiSuccess(data);
@@ -184,14 +220,14 @@ export function pickNum(obj: unknown, ...keys: string[]): number | undefined {
 }
 
 /**
- * Admin ro‘yxati (GET /admin/candidates) qatoridan GET/PATCH/DELETE uchun `{id}`.
+ * Admin ro'yxati (GET /admin/candidates) qatoridan GET/PATCH/DELETE uchun `{id}`.
  * Ichki `candidate_profile` / `candidateProfile` obyektlarini ham tekshiradi.
  */
 export function adminCandidateIdFromListRow(row: unknown, depth = 0): string | null {
   if (depth > 4 || !row || typeof row !== 'object' || Array.isArray(row)) return null;
   const o = row as Record<string, unknown>;
 
-  /** Ro‘yxatda ko‘pincha UUID qator (`candidate_id`) — `pickNum` buni o‘tkazib yuborardi. */
+  /** Ro'yxatda ko'pincha UUID qator (`candidate_id`) — `pickNum` buni o'tkazib yuborardi. */
   const candidateKey = pickStr(o, 'candidate_id', 'candidateId').trim();
   if (candidateKey) return candidateKey;
 
@@ -224,7 +260,7 @@ export function adminCandidateIdFromListRow(row: unknown, depth = 0): string | n
   const fallbackS = pickStr(o, 'id').trim();
   if (fallbackS) return fallbackS;
 
-  /** Ba’zi ro‘yxatlarda faqat foydalanuvchi ID bo‘lishi mumkin (backend `{id}` ni qabul qilsa). */
+  /** Ba'zi ro'yxatlarda faqat foydalanuvchi ID bo'lishi mumkin (backend `{id}` ni qabul qilsa). */
   const userN = pickNum(o, 'user_id', 'userId');
   if (userN != null && userN > 0) return String(userN);
 
