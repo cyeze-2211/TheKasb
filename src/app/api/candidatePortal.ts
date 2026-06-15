@@ -1412,7 +1412,7 @@ export async function candidateUploadDocument(
 export async function candidateProcessPassportPhoto(file: File): Promise<unknown> {
   const fd = new FormData();
   fd.append('file', file);
-  return await candidateMultipartRequest('/passport-photo/process', fd);
+  return await candidateMultipartRequest('/file/passport-photo/process', fd);
 }
 
 /** Profilni yakuniy yuborish — `POST /api/candidate/profile/submit` */
