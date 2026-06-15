@@ -101,11 +101,18 @@ export async function fetchPublicRegionById(id: number): Promise<PublicRegion | 
   return r;
 }
 
-export async function fetchPublicRegionDistricts(regionId: number): Promise<PublicDistrict[]> {
-  const list = await fetchAdminDistricts({ region_id: regionId });
-  return list
-    .filter((d) => d.is_active !== false)
-    .map((d) => ({
+export async function fetchPublicRegionDistricts(
+  regionId: number
+): Promise<PublicDistrict[]> {
+  const { data } = await api.get<unknown>(`/districts?region_id=${regionId}`);
+
+  assertApiSuccess(data);
+
+  const rows = unwrapList(data);
+
+  return rows
+    .filter((d: any) => d.is_active !== false)
+    .map((d: any) => ({
       id: d.id,
       code: d.code,
       name_uz: d.name_uz,
