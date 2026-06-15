@@ -110,7 +110,7 @@ export async function fetchPublicRegionDistricts(
 
   const rows = unwrapList(data);
 
-  return rows
+  return rows?.object
     .filter((d: any) => d.is_active !== false)
     .map((d: any) => ({
       id: d.id,
