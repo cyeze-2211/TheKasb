@@ -104,7 +104,7 @@ export async function fetchPublicRegionById(id: number): Promise<PublicRegion | 
 export async function fetchPublicRegionDistricts(
   regionId: number
 ): Promise<PublicDistrict[]> {
-  const { data } = await api.get<unknown>(`/districts?region_id=${regionId}`);
+  const { data } = await api.get<unknown>(`/regions/${regionId}/districts`);
 
   assertApiSuccess(data);
 
