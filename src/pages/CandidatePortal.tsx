@@ -23,6 +23,7 @@ import {
   ensurePublicDistrictsLoaded,
   ensurePublicRegionsLoaded,
   resolvePublicRegionId,
+  resolvePublicRegionNameUz,
 } from '../app/lib/publicRegionCatalog';
 import type { LucideIcon } from 'lucide-react';
 import {
@@ -2013,7 +2014,7 @@ function Screen6Work({
   setForm,
   busy = false,
 }: {
-  onNext: () => void | Promise<void>;
+  onNext: (entries?: CandidateWorkExperienceBody[]) => void | Promise<void>;
   onBack: () => void;
   form: FormState;
   setForm: React.Dispatch<React.SetStateAction<FormState>>;
@@ -2230,7 +2231,7 @@ function Screen6Work({
       workCustomProfessionName: "",
       workExperienceYears: null,
     }));
-    void Promise.resolve(onNext());
+    void Promise.resolve(onNext(merged));
   };
 
   const primaryDisabled =
@@ -4179,6 +4180,44 @@ function professionDisplayFromProfile(profile: Record<string, unknown> | null): 
   return `${we.length} ta ish tajribasi bandi`;
 }
 
+/** Profil / summary dan viloyat nomi — `region_name`, `region_id`, manzil select */
+function regionDisplayFromProfile(profile: Record<string, unknown> | null): string {
+  if (!profile) return '';
+  const direct = pickStr(
+    profile,
+    'region_name_uz',
+    'regionNameUz',
+    'region_name',
+    'regionName',
+  );
+  if (direct) return direct;
+
+  const regionField = pickStr(profile, 'region');
+  if (regionField && !/^\d+$/.test(regionField)) return regionField;
+
+  const addressRegion = pickStr(profile, 'addressRegion', 'address_region');
+  const regionId =
+    normalizeCandidateRegionId(pickNum(profile, 'region_id', 'regionId')) ??
+    normalizeCandidateRegionId(pickStr(profile, 'region_id', 'regionId'));
+
+  const fromInputs = candidateRegionFieldsFromInputs({
+    regionId,
+    regionLabelUz: direct || regionField,
+    addressRegion,
+  });
+  if (fromInputs?.region_name_uz) return fromInputs.region_name_uz;
+
+  if (addressRegion) {
+    const fromAddress = resolvePublicRegionNameUz(addressRegion).trim();
+    if (fromAddress) return fromAddress;
+  }
+  if (regionId != null) {
+    const fromId = resolvePublicRegionNameUz(regionId).trim();
+    if (fromId) return fromId;
+  }
+  return '';
+}
+
 function pickBackendProfilePct(profile: Record<string, unknown> | null): number | null {
   if (!profile) return null;
   const orderedKeys = [
@@ -4213,9 +4252,7 @@ function profileChecklistItems(profile: Record<string, unknown> | null): Profile
   const weLen = workExperiencesArray(profile).length;
   const expOk =
     !!pickStr(profile, 'experience_range', 'experienceRange', 'experience') || weLen > 0;
-  const hasRegion =
-    (pickNum(profile, 'region_id', 'regionId') ?? 0) > 0 ||
-    !!pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region');
+  const hasRegion = !!regionDisplayFromProfile(profile);
   const consentRaw = profile.data_consent ?? profile.dataConsent;
   const consentOk = consentRaw === true;
   const educations = profile.educations;
@@ -5624,7 +5661,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const updated = pickStr(profile, 'updated_at', 'updatedAt', 'updated');
   const createdFmt = formatPortalDateTime(created);
   const updatedFmt = formatPortalDateTime(updated);
-  const region = pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region');
+  const region = regionDisplayFromProfile(profile);
   const marital = pickProfileEnum(profile, 'marital_status', 'maritalStatus');
   const maritalUz = marital ? uzOrCode(maritalStatusUz, marital) : '';
   const consentRaw = profile?.data_consent ?? profile?.dataConsent;
@@ -5643,10 +5680,7 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const tcRows = targetCountryRows(profile);
   const langsArr = profile?.languages ?? profile?.candidate_languages ?? profile?.candidateLanguages;
   const hasLangsArr = Array.isArray(langsArr) && langsArr.length > 0;
-  const hasRegionField =
-    (pickNum(profile, 'region_id', 'regionId') ?? 0) > 0 ||
-    !!pickStr(profile, 'region_name_uz', 'regionNameUz', 'region_name', 'regionName', 'region') ||
-    !!pickStr(profile, 'addressRegion', 'address_region');
+  const hasRegionField = !!region;
 
   const agentRaw = profile?.assigned_agent ?? profile?.agent ?? profile?.assignedAgent;
   let agentName = '';
@@ -6505,8 +6539,8 @@ export default function CandidatePortal() {
     }
   }
 
-  async function saveWorkAndNext() {
-    const entries = form.workExperienceEntries;
+  async function saveWorkAndNext(entriesOverride?: CandidateWorkExperienceBody[]) {
+    const entries = entriesOverride ?? form.workExperienceEntries;
     if (!entries.length) {
       toast.error('Kamida bitta ish tajribasini kiriting.');
       return;
@@ -6703,7 +6737,7 @@ export default function CandidatePortal() {
     ),
     6: (
       <Screen6Work
-        onNext={() => saveWorkAndNext()}
+        onNext={(entries) => saveWorkAndNext(entries)}
         onBack={goBack}
         form={form}
         setForm={setForm}
