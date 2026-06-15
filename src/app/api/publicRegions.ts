@@ -100,17 +100,14 @@ export async function fetchPublicRegionById(id: number): Promise<PublicRegion | 
   if (r?.is_active === false) return null;
   return r;
 }
-
 export async function fetchPublicRegionDistricts(
   regionId: number
 ): Promise<PublicDistrict[]> {
-  const { data } = await api.get<unknown>(`/regions/${regionId}/districts`);
+  const { data } = await api.get<any>(`/regions/${regionId}/districts`);
 
   assertApiSuccess(data);
 
-  const rows = unwrapList(data);
-
-  return rows?.object
+  return data.object
     .filter((d: any) => d.is_active !== false)
     .map((d: any) => ({
       id: d.id,
