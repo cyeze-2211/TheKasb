@@ -517,7 +517,7 @@ export function CandidateDetail() {
   const tabs = [
     { id: 'basic', label: 'Asosiy' },
     { id: 'languages', label: `Tillar (${languages.length})` },
-    { id: 'countries', label: `Mamlakatlar (${targetCountryRows.length})` },
+    { id: 'countries', label: `Migratsiya mamlakatlari  (${targetCountryRows.length})` },
     { id: 'education', label: `Ta'lim (${educations.length})` },
     { id: 'work', label: `Ish tajribasi (${workExperiences.length})` },
     { id: 'skills', label: `Ko'nikmalar (${skills.length})` },

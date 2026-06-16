@@ -22,6 +22,7 @@ import {
   type SdgUserDto,
   type UserDeletePreviewDto,
 } from '../api/users';
+import { fetchUserFileBlob } from '../api/userFiles'; // <-- импортируем готовую функцию
 import { UserDeletePreviewPanel } from '../components/users/UserDeletePreviewPanel';
 import { UserFormDialog } from '../components/users/UserFormDialog';
 import { RoleBadge } from '../components/StatusBadge';
@@ -38,6 +39,8 @@ import {
 import { Button } from '../components/ui/button';
 import { btnSecondary, pageKicker, panelElite, panelEliteRaised } from '../components/pageChrome';
 import { resolveTumanLabelUz, resolveViloyatLabelUz } from '../lib/uzRegionsCodeSystem';
+
+// ─── Вспомогательные функции ─────────────────────────────────────
 
 function roleForBadge(u: SdgUserDto): UserRole {
   const r = String(u.accountType ?? 'CANDIDATE');
@@ -63,6 +66,8 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ─── Компонент ────────────────────────────────────────────────────
+
 export function UserDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -78,6 +83,11 @@ export function UserDetail() {
   const [previewErr, setPreviewErr] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState<'soft' | 'hard' | null>(null);
   const [deleteErr, setDeleteErr] = useState<string | null>(null);
+
+  // Состояния для фото
+  const [photoBlobUrl, setPhotoBlobUrl] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const [photoError, setPhotoError] = useState(false);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(numericId)) {
@@ -102,6 +112,66 @@ export function UserDetail() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // ─── Загрузка фото через готовый API-метод ──────────────────────
+
+  useEffect(() => {
+    // Сброс предыдущего URL при смене пользователя
+    if (photoBlobUrl) {
+      URL.revokeObjectURL(photoBlobUrl);
+      setPhotoBlobUrl(null);
+    }
+    setPhotoError(false);
+    setPhotoLoading(false);
+
+    if (!user) return;
+
+    // Проверяем, что фото готово
+    const canLoadPhoto =
+      user.aiPhotoStatus === 'COMPLETED' &&
+      user.aiPassportPhotoFileId != null &&
+      Number.isFinite(user.aiPassportPhotoFileId);
+
+    if (!canLoadPhoto) {
+      return;
+    }
+
+    const photoId = user.aiPassportPhotoFileId!;
+    let isMounted = true;
+
+    setPhotoLoading(true);
+    setPhotoError(false);
+
+    // Используем существующую функцию fetchUserFileBlob
+    fetchUserFileBlob(photoId)
+      .then(({ blob }) => {
+        if (!isMounted) return;
+        const url = URL.createObjectURL(blob);
+        setPhotoBlobUrl(url);
+        setPhotoLoading(false);
+      })
+      .catch((err) => {
+        console.error('[UserDetail] Failed to load photo:', err);
+        if (isMounted) {
+          setPhotoError(true);
+          setPhotoLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
+
+  // Очистка при размонтировании компонента
+  useEffect(() => {
+    return () => {
+      if (photoBlobUrl) {
+        URL.revokeObjectURL(photoBlobUrl);
+      }
+    };
+  }, [photoBlobUrl]);
 
   const loadPreview = useCallback(async () => {
     if (!Number.isFinite(numericId)) return;
@@ -188,6 +258,8 @@ export function UserDetail() {
     .slice(0, 3)
     .toUpperCase();
 
+  const showPhoto = !photoLoading && !photoError && photoBlobUrl !== null;
+
   return (
     <div className="space-y-6 p-6 md:space-y-8 md:p-8">
       <p className={`${pageKicker} mb-1`}>The Kasb · Admin</p>
@@ -227,8 +299,18 @@ export function UserDetail() {
                 className="absolute -inset-1 rounded-full bg-primary/20 blur-lg motion-reduce:blur-none"
                 aria-hidden
               />
-              <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-primary/30 to-primary/5 text-2xl font-bold text-primary ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
-                {initials || <User className="h-10 w-10 opacity-80" />}
+              <div className="relative flex h-24 w-24 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary/30 to-primary/5 text-2xl font-bold text-primary ring-2 ring-primary/20 ring-offset-2 ring-offset-background">
+                {photoLoading ? (
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                ) : showPhoto ? (
+                  <img
+                    src={photoBlobUrl!}
+                    alt={getUserDisplayName(user)}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  initials || <User className="h-10 w-10 opacity-80" />
+                )}
               </div>
             </div>
             <h2 className="text-lg font-semibold">{getUserDisplayName(user)}</h2>
