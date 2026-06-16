@@ -593,7 +593,7 @@ export function Candidates() {
             </div>
           </div>
 
-          {/* Ikkinchi qatorda: tajriba, mavjudlik, mamlakat, til, til darajasi, xalqaro exp davlat */}
+          {/* Ikkinchi qatorda: tajriba, Migratsiya qilmoqchi, mamlakat, til, til darajasi, xalqaro exp davlat */}
           <div className={`${filterFieldGrid} grid-cols-1 md:grid-cols-3 lg:grid-cols-6`}>
             <div>
               <span className="mb-1.5 block text-xs font-medium text-text-muted">Tajriba</span>
@@ -609,7 +609,7 @@ export function Candidates() {
               </select>
             </div>
             <div>
-              <span className="mb-1.5 block text-xs font-medium text-text-muted">Mavjudlik</span>
+              <span className="mb-1.5 block text-xs font-medium text-text-muted">Migratsiya qilmoqchi</span>
               <select
                 className={ctlSelect}
                 value={q.availabilityStatus ?? ''}
@@ -763,7 +763,7 @@ export function Candidates() {
                   Tajriba
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">
-                  Mavjudlik
+                  Migratsiya qilmoqchi
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Til</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase text-text-muted">Maosh</th>

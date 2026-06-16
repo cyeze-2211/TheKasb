@@ -15,6 +15,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import FotonLogo from '../Img/e9ee15f1-3bc8-490d-941f-3b6a5ee4ce9c_removalai_preview.png';
 import type { PublicDistrict, PublicRegion } from '../app/api/publicRegions';
 import {
+  FaceLandmarker,
+  FilesetResolver,
+  FaceLandmarkerResult,
+} from '@mediapipe/tasks-vision';
+
+import {
   fetchPublicUniversities,
   filterPublicUniversities,
   type PublicUniversity,
@@ -396,7 +402,6 @@ interface FormState {
   /** `workIsOtherProfession` bo‘lsa — maxsus kasb nomi */
   workCustomProfessionName: string;
   /** Ish tajribasi (yil) — joriy qator (massivga qo‘shishdan oldin) */
-  workExperienceYears: 1 | 2 | 5 | null;
   /** POST /work-experiences uchun yig‘ilgan qatorlar */
   workExperienceEntries: CandidateWorkExperienceBody[];
   /** Tanlangan qatorlar tartibi — katalog `id` (UUID, POST da destination_country_id) */
@@ -404,6 +409,9 @@ interface FormState {
   availability: 'now' | 'soon' | 'later' | null;
   languageSelections: LanguageSelection[];
   /** «Til bilmayman» tanlangan bo‘lsa */
+
+  workExperienceYears: number | null;
+  workExperienceMonths: number | null;
   declaresNoLanguage: boolean;
   /** USD, `desired_salary_min` */
   desiredSalaryMin: number;
@@ -430,22 +438,50 @@ interface FormState {
 }
 
 /** Joriy forma bo‘yicha bitta work-experience obyekti (slug API bilan mos) */
-function buildWorkExperienceBody(form: FormState): CandidateWorkExperienceBody | null {
-  const y = form.workExperienceYears;
-  if (y == null) return null;
+function buildWorkExperienceBody(
+  form: FormState
+): CandidateWorkExperienceBody | null {
+  const years = form.workExperienceYears ?? 0;
+  const months = form.workExperienceMonths ?? 0;
+
+  if (years === 0 && months === 0) return null;
+
   const catId = form.workProfessionCategoryId ?? 0;
-  const profId = form.workIsOtherProfession ? 0 : form.workProfessionId ?? 0;
+  const profId = form.workIsOtherProfession
+    ? 0
+    : form.workProfessionId ?? 0;
+
   if (!form.workIsOtherProfession && profId <= 0) return null;
-  if (form.workIsOtherProfession && !form.workCustomProfessionName.trim()) return null;
-  const description = `${y} yil ish tajribasi`;
+
+  if (
+    form.workIsOtherProfession &&
+    !form.workCustomProfessionName.trim()
+  ) {
+    return null;
+  }
+
+  let description = "";
+
+  if (years > 0 && months > 0) {
+    description = `${years} yil ${months} oy ish tajribasi`;
+  } else if (years > 0) {
+    description = `${years} yil ish tajribasi`;
+  } else {
+    description = `${months} oy ish tajribasi`;
+  }
+
   return {
     profession_id: profId,
     profession_category_id: catId,
-    duration_years: y,
-    duration_months: 0,
+    duration_years: years,
+    duration_months: months,
     description,
-    ...(form.workIsOtherProfession && form.workCustomProfessionName.trim()
-      ? { custom_profession_name: form.workCustomProfessionName.trim() }
+    ...(form.workIsOtherProfession &&
+      form.workCustomProfessionName.trim()
+      ? {
+        custom_profession_name:
+          form.workCustomProfessionName.trim(),
+      }
       : {}),
   };
 }
@@ -2007,7 +2043,10 @@ const YEAR_OPTIONS = Array.from({ length: 41 }, (_, i) => i);
 // Months range: 0 to 11
 const MONTH_OPTIONS = Array.from({ length: 12 }, (_, i) => i);
 
-function Screen6Work({
+
+
+
+export function Screen6Work({
   onNext,
   onBack,
   form,
@@ -2034,7 +2073,7 @@ function Screen6Work({
     return "category";
   });
 
-  // Local state for experience picker (years + months)
+  // Локальное состояние для выбора лет и месяцев
   const [expYears, setExpYears] = useState<number>(() => {
     if (form.workExperienceYears == null) return 0;
     return Math.floor(form.workExperienceYears);
@@ -2051,7 +2090,7 @@ function Screen6Work({
   const [profsLoading, setProfsLoading] = useState(false);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  // Load categories on mount
+  // Загрузка категорий
   useEffect(() => {
     let cancelled = false;
     setCatsLoading(true);
@@ -2071,7 +2110,7 @@ function Screen6Work({
     };
   }, []);
 
-  // Load professions when category changes
+  // Загрузка профессий при смене категории
   useEffect(() => {
     const catId = form.workProfessionCategoryId;
     if (catId == null) {
@@ -2096,17 +2135,16 @@ function Screen6Work({
     };
   }, [form.workProfessionCategoryId]);
 
-  // Update form.workExperienceYears whenever expYears or expMonths change
+  // Синхронизация локальных лет/месяцев с общим полем в form (дробное)
   useEffect(() => {
-    const totalYears = expYears + expMonths / 12;
-    // Avoid rounding errors: keep 2 decimals
-    const rounded = Math.round(totalYears * 100) / 100;
-    if (form.workExperienceYears !== rounded) {
-      setForm((f) => ({ ...f, workExperienceYears: rounded }));
-    }
-  }, [expYears, expMonths, setForm, form.workExperienceYears]);
+    setForm((f) => ({
+      ...f,
+      workExperienceYears: expYears,
+      workExperienceMonths: expMonths,
+    }));
+  }, [expYears, expMonths, setForm]);
 
-  // Navigation handlers
+  // Навигация "назад"
   const handleTopBack = () => {
     if (panel === "category") {
       onBack();
@@ -2140,7 +2178,7 @@ function Screen6Work({
       setExpMonths(0);
       return;
     }
-    // from experience → back to profession/otherDetail
+    // из experience → назад к profession/otherDetail
     setPanel(form.workIsOtherProfession ? "otherDetail" : "profession");
     setForm((f) => ({ ...f, workExperienceYears: null }));
     setExpYears(0);
@@ -2194,6 +2232,7 @@ function Screen6Work({
     (form.workIsOtherProfession && otherNameOk);
   const canFinishExperience = hasProfessionChoice && form.workExperienceYears != null;
 
+  // Добавить ещё одно место работы (с сохранением текущего)
   const addAnotherWork = () => {
     const body = buildWorkExperienceBody(form);
     if (!body) return;
@@ -2213,6 +2252,7 @@ function Screen6Work({
     setProfessions([]);
   };
 
+  // Перейти к следующему шагу, передав все записи
   const goNextWithWorkExperiences = () => {
     const addition = buildWorkExperienceBody(form);
     const merged: CandidateWorkExperienceBody[] = addition
@@ -2244,17 +2284,26 @@ function Screen6Work({
     }
   };
 
-  // Format the selected experience for display
-  const formatExperience = (totalYears: number | null): string => {
-    if (totalYears == null) return "";
-    const years = Math.floor(totalYears);
-    const months = Math.round((totalYears - years) * 12);
-    if (years === 0 && months === 0) return "0 yil";
-    if (years === 0) return `${months} oy`;
-    if (months === 0) return `${years} yil`;
-    return `${years} yil ${months} oy`;
-  };
+  // Форматирование для отображения
+  const formatExperience = (
+    years: number | null,
+    months: number | null
+  ) => {
+    const y = years ?? 0;
+    const m = months ?? 0;
 
+    if (y === 0 && m === 0) return "";
+
+    if (y > 0 && m > 0) {
+      return `${y} yil ${m} oy`;
+    }
+
+    if (y > 0) {
+      return `${y} yil`;
+    }
+
+    return `${m} oy`;
+  };
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <OnboardingHeader onBack={handleTopBack} screen={6} />
@@ -2287,7 +2336,7 @@ function Screen6Work({
           </p>
         ) : null}
 
-        {/* Category selection */}
+        {/* Выбор категории */}
         {panel === "category" &&
           (catsLoading ? (
             <div className="flex flex-col items-center justify-start gap-3 py-12">
@@ -2309,7 +2358,7 @@ function Screen6Work({
             </div>
           ))}
 
-        {/* Profession selection */}
+        {/* Выбор профессии */}
         {panel === "profession" &&
           (profsLoading ? (
             <div className="flex flex-col items-center justify-start gap-3 py-12">
@@ -2352,7 +2401,7 @@ function Screen6Work({
             </div>
           ))}
 
-        {/* Custom profession name input */}
+        {/* Ввод названия "другой" профессии */}
         {panel === "otherDetail" && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -2378,7 +2427,7 @@ function Screen6Work({
           </motion.div>
         )}
 
-        {/* Experience picker: years + months */}
+        {/* Выбор стажа (годы + месяцы) */}
         {panel === "experience" && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
@@ -2387,7 +2436,6 @@ function Screen6Work({
             className="pb-2"
           >
             <div className="grid grid-cols-2 gap-3">
-              {/* Years select */}
               <div className="relative">
                 <select
                   value={expYears}
@@ -2400,7 +2448,7 @@ function Screen6Work({
                     fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
                   }}
                 >
-                  <option value="">Yil</option>
+                  <option value={0}>Yil</option>
                   {YEAR_OPTIONS.map((y) => (
                     <option key={y} value={y}>
                       {y} {y === 1 ? "yil" : "yil"}
@@ -2409,17 +2457,11 @@ function Screen6Work({
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
               </div>
 
-              {/* Months select */}
               <div className="relative">
                 <select
                   value={expMonths}
@@ -2432,7 +2474,7 @@ function Screen6Work({
                     fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
                   }}
                 >
-                  <option value="">Oy</option>
+                  <option value={0}>Oy</option>
                   {MONTH_OPTIONS.map((m) => (
                     <option key={m} value={m}>
                       {m} {m === 1 ? "oy" : "oy"}
@@ -2441,28 +2483,25 @@ function Screen6Work({
                 </select>
                 <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M19 9l-7 7-7-7"
-                    />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
                 </div>
               </div>
             </div>
 
-            {/* Display selected total experience */}
             {form.workExperienceYears != null && (
               <p className="mt-3 text-center text-[13px]" style={{ color: C.blueL }}>
-                Tanlangan tajriba: {formatExperience(form.workExperienceYears)}
+                Tanlangan tajriba:   {formatExperience(
+                  form.workExperienceYears,
+                  form.workExperienceMonths
+                )}
               </p>
             )}
           </motion.div>
         )}
       </ScreenScroll>
 
-      {/* Footer actions */}
+      {/* Футер с действиями */}
       {panel === "otherDetail" ? (
         <ScreenFooter>
           <PrimaryButton onClick={primaryAction} disabled={primaryDisabled}>
@@ -2937,106 +2976,20 @@ function Screen6({
 }
 
 
-// Document definitions (adjust labels/types as needed)
 
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Типы и константы
-// ─────────────────────────────────────────────────────────────────────────────
-type DetectionStatus =
-  | 'loading'
-  | 'no_face'
-  | 'face_only'
-  | 'face_and_one_shoulder'
-  | 'ready'
-  | 'error';
 
-interface NormalizedLandmark {
-  x: number;
-  y: number;
-  z: number;
-  visibility?: number;
-}
 
-interface PoseResults {
-  poseLandmarks: NormalizedLandmark[] | null;
-}
 
-interface PoseInstance {
-  onResults: (callback: (results: PoseResults) => void) => void;
-  send: (inputs: { image: HTMLVideoElement }) => Promise<void>;
-  close: () => void;
-}
 
-const NOSE = 0;
-const LEFT_SHOULDER = 11;
-const RIGHT_SHOULDER = 12;
-const SMOOTH_WINDOW = 5;
 
-const isVisible = (lm: NormalizedLandmark | undefined, threshold = 0.5): boolean =>
-  !!lm && (lm.visibility ?? 0) >= threshold;
 
-const shoulderDistanceOk = (l: NormalizedLandmark, r: NormalizedLandmark): boolean =>
-  Math.abs(l.x - r.x) > 0.18;
 
-const shouldersBelowNose = (
-  nose: NormalizedLandmark,
-  l: NormalizedLandmark,
-  r: NormalizedLandmark,
-): boolean => l.y > nose.y && r.y > nose.y;
 
-const smoothStatus = (history: DetectionStatus[], next: DetectionStatus): DetectionStatus => {
-  history.push(next);
-  if (history.length > SMOOTH_WINDOW) history.shift();
-  const freq = history.reduce<Partial<Record<DetectionStatus, number>>>((acc, s) => {
-    acc[s] = (acc[s] ?? 0) + 1;
-    return acc;
-  }, {});
-  return (Object.entries(freq) as [DetectionStatus, number][]).sort((a, b) => b[1] - a[1])[0][0];
-};
+// ─── Types ──────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Загрузка MediaPipe Pose через CDN
-// ─────────────────────────────────────────────────────────────────────────────
-const loadMediaPipePose = (): Promise<PoseInstance> => {
-  return new Promise((resolve, reject) => {
-    const init = () => {
-      try {
-        const pose = new (window as any).Pose({
-          locateFile: (file: string) =>
-            `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`,
-        });
-        pose.setOptions({
-          modelComplexity: 1,
-          smoothLandmarks: true,
-          enableSegmentation: false,
-          smoothSegmentation: false,
-          minDetectionConfidence: 0.5,
-          minTrackingConfidence: 0.5,
-        });
-        resolve(pose as PoseInstance);
-      } catch (e) {
-        reject(e);
-      }
-    };
+type DetectionStatus = 'loading' | 'no_face' | 'ready' | 'error';
 
-    if ((window as any).Pose) {
-      init();
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js';
-    script.crossOrigin = 'anonymous';
-    script.onload = init;
-    script.onerror = () => reject(new Error("MediaPipe Pose CDN yuklab bo'lmadi"));
-    document.head.appendChild(script);
-  });
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Конфиг статусов
-// ─────────────────────────────────────────────────────────────────────────────
 type StatusConfig = {
   border: string;
   text: string;
@@ -3052,22 +3005,10 @@ const STATUS_CONFIG: Record<DetectionStatus, StatusConfig> = {
     hint: null,
   },
   no_face: {
-    border: 'border-red-500/30',
-    text: 'text-red-300',
-    dot: 'bg-red-400',
-    hint: "→ Yuzingiz yaxshi yoritilganiga ishonch hosil qiling",
-  },
-  face_only: {
     border: 'border-amber-400/30',
     text: 'text-amber-300',
     dot: 'bg-amber-400',
-    hint: "→ Kameradan bir qadam orqaga turing",
-  },
-  face_and_one_shoulder: {
-    border: 'border-amber-400/30',
-    text: 'text-amber-300',
-    dot: 'bg-amber-400',
-    hint: "→ Kameraga to'g'ri qarab turing, yelkalar tekis bo'lsin",
+    hint: "→ Yuzingiz kadrga to'liq kirishi kerak",
   },
   ready: {
     border: 'border-emerald-500/40',
@@ -3085,289 +3026,303 @@ const STATUS_CONFIG: Record<DetectionStatus, StatusConfig> = {
 
 const STATUS_MSG: Record<DetectionStatus, string> = {
   loading: "Detektor yuklanmoqda…",
-  no_face: "Yuz aniqlanmadi — kameraga qarab turing",
-  face_only: "Faqat yuz ko'rinadi — yelkalar ham kadrga kirishi kerak",
-  face_and_one_shoulder: "Faqat bitta yelka ko'rinadi — to'g'ri turing",
-  ready: "Yuz va ikkala yelka ko'rindi — suratga olishingiz mumkin",
+  no_face: "Yuz aniqlanmadi — kameraga to'g'ri qarab turing",
+  ready: "Yuz aniqlandi — suratga olishingiz mumkin",
   error: "Detektor ishlamayapti",
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Canvas hook — только виньетка
-// ─────────────────────────────────────────────────────────────────────────────
-const useCanvasDraw = (
-  canvasRef: React.RefObject<HTMLCanvasElement>,
-  webcamRef: React.RefObject<Webcam>,
-  mountedRef: React.RefObject<boolean>,
-  active: boolean,
-) => {
-  useEffect(() => {
-    if (!active) return;
-    const canvas = canvasRef.current;
-    const video = webcamRef.current?.video;
-    if (!canvas || !video) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+const MIN_FACE_AREA_RATIO = 0.15;
+const CENTER_TOLERANCE = 0.25;
 
-    let frameId = 0;
-    const draw = () => {
-      if (!mountedRef.current) return;
-      const w = video.videoWidth;
-      const h = video.videoHeight;
-      if (!w || !h) { frameId = requestAnimationFrame(draw); return; }
+// ─── Component Props ──────────────────────────────────────────────────
 
-      canvas.width = w;
-      canvas.height = h;
-      ctx.clearRect(0, 0, w, h);
-
-      const gradient = ctx.createRadialGradient(w / 2, h / 2, h * 0.25, w / 2, h / 2, h * 0.7);
-      gradient.addColorStop(0, 'rgba(0,0,0,0)');
-      gradient.addColorStop(1, 'rgba(0,0,0,0.5)');
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, w, h);
-
-      frameId = requestAnimationFrame(draw);
-    };
-
-    frameId = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frameId);
-  }, [active]);
-};
-
-// ─────────────────────────────────────────────────────────────────────────────
-// FaceCaptureScreen
-// ─────────────────────────────────────────────────────────────────────────────
-const FaceCaptureScreen = ({
-  onBack,
-  onSuccess,
-  busy,
-}: {
+interface FaceCaptureScreenProps {
   onBack: () => void;
   onSuccess: (file: File) => Promise<void>;
   busy: boolean;
+}
+
+// ─── Component ──────────────────────────────────────────────────────
+
+const FaceCaptureScreen: React.FC<FaceCaptureScreenProps> = ({
+  onBack,
+  onSuccess,
+  busy,
 }) => {
   const webcamRef = useRef<Webcam>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const poseRef = useRef<PoseInstance | null>(null);
+  const mountedRef = useRef<boolean>(true);
   const animationRef = useRef<number | null>(null);
-  const mountedRef = useRef(true);
-  const landmarksRef = useRef<NormalizedLandmark[] | null>(null);
-  const statusHistoryRef = useRef<DetectionStatus[]>([]);
+  const landmarkerRef = useRef<FaceLandmarker | null>(null);
 
   const [status, setStatus] = useState<DetectionStatus>('loading');
-  const [modelsLoaded, setModelsLoaded] = useState(false);
-  const [captureBusy, setCaptureBusy] = useState(false);
+  const [modelsLoaded, setModelsLoaded] = useState<boolean>(false);
+  const [captureBusy, setCaptureBusy] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const [retryCount, setRetryCount] = useState<number>(0);
 
-  // ── Загрузка MediaPipe ──
+  // ─── Initialize MediaPipe FaceLandmarker ─────────────────────────
+
   useEffect(() => {
-    mountedRef.current = true;
-    let cancelled = false;
+    let isMounted = mountedRef.current;
 
-    const load = async () => {
-      setStatus('loading');
-      setError(null);
+    const initLandmarker = async () => {
       try {
-        const pose = await loadMediaPipePose();
-        if (!mountedRef.current || cancelled) return;
-        poseRef.current = pose;
+        setError(null);
+        setStatus('loading');
+        setModelsLoaded(false);
+
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+        );
+
+        // ✅ Используем FaceLandmarker – его модель стабильно доступна
+        const landmarker = await FaceLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath:
+              'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+          },
+          runningMode: 'VIDEO',
+          numFaces: 1, // нам нужно только одно лицо
+          minFaceDetectionConfidence: 0.5,
+          minFacePresenceConfidence: 0.5,
+        });
+
+        if (!isMounted) {
+          landmarker.close();
+          return;
+        }
+
+        landmarkerRef.current = landmarker;
         setModelsLoaded(true);
         setStatus('no_face');
       } catch (err) {
-        console.error('[FaceCapture] Pose load error:', err);
-        if (mountedRef.current && !cancelled) {
-          setError("Yuz va yelka detektorini yuklab bo'lmadi. Internet aloqasini tekshiring.");
+        console.error('[FaceCapture] Landmarker initialization error:', err);
+        if (isMounted) {
+          setError('Detektorni ishga tushirib bo‘lmadi. Qayta urinib ko‘ring.');
           setStatus('error');
+          setModelsLoaded(false);
         }
       }
     };
 
-    load();
+    initLandmarker();
 
     return () => {
-      cancelled = true;
-      mountedRef.current = false;
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-      if (poseRef.current) {
-        try { poseRef.current.close(); } catch (_) {}
-        poseRef.current = null;
+      isMounted = false;
+      if (landmarkerRef.current) {
+        landmarkerRef.current.close();
+        landmarkerRef.current = null;
       }
     };
   }, [retryCount]);
 
-  // ── Обработка результатов позы ──
-  const onPoseResults = useCallback((results: PoseResults) => {
-    const lm = results.poseLandmarks;
-    landmarksRef.current = lm || null;
+  // ─── Detection Loop (requestAnimationFrame) ─────────────────────
 
-    if (!lm) {
-      setStatus(() => smoothStatus(statusHistoryRef.current, 'no_face'));
+  useEffect(() => {
+    if (!modelsLoaded || status === 'error') {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
       return;
     }
 
-    const nose = lm[NOSE];
-    const left = lm[LEFT_SHOULDER];
-    const right = lm[RIGHT_SHOULDER];
+    let previousStatus: DetectionStatus | null = null;
 
-    const noseOk = isVisible(nose, 0.5);
-    const leftOk = isVisible(left, 0.6);
-    const rightOk = isVisible(right, 0.6);
-
-    let raw: DetectionStatus;
-    if (!noseOk) {
-      raw = 'no_face';
-    } else if (!leftOk && !rightOk) {
-      raw = 'face_only';
-    } else if (leftOk !== rightOk) {
-      raw = 'face_and_one_shoulder';
-    } else if (!shoulderDistanceOk(left, right) || !shouldersBelowNose(nose, left, right)) {
-      raw = 'face_only';
-    } else {
-      raw = 'ready';
-    }
-
-    setStatus(() => smoothStatus(statusHistoryRef.current, raw));
-  }, []);
-
-  useEffect(() => {
-    if (poseRef.current && modelsLoaded) {
-      poseRef.current.onResults(onPoseResults);
-    }
-  }, [modelsLoaded, onPoseResults]);
-
-  // ── Цикл детекции ──
-  useEffect(() => {
-    if (!modelsLoaded || status === 'error') return;
-    let lastSend = 0;
-
-    const loop = async (ts: number) => {
-      if (!mountedRef.current) return;
-      animationRef.current = requestAnimationFrame(loop);
-      if (ts - lastSend < 120) return;
-      lastSend = ts;
+    const detectLoop = () => {
+      if (!mountedRef.current || !landmarkerRef.current) {
+        animationRef.current = null;
+        return;
+      }
 
       const video = webcamRef.current?.video;
-      const pose = poseRef.current;
-      if (!pose || !video || video.readyState !== 4) return;
+      if (!video || video.readyState !== 4) {
+        animationRef.current = requestAnimationFrame(detectLoop);
+        return;
+      }
+
       try {
-        await pose.send({ image: video });
-      } catch (e) {
-        console.warn('[FaceCapture] pose.send error:', e);
+        const result: FaceLandmarkerResult = landmarkerRef.current.detectForVideo(
+          video,
+          performance.now()
+        );
+
+        let newStatus: DetectionStatus = 'no_face';
+        const faces = result.faceLandmarks || [];
+
+        if (faces.length === 1) {
+          // FaceLandmarker даёт 468 точек, вычисляем bounding box по минимальным/максимальным координатам
+          const landmarks = faces[0];
+          const xs = landmarks.map((p) => p.x);
+          const ys = landmarks.map((p) => p.y);
+          const minX = Math.min(...xs);
+          const maxX = Math.max(...xs);
+          const minY = Math.min(...ys);
+          const maxY = Math.max(...ys);
+
+          const width = maxX - minX;
+          const height = maxY - minY;
+          const area = width * height; // в относительных координатах (0..1)
+
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+
+          const isCentered =
+            Math.abs(centerX - 0.5) < CENTER_TOLERANCE &&
+            Math.abs(centerY - 0.5) < CENTER_TOLERANCE;
+
+          if (area >= MIN_FACE_AREA_RATIO && isCentered) {
+            newStatus = 'ready';
+          }
+        }
+
+        if (newStatus !== previousStatus) {
+          previousStatus = newStatus;
+          setStatus(newStatus);
+        }
+
+        animationRef.current = requestAnimationFrame(detectLoop);
+      } catch (err) {
+        console.warn('[FaceCapture] Detection error:', err);
+        animationRef.current = requestAnimationFrame(detectLoop);
       }
     };
 
-    animationRef.current = requestAnimationFrame(loop);
+    animationRef.current = requestAnimationFrame(detectLoop);
+
     return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
     };
-  }, [modelsLoaded, status]);
+  }, [modelsLoaded, status === 'error']);
 
-  // ── Canvas: только виньетка ──
-  useCanvasDraw(canvasRef, webcamRef, mountedRef, modelsLoaded);
+  // ─── Capture Photo ────────────────────────────────────────────────
 
-  // ── Съёмка ──
-  const capturePhoto = async () => {
-    if (!webcamRef.current || status !== 'ready' || captureBusy || busy) return;
+  const capturePhoto = useCallback(async () => {
+    if (
+      !webcamRef.current ||
+      status !== 'ready' ||
+      captureBusy ||
+      busy ||
+      !mountedRef.current
+    ) {
+      return;
+    }
+
     setCaptureBusy(true);
     setError(null);
+
     try {
       const imageSrc = webcamRef.current.getScreenshot();
-      if (!imageSrc) throw new Error("Screenshot bo'sh qaytdi");
-      const blob = await (await fetch(imageSrc)).blob();
+      if (!imageSrc) {
+        throw new Error('Screenshot bo‘sh qaytdi');
+      }
+
+      const blob = await fetch(imageSrc).then((res) => res.blob());
       const file = new File([blob], 'face-photo.jpg', { type: 'image/jpeg' });
       await onSuccess(file);
     } catch (err) {
       console.error('[FaceCapture] capturePhoto error:', err);
-      setError("Surat olishda xato yuz berdi. Qayta urinib ko'ring");
-      setStatus('no_face');
+      setError('Surat olishda xato yuz berdi. Qayta urinib ko‘ring.');
     } finally {
-      setCaptureBusy(false);
+      if (mountedRef.current) {
+        setCaptureBusy(false);
+      }
     }
-  };
+  }, [status, captureBusy, busy, onSuccess]);
+
+  // ─── Retry ─────────────────────────────────────────────────────────
+
+  const handleRetry = useCallback(() => {
+    if (landmarkerRef.current) {
+      landmarkerRef.current.close();
+      landmarkerRef.current = null;
+    }
+    setError(null);
+    setStatus('loading');
+    setModelsLoaded(false);
+    setRetryCount((prev) => prev + 1);
+  }, []);
+
+  // ─── JSX ───────────────────────────────────────────────────────────
 
   const cfg = STATUS_CONFIG[status];
   const isReady = status === 'ready';
   const isLoading = captureBusy || busy;
+  const showLoadingOverlay = !modelsLoaded && status !== 'error';
+  const showErrorOverlay = status === 'error';
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-[#030715]">
       <OnboardingHeader onBack={onBack} screen={9} />
 
       <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3">
-        {/* Инфо-карточка */}
         <div className="rounded-[24px] border border-white/10 bg-[#091223] px-4 py-3">
           <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7FC3FF]">
             Pasport yuklandi
           </p>
-          <h1 className="mb-1 text-lg font-semibold text-white">Yuz suratini oling</h1>
+          <h1 className="mb-1 text-lg font-semibold text-white">
+            Yuz suratini oling
+          </h1>
           <p className="text-[13px] leading-[1.6] text-[#B8C7E0]">
-            Kameraga to'g'ri qarab turing. Yuz va ikkala yelka to'liq ko'rinishi kerak.
+            Kameraga to‘g‘ri qarab turing. Yuzingiz to‘liq ko‘rinishi kerak.
           </p>
         </div>
 
-        {/* Камера */}
         <div className="relative overflow-hidden rounded-[24px] border border-white/10 bg-black">
           <Webcam
             ref={webcamRef}
             audio={false}
             mirrored
             screenshotFormat="image/jpeg"
-            videoConstraints={{
-              facingMode: 'user',
-              width: { ideal: 640 },
-              height: { ideal: 853 },
-            }}
+            videoConstraints={{ facingMode: 'user', width: 640, height: 853 }}
             className="aspect-[3/4] w-full object-cover"
-            onUserMediaError={(err) => {
-              console.error('[FaceCapture] Webcam error:', err);
-              setError("Kameraga ruxsat berilmagan yoki kamera topilmadi");
-            }}
+            onUserMediaError={() =>
+              setError('Kameraga ruxsat berilmagan yoki kamera topilmadi')
+            }
           />
 
-          {/* Canvas: только виньетка */}
-          <canvas
-            ref={canvasRef}
-            className="pointer-events-none absolute inset-0 h-full w-full"
-          />
-
-          {/* Уголки рамки */}
           {(['tl', 'tr', 'bl', 'br'] as const).map((pos) => (
             <div
               key={pos}
               className={[
                 'pointer-events-none absolute h-7 w-7',
-                pos === 'tl' ? 'left-3 top-3 border-l-2 border-t-2 rounded-tl-md' : '',
-                pos === 'tr' ? 'right-3 top-3 border-r-2 border-t-2 rounded-tr-md' : '',
-                pos === 'bl' ? 'bottom-3 left-3 border-b-2 border-l-2 rounded-bl-md' : '',
-                pos === 'br' ? 'bottom-3 right-3 border-b-2 border-r-2 rounded-br-md' : '',
+                pos === 'tl'
+                  ? 'left-3 top-3 border-l-2 border-t-2 rounded-tl-md'
+                  : '',
+                pos === 'tr'
+                  ? 'right-3 top-3 border-r-2 border-t-2 rounded-tr-md'
+                  : '',
+                pos === 'bl'
+                  ? 'bottom-3 left-3 border-b-2 border-l-2 rounded-bl-md'
+                  : '',
+                pos === 'br'
+                  ? 'bottom-3 right-3 border-b-2 border-r-2 rounded-br-md'
+                  : '',
                 isReady ? 'border-emerald-400' : 'border-[#7FC3FF]/60',
               ].join(' ')}
               style={{ transition: 'border-color 0.3s ease' }}
             />
           ))}
 
-          {/* Оверлей загрузки */}
-          {!modelsLoaded && status !== 'error' && (
+          {showLoadingOverlay && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/75">
               <div className="h-9 w-9 animate-spin rounded-full border-2 border-white/20 border-t-[#7FC3FF]" />
-              <p className="text-sm font-medium text-white/60">Modellar yuklanmoqda…</p>
-              <p className="text-xs text-white/30">Bu bir necha soniya davom etishi mumkin</p>
+              <p className="text-sm font-medium text-white/60">
+                Modellar yuklanmoqda…
+              </p>
             </div>
           )}
 
-          {/* Оверлей ошибки */}
-          {status === 'error' && (
+          {showErrorOverlay && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-black/80 px-6">
-              <div className="text-center">
-                <p className="text-sm font-semibold text-red-300">Detektor yuklanmadi</p>
-                <p className="mt-1 text-xs text-white/40">Internet aloqasini tekshiring</p>
-              </div>
+              <p className="text-sm font-semibold text-red-300">
+                Detektor yuklanmadi
+              </p>
               <button
-                onClick={() => {
-                  setModelsLoaded(false);
-                  setRetryCount((c) => c + 1);
-                }}
+                onClick={handleRetry}
                 className="rounded-[12px] bg-white/10 px-5 py-2.5 text-sm font-semibold text-white active:scale-95 transition-transform"
               >
                 Qayta urinish
@@ -3376,7 +3331,6 @@ const FaceCaptureScreen = ({
           )}
         </div>
 
-        {/* Статус */}
         <div
           className={`rounded-[20px] border ${cfg.border} bg-[#081123] px-4 py-3 transition-all duration-300`}
         >
@@ -3385,32 +3339,27 @@ const FaceCaptureScreen = ({
               className={[
                 'h-2 w-2 flex-shrink-0 rounded-full',
                 cfg.dot,
-                status === 'ready' ? 'animate-pulse' : '',
-                status === 'loading' ? 'opacity-50' : '',
+                isReady ? 'animate-pulse' : '',
               ].join(' ')}
             />
             <p className={`text-sm font-medium ${cfg.text}`}>
               {STATUS_MSG[status]}
             </p>
           </div>
-
           {cfg.hint && (
-            <p className="mt-1.5 pl-[18px] text-xs text-[#93A3BE]">{cfg.hint}</p>
-          )}
-
-          {status !== 'ready' && status !== 'loading' && status !== 'error' && (
-            <p className="mt-2 pl-[18px] text-[11px] text-[#4A5B72]">
-              Yaxshi yoritish va to'g'ri pozitsiya foto sifatini oshiradi.
+            <p className="mt-1.5 pl-[18px] text-xs text-[#93A3BE]">
+              {cfg.hint}
             </p>
           )}
         </div>
       </div>
 
-      {/* Футер */}
       <div className="border-t border-white/10 bg-[#030715] px-4 pb-6 pt-4">
         {error && (
           <div className="mb-3 flex items-start gap-2 rounded-[14px] bg-red-500/10 px-3 py-2.5">
-            <span className="mt-0.5 flex-shrink-0 text-sm text-red-400">⚠</span>
+            <span className="mt-0.5 flex-shrink-0 text-sm text-red-400">
+              ⚠
+            </span>
             <p className="text-sm text-red-100">{error}</p>
           </div>
         )}
@@ -3419,14 +3368,15 @@ const FaceCaptureScreen = ({
           disabled={!isReady || isLoading}
           loading={isLoading}
         >
-          {isLoading ? "Yuklanmoqda…" : "Suratga olish va tasdiqlash"}
+          {isLoading ? 'Yuklanmoqda…' : 'Suratga olish va tasdiqlash'}
         </PrimaryButton>
       </div>
     </div>
   );
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
+
 // Screen7Documents
 // ─────────────────────────────────────────────────────────────────────────────
 function Screen7Documents({
