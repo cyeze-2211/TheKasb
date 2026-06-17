@@ -1415,6 +1415,27 @@ export async function candidateProcessPassportPhoto(file: File): Promise<unknown
   return await candidateMultipartRequest('/file/passport-photo/process', fd);
 }
 
+/**
+ * GET /api/file/view/one/photo?id={id} — kandidatning profil rasmini blob sifatida olish.
+ * original_photo_file_id yoki ai_passport_photo_file_id beriladi.
+ */
+export async function candidateFetchProfilePhotoBlob(id: number): Promise<Blob> {
+  const token = getCandidateToken();
+  const headers: Record<string, string> = {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await authApi.get<Blob>('/file/view/one/photo', {
+    params: { id },
+    responseType: 'blob',
+    headers,
+  });
+  const blob = res.data;
+  if (blob.type && blob.type.includes('application/json')) {
+    const text = await blob.text();
+    throw new Error(text.slice(0, 200) || 'Fayl olishda xato.');
+  }
+  return blob;
+}
+
 /** Profilni yakuniy yuborish — `POST /api/candidate/profile/submit` */
 export async function candidateSubmitProfile(): Promise<void> {
   const token = getCandidateToken();

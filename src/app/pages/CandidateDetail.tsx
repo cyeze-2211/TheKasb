@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, Link, useLocation, useNavigate } from 'react-router';
 import {
   adminCandidateIdFromListRow,
@@ -55,6 +55,7 @@ import {
   panelEliteRaised,
 } from '../components/pageChrome';
 import { fetchAgentsForSelect, getUserDisplayName, type SdgUserDto } from '../api/users';
+import { fetchProfilePhotoBlob } from '../api/userFiles';
 import {
   candidateProfileStatusUz,
   cefrLevelUz,
@@ -118,7 +119,77 @@ function ProfileSection({ title, children }: { title: string; children: ReactNod
   );
 }
 
-function Avatar({ name, size = 96 }: { name: string; size?: number }) {
+/**
+ * Nomzodning profil rasmini ko'rsatuvchi avatar:
+ * 1. original_photo_file_id → /file/view/one/photo
+ * 2. ai_passport_photo_file_id (faqat ai_photo_generated = true bo'lsa) → /file/view/one/photo
+ * 3. Initials fallback
+ * 4. Silhouette SVG
+ */
+function CandidatePhotoAvatar({
+  detail,
+  name,
+  size = 96,
+}: {
+  detail: Record<string, unknown> | null;
+  name: string;
+  size?: number;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const blobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (blobUrlRef.current) {
+      URL.revokeObjectURL(blobUrlRef.current);
+      blobUrlRef.current = null;
+    }
+    setBlobUrl(null);
+
+    if (!detail) return;
+
+    const originalFileId = detail['original_photo_file_id'] ?? detail['originalPhotoFileId'];
+    const aiGenerated = detail['ai_photo_generated'] ?? detail['aiPhotoGenerated'];
+    const aiFileId = detail['ai_passport_photo_file_id'] ?? detail['aiPassportPhotoFileId'];
+
+    const fileId = originalFileId ?? (aiGenerated ? aiFileId : null);
+    const numId =
+      typeof fileId === 'number' && Number.isFinite(fileId)
+        ? fileId
+        : typeof fileId === 'string' && fileId.trim() !== ''
+          ? Number(fileId)
+          : null;
+
+    if (numId == null || !Number.isFinite(numId)) return;
+
+    let cancelled = false;
+    setPhotoLoading(true);
+
+    fetchProfilePhotoBlob(numId)
+      .then(({ blob }) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setBlobUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setBlobUrl(null);
+      })
+      .finally(() => {
+        if (!cancelled) setPhotoLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [detail]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+    };
+  }, []);
+
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -126,6 +197,28 @@ function Avatar({ name, size = 96 }: { name: string; size?: number }) {
     .join('')
     .slice(0, 2)
     .toUpperCase();
+
+  if (photoLoading) {
+    return (
+      <div
+        style={{ width: size, height: size }}
+        className="flex items-center justify-center rounded-full bg-gradient-to-br from-primary/20 to-primary/5 ring-2 ring-primary/20 ring-offset-2 ring-offset-background"
+      >
+        <Loader2 className="animate-spin text-primary" style={{ width: size * 0.33, height: size * 0.33 }} />
+      </div>
+    );
+  }
+
+  if (blobUrl) {
+    return (
+      <img
+        src={blobUrl}
+        alt={name || 'Nomzod'}
+        style={{ width: size, height: size }}
+        className="rounded-full object-cover ring-2 ring-primary/25 ring-offset-2 ring-offset-background"
+      />
+    );
+  }
 
   if (initials) {
     return (
@@ -659,7 +752,7 @@ export function CandidateDetail() {
                   aria-hidden
                 />
                 <div className="relative">
-                  <Avatar name={displayName} size={96} />
+                  <CandidatePhotoAvatar detail={detail} name={displayName} size={96} />
                 </div>
               </div>
               <h2 className="mb-1 text-center">{displayName || phone || 'Nomzod'}</h2>

@@ -102,6 +102,7 @@ import {
   candidateUpdateProfile,
   candidateUploadDocument,
   candidateProcessPassportPhoto,
+  candidateFetchProfilePhotoBlob,
   candidateVerifyOtp,
   normalizeCandidateRegionId,
   candidateLocationFieldsFromForm,
@@ -5536,6 +5537,8 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [softWarn, setSoftWarn] = useState<string | null>(null);
+  const [photoBlobUrl, setPhotoBlobUrl] = useState<string | null>(null);
+  const photoBlobRef = useRef<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!getCandidateToken()) {
@@ -5581,6 +5584,58 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
 
   const displayName = useMemo(() => displayNameFromProfile(profile), [profile]);
   const initials = useMemo(() => initialsFromName(displayName), [displayName]);
+
+  // ─── Profil rasmi yuklash ─────────────────────────────────────
+  useEffect(() => {
+    if (photoBlobRef.current) {
+      URL.revokeObjectURL(photoBlobRef.current);
+      photoBlobRef.current = null;
+    }
+    setPhotoBlobUrl(null);
+
+    if (!profile) return;
+
+    // Priority 1: original_photo_file_id
+    const originalFileId =
+      profile['original_photo_file_id'] ?? profile['originalPhotoFileId'];
+    // Priority 2: ai_passport_photo_file_id (faqat ai_photo_generated = true bo'lsa)
+    const aiGenerated =
+      profile['ai_photo_generated'] ?? profile['aiPhotoGenerated'];
+    const aiFileId =
+      profile['ai_passport_photo_file_id'] ?? profile['aiPassportPhotoFileId'];
+
+    const fileId = originalFileId ?? (aiGenerated ? aiFileId : null);
+    const numId =
+      typeof fileId === 'number' && Number.isFinite(fileId)
+        ? fileId
+        : typeof fileId === 'string' && fileId.trim() !== ''
+          ? Number(fileId)
+          : null;
+
+    if (numId == null || !Number.isFinite(numId)) return;
+
+    // File ID bor — /file/view/one/photo orqali yuklaymiz
+    let cancelled = false;
+    candidateFetchProfilePhotoBlob(numId)
+      .then((blob) => {
+        if (cancelled) return;
+        const url = URL.createObjectURL(blob);
+        photoBlobRef.current = url;
+        setPhotoBlobUrl(url);
+      })
+      .catch(() => {
+        if (!cancelled) setPhotoBlobUrl(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
+  useEffect(() => {
+    return () => {
+      if (photoBlobRef.current) URL.revokeObjectURL(photoBlobRef.current);
+    };
+  }, []);
   const pct = useMemo(() => profileCompletionPct(profile), [profile]);
   const statusRaw = pickStr(
     profile,
@@ -5680,20 +5735,41 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
     mainScroll = (
       <>
         <div className="px-3 pb-0 pt-4 sm:px-5 sm:pt-5">
-          <p style={{ fontSize: 13, color: C.muted }}>Xush kelibsiz,</p>
-          <p
-            className="mt-0.5 break-words"
-            style={{
-              fontSize: 'clamp(1.25rem, 4.5vw, 1.5rem)',
-              fontWeight: 800,
-              color: C.text,
-              letterSpacing: '-0.5px',
-              fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
-              lineHeight: 1.2,
-            }}
-          >
-            {displayName}
-          </p>
+          <div className="mb-3 flex items-center gap-3">
+            <div
+              className="flex shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-primary/30 ring-offset-2"
+              style={{
+                width: 56,
+                height: 56,
+                background: photoBlobUrl ? undefined : 'linear-gradient(135deg, #1B4F8A 0%, #0d3060 100%)',
+                ringOffsetColor: '#0a1929',
+              }}
+            >
+              {photoBlobUrl ? (
+                <img src={photoBlobUrl} alt={displayName || 'Profil'} className="h-full w-full object-cover" />
+              ) : (
+                <span style={{ fontSize: 18, fontWeight: 700, color: '#fff', letterSpacing: '0.5px' }}>
+                  {initials}
+                </span>
+              )}
+            </div>
+            <div className="min-w-0">
+              <p style={{ fontSize: 13, color: C.muted }}>Xush kelibsiz,</p>
+              <p
+                className="break-words"
+                style={{
+                  fontSize: 'clamp(1.1rem, 4vw, 1.35rem)',
+                  fontWeight: 800,
+                  color: C.text,
+                  letterSpacing: '-0.5px',
+                  fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+                  lineHeight: 1.2,
+                }}
+              >
+                {displayName}
+              </p>
+            </div>
+          </div>
           <div className="mt-2 flex flex-wrap gap-2">
             <div
               className="flex min-w-0 max-w-full items-center gap-1.5 rounded-full px-3 py-1.5"
@@ -6026,17 +6102,41 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
   } else if (activeNav === 2) {
     mainScroll = (
       <div className="px-3 pb-6 pt-4 sm:px-5">
-        <h2
-          className="mb-4 break-words"
-          style={{
-            fontSize: 22,
-            fontWeight: 800,
-            color: C.text,
-            fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
-          }}
-        >
-          Mening arizam
-        </h2>
+        <div className="mb-5 flex items-center gap-4">
+          <div
+            className="flex shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-primary/30 ring-offset-2"
+            style={{
+              width: 64,
+              height: 64,
+              background: photoBlobUrl ? undefined : 'linear-gradient(135deg, #1B4F8A 0%, #0d3060 100%)',
+            }}
+          >
+            {photoBlobUrl ? (
+              <img src={photoBlobUrl} alt={displayName || 'Profil'} className="h-full w-full object-cover" />
+            ) : (
+              <span style={{ fontSize: 22, fontWeight: 700, color: '#fff', letterSpacing: '0.5px' }}>
+                {initials}
+              </span>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h2
+              className="break-words"
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                color: C.text,
+                fontFamily: "'Plus Jakarta Sans', ui-sans-serif, system-ui",
+                lineHeight: 1.2,
+              }}
+            >
+              {displayName || 'Nomzod'}
+            </h2>
+            {phone ? (
+              <p className="mt-0.5 text-sm" style={{ color: C.muted }}>{phone}</p>
+            ) : null}
+          </div>
+        </div>
         <div className="rounded-[18px] border p-4" style={{ backgroundColor: C.card, borderColor: C.border }}>
           <ProfileInfoRow label="Holat" value={statusUz} />
           <ProfileInfoRow label="Profil to‘ldirish" value={`${pct}%`} />
@@ -6123,8 +6223,17 @@ function HomeScreen({ initialTab = 0 }: { initialTab?: number }) {
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style={{ backgroundColor: C.blue }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{initials}</span>
+          <div
+            className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full ring-2 ring-primary/25 ring-offset-1 ring-offset-[#0a1929]"
+            style={photoBlobUrl ? {} : { background: 'linear-gradient(135deg, #1B4F8A 0%, #0d3060 100%)' }}
+          >
+            {photoBlobUrl ? (
+              <img src={photoBlobUrl} alt={displayName || 'Profil'} className="h-full w-full object-cover" />
+            ) : (
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', letterSpacing: '0.5px' }}>
+                {initials}
+              </span>
+            )}
           </div>
         </div>
       </div>

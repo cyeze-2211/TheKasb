@@ -101,6 +101,29 @@ export async function fetchUserFilesList(
   return unwrapSpringPage<Record<string, unknown>>(data);
 }
 
+/**
+ * GET /api/file/view/one/photo?id={id} — profil rasmi uchun.
+ * Rasm ID si berilsa, blob qaytaradi.
+ */
+export async function fetchProfilePhotoBlob(id: number): Promise<{ blob: Blob }> {
+  const res = await api.get<Blob>(`/file/view/one/photo`, {
+    params: { id },
+    responseType: 'blob',
+  });
+  const blob = res.data;
+  if (blob.type && blob.type.includes('application/json')) {
+    const text = await blob.text();
+    try {
+      const j = JSON.parse(text) as Record<string, unknown>;
+      assertApiSuccess(j);
+    } catch {
+      throw new Error(text.slice(0, 200) || 'Fayl olishda xato.');
+    }
+    throw new Error('Kutilmagan javob.');
+  }
+  return { blob };
+}
+
 /** GET /api/file/get/one — query `id` */
 export async function fetchUserFileBlob(id: number): Promise<{ blob: Blob; fileName?: string }> {
   const res = await api.get<Blob>(`/file/get/one`, {

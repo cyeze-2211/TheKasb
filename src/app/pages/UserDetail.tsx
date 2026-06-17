@@ -22,7 +22,7 @@ import {
   type SdgUserDto,
   type UserDeletePreviewDto,
 } from '../api/users';
-import { fetchUserFileBlob } from '../api/userFiles'; // <-- импортируем готовую функцию
+import { fetchUserFileBlob, fetchProfilePhotoBlob } from '../api/userFiles'; // <-- импортируем готовую функцию
 import { UserDeletePreviewPanel } from '../components/users/UserDeletePreviewPanel';
 import { UserFormDialog } from '../components/users/UserFormDialog';
 import { RoleBadge } from '../components/StatusBadge';
@@ -126,24 +126,33 @@ export function UserDetail() {
 
     if (!user) return;
 
-    // Проверяем, что фото готово
-    const canLoadPhoto =
-      user.aiPhotoStatus === 'COMPLETED' &&
-      user.aiPassportPhotoFileId != null &&
-      Number.isFinite(user.aiPassportPhotoFileId);
+    // Priority 1: original_photo_file_id (original, not AI generated)
+    const originalFileId = (user as Record<string, unknown>)['originalPhotoFileId'] ??
+      (user as Record<string, unknown>)['original_photo_file_id'];
+    // Priority 2: ai_passport_photo_file_id (only when ai_photo_generated = true)
+    const aiGenerated = (user as Record<string, unknown>)['aiPhotoGenerated'] ??
+      (user as Record<string, unknown>)['ai_photo_generated'];
+    const aiFileId = user.aiPassportPhotoFileId ??
+      (user as Record<string, unknown>)['ai_passport_photo_file_id'];
 
-    if (!canLoadPhoto) {
+    const rawFileId = originalFileId ?? (aiGenerated ? aiFileId : null);
+    const photoId =
+      typeof rawFileId === 'number' && Number.isFinite(rawFileId)
+        ? rawFileId
+        : typeof rawFileId === 'string' && rawFileId.trim() !== ''
+          ? Number(rawFileId)
+          : null;
+
+    if (photoId == null || !Number.isFinite(photoId)) {
       return;
     }
 
-    const photoId = user.aiPassportPhotoFileId!;
     let isMounted = true;
 
     setPhotoLoading(true);
     setPhotoError(false);
 
-    // Используем существующую функцию fetchUserFileBlob
-    fetchUserFileBlob(photoId)
+    fetchProfilePhotoBlob(photoId)
       .then(({ blob }) => {
         if (!isMounted) return;
         const url = URL.createObjectURL(blob);
@@ -153,8 +162,20 @@ export function UserDetail() {
       .catch((err) => {
         console.error('[UserDetail] Failed to load photo:', err);
         if (isMounted) {
-          setPhotoError(true);
-          setPhotoLoading(false);
+          // Fallback: try /file/get/one
+          fetchUserFileBlob(photoId)
+            .then(({ blob }) => {
+              if (!isMounted) return;
+              const url = URL.createObjectURL(blob);
+              setPhotoBlobUrl(url);
+              setPhotoLoading(false);
+            })
+            .catch(() => {
+              if (isMounted) {
+                setPhotoError(true);
+                setPhotoLoading(false);
+              }
+            });
         }
       });
 
