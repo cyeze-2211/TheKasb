@@ -466,15 +466,15 @@ export function CandidateDetail() {
     () =>
       detail
         ? pickStr(
-            detail,
-            'region_name_uz',
-            'regionNameUz',
-            'region_name',
-            'regionName',
-            'region',
-            'address_region',
-            'addressRegion',
-          )
+          detail,
+          'region_name_uz',
+          'regionNameUz',
+          'region_name',
+          'regionName',
+          'region',
+          'address_region',
+          'addressRegion',
+        )
         : '',
     [detail],
   );
@@ -584,6 +584,8 @@ export function CandidateDetail() {
   const targetCountryRows = useMemo(() => {
     if (!detail) return [];
     const raw = pickCandidateField(detail, 'target_countries', 'targetCountries');
+    // parseAdminTargetCountries может не справляться — используем напрямую
+    if (Array.isArray(raw) && raw.length > 0) return raw as Record<string, unknown>[];
     return parseAdminTargetCountries(raw);
   }, [detail]);
 
@@ -873,11 +875,10 @@ export function CandidateDetail() {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`whitespace-nowrap px-5 py-4 text-sm font-medium transition-all duration-300 ease-out ${
-                    activeTab === tab.id
-                      ? 'border-b-2 border-primary bg-primary/[0.06] text-primary'
-                      : 'border-b-2 border-transparent text-text-muted hover:bg-muted/50 hover:text-text-primary'
-                  }`}
+                  className={`whitespace-nowrap px-5 py-4 text-sm font-medium transition-all duration-300 ease-out ${activeTab === tab.id
+                    ? 'border-b-2 border-primary bg-primary/[0.06] text-primary'
+                    : 'border-b-2 border-transparent text-text-muted hover:bg-muted/50 hover:text-text-primary'
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -910,10 +911,10 @@ export function CandidateDetail() {
                     {salMin != null && salMax != null
                       ? `${salMin.toLocaleString()} – ${salMax.toLocaleString()} ${currency}`
                       : salMin != null
-                      ? `${salMin.toLocaleString()} ${currency}`
-                      : salMax != null
-                      ? `≤ ${salMax.toLocaleString()} ${currency}`
-                      : '—'}
+                        ? `${salMin.toLocaleString()} ${currency}`
+                        : salMax != null
+                          ? `≤ ${salMax.toLocaleString()} ${currency}`
+                          : '—'}
                   </ProfileField>
                   <ProfileField label="Kasb sohasi">{categoryDisplay || '—'}</ProfileField>
                   <ProfileField label="Kasb / mutaxassislik">
@@ -975,47 +976,75 @@ export function CandidateDetail() {
               )}
 
               {/* ========== COUNTRIES (TARGET COUNTRIES) TAB ========== */}
+              {/* ========== COUNTRIES (TARGET COUNTRIES) TAB ========== */}
               {activeTab === 'countries' && (
                 <div className="space-y-3">
                   {targetCountryRows.length === 0 ? (
                     <p className="text-sm text-text-muted">Maqsadli davlatlar belgilanmagan.</p>
                   ) : (
-                    targetCountryRows.map((tc, idx) => {
-                      const country = tc.destination_country as Record<string, unknown> | undefined;
-                      const code = pickStr(country, 'country_code');
-                      const name = pickStr(country, 'name_uz') || pickStr(country, 'name_ru') || code;
-                      const flag = pickStr(country, 'flag_emoji') || countryFlagEmoji(code);
-                      const salMinC = pickNum(country, 'salary_min');
-                      const salMaxC = pickNum(country, 'salary_max');
-                      const salCurr = pickStr(country, 'salary_currency');
-                      const langReq = pickStr(country, 'language_req');
-                      const priority = tc.priority;
-                      return (
-                        <div key={tc.id || idx} className="rounded-2xl border border-border/80 bg-muted/20 p-4">
-                          <div className="flex items-center gap-3">
-                            <span className="text-3xl">{flag || '🌍'}</span>
-                            <div className="flex-1">
-                              <div className="font-semibold text-text-primary">{name || code}</div>
-                              <div className="text-xs text-text-muted">
-                                {salMinC != null && salMaxC != null
-                                  ? `💰 ${salMinC.toLocaleString()} – ${salMaxC.toLocaleString()} ${salCurr || 'USD'}`
-                                  : salMinC != null
-                                  ? `💰 ${salMinC.toLocaleString()} ${salCurr || 'USD'}`
-                                  : salMaxC != null
-                                  ? `💰 ≤ ${salMaxC.toLocaleString()} ${salCurr || 'USD'}`
-                                  : '💰 Maʼlumot yo‘q'}
+                    [...targetCountryRows]
+                      .sort((a, b) => {
+                        const pa = typeof a.priority === 'number' ? a.priority : 999;
+                        const pb = typeof b.priority === 'number' ? b.priority : 999;
+                        return pa - pb;
+                      })
+                      .map((tc, idx) => {
+                        const country = tc.destination_country as Record<string, unknown> | undefined;
+                        const code = pickStr(country ?? {}, 'country_code');
+                        const name =
+                          pickStr(country ?? {}, 'name_uz') ||
+                          pickStr(country ?? {}, 'name_ru') ||
+                          code;
+                        const flag =
+                          pickStr(country ?? {}, 'flag_emoji') ||
+                          countryFlagEmoji(code);
+                        const salMinC = pickNum(country ?? {}, 'salary_min');
+                        const salMaxC = pickNum(country ?? {}, 'salary_max');
+                        const salCurr =
+                          pickStr(country ?? {}, 'salary_currency') ||
+                          pickStr(country ?? {}, 'salary_currency_symbol');
+                        const langReq = pickStr(country ?? {}, 'language_req');
+                        const priority = typeof tc.priority === 'number' ? tc.priority : null;
+                        const isActive = (country ?? {})['is_active'];
+
+                        return (
+                          <div
+                            key={(tc.id as string) || idx}
+                            className="rounded-2xl border border-border/80 bg-muted/20 p-4"
+                          >
+                            <div className="flex items-center gap-3">
+                              <span className="text-3xl leading-none">{flag || '🌍'}</span>
+                              <div className="flex-1 min-w-0">
+                                <div className="font-semibold text-text-primary flex items-center gap-2">
+                                  {name || code || '—'}
+                                  {isActive === false && (
+                                    <span className="text-xs text-danger font-normal">(nofaol)</span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-text-muted mt-0.5">
+                                  {salMinC != null && salMaxC != null
+                                    ? `💰 ${salMinC.toLocaleString()} – ${salMaxC.toLocaleString()} ${salCurr || ''}`
+                                    : salMinC != null
+                                      ? `💰 ${salMinC.toLocaleString()}+ ${salCurr || ''}`
+                                      : salMaxC != null
+                                        ? `💰 ≤ ${salMaxC.toLocaleString()} ${salCurr || ''}`
+                                        : "💰 Ma'lumot yo'q"}
+                                </div>
+                                {langReq && (
+                                  <div className="text-xs text-text-muted mt-0.5">
+                                    🗣 {langReq}
+                                  </div>
+                                )}
                               </div>
-                              {langReq && <div className="text-xs text-text-muted mt-1">📢 {langReq}</div>}
+                              {priority != null && (
+                                <div className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary shrink-0">
+                                  #{priority}
+                                </div>
+                              )}
                             </div>
-                            {priority != null && (
-                              <div className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                                Priority {priority}
-                              </div>
-                            )}
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })
                   )}
                 </div>
               )}
@@ -1055,6 +1084,7 @@ export function CandidateDetail() {
               )}
 
               {/* ========== WORK EXPERIENCE TAB ========== */}
+              {/* ========== WORK EXPERIENCE TAB ========== */}
               {activeTab === 'work' && (
                 <div className="space-y-3">
                   {workExperiences.length === 0 ? (
@@ -1062,24 +1092,57 @@ export function CandidateDetail() {
                   ) : (
                     workExperiences.map((exp, idx) => {
                       const W = exp as Record<string, unknown>;
-                      const company = pickStr(W, 'company', 'employer');
-                      const position = pickStr(W, 'position', 'job_title');
-                      const start = pickStr(W, 'start_date', 'date_from');
-                      const end = pickStr(W, 'end_date', 'date_to');
+
+                      // API returns profession_name/category, duration_months/years, description
+                      const profCatName = pickStr(W, 'profession_category_name', 'professionCategoryName');
+                      const profName = pickStr(W, 'profession_name', 'professionName', 'custom_profession_name', 'customProfessionName');
+                      const company = pickStr(W, 'company', 'employer', 'organization');
+                      const position = pickStr(W, 'position', 'job_title', 'jobTitle');
+                      const start = pickStr(W, 'start_date', 'date_from', 'startDate');
+                      const end = pickStr(W, 'end_date', 'date_to', 'endDate');
                       const desc = pickStr(W, 'description', 'responsibilities');
+                      const durationYears = pickNum(W, 'duration_years', 'durationYears');
+                      const durationMonths = pickNum(W, 'duration_months', 'durationMonths');
+
+                      // Build duration string
+                      const durationParts: string[] = [];
+                      if (durationYears != null && durationYears > 0) durationParts.push(`${durationYears} yil`);
+                      if (durationMonths != null && durationMonths > 0) durationParts.push(`${durationMonths} oy`);
+                      const durationStr = durationParts.length > 0 ? durationParts.join(' ') : null;
+
+                      const titleDisplay = position || profName || 'Lavozim ko`rsatilmagan';
+                      const subtitleDisplay = company || profCatName;
+
                       return (
-                        <div key={idx} className="rounded-2xl border border-border/80 bg-muted/20 p-4">
+                        <div
+                          key={(pickStr(W, 'id') as string) || idx}
+                          className="rounded-2xl border border-border/80 bg-muted/20 p-4"
+                        >
                           <div className="flex items-start gap-3">
-                            <Briefcase className="mt-0.5 h-5 w-5 text-primary" strokeWidth={2} />
-                            <div className="flex-1">
-                              <div className="font-semibold text-text-primary">{position || 'Lavozim ko‘rsatilmagan'}</div>
-                              {company && <div className="text-sm text-text-muted">{company}</div>}
-                              {(start || end) && (
-                                <div className="text-xs text-text-muted">
-                                  {start || '?'} – {end || 'hozirgacha'}
+                            <Briefcase
+                              className="mt-0.5 h-5 w-5 shrink-0 text-primary"
+                              strokeWidth={2}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-semibold text-text-primary">{titleDisplay}</div>
+                              {subtitleDisplay && (
+                                <div className="text-sm text-text-muted">{subtitleDisplay}</div>
+                              )}
+                              <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
+                                {(start || end) && (
+                                  <span>
+                                    📅 {start || '?'} – {end || 'hozirgacha'}
+                                  </span>
+                                )}
+                                {durationStr && (
+                                  <span>⏱ {durationStr}</span>
+                                )}
+                              </div>
+                              {desc && (
+                                <div className="mt-2 text-sm text-text-primary leading-relaxed">
+                                  {desc}
                                 </div>
                               )}
-                              {desc && <div className="mt-2 text-sm text-text-primary">{desc}</div>}
                             </div>
                           </div>
                         </div>
