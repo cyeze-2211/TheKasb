@@ -1,0 +1,11 @@
+import{j as e}from"./react-vendor-Bpm5lOs-.js";import{a}from"./adminUiUz-DNJmUL52.js";import{B as d}from"./briefcase-DVqTkadY.js";import{r as c}from"./index-DPoswjQa.js";import{U as b}from"./user-D3V202dC.js";/**
+ * @license lucide-react v0.487.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const p=[["path",{d:"M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",key:"oel41y"}]],m=c("shield",p);/**
+ * @license lucide-react v0.487.0 - ISC
+ *
+ * This source code is licensed under the ISC license.
+ * See the LICENSE file in the root directory of this source tree.
+ */const h=[["path",{d:"M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z",key:"r04s7s"}]],u=c("star",h),l="h-3.5 w-3.5 flex-shrink-0",n="inline-flex items-center gap-1.5 rounded-full border border-black/[0.06] px-2.5 py-1 text-xs font-semibold shadow-[var(--elite-shadow-xs)] backdrop-blur-[2px] ring-1 ring-white/40 transition-[box-shadow,transform] duration-200 hover:shadow-[var(--elite-shadow-sm)]";function D({role:r,candidateId:t}){const o={CANDIDATE:{label:a.CANDIDATE,color:"bg-blue-100 text-blue-700 border-blue-200",Icon:b},ADMIN:{label:a.ADMIN,color:"bg-purple-100 text-purple-700 border-purple-200",Icon:m},SUPER_ADMIN:{label:a.SUPER_ADMIN,color:"bg-amber-100 text-amber-700 border-amber-200",Icon:u},AGENT:{label:a.AGENT,color:"bg-teal-100 text-teal-700 border-teal-200",Icon:d}}[r],s=o.Icon;return r==="CANDIDATE"&&t?e.jsxs("a",{href:`/admin/candidates/${t}`,className:`${n} ${o.color} cursor-pointer hover:opacity-80`,onClick:function(i){i.stopPropagation()},children:[e.jsx(s,{className:l,strokeWidth:2,"aria-hidden":!0}),o.label]}):e.jsxs("span",{className:`${n} ${o.color}`,children:[e.jsx(s,{className:l,strokeWidth:2,"aria-hidden":!0}),o.label]})}export{D as R,m as S};

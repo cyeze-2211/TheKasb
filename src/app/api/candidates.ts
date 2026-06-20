@@ -11,26 +11,70 @@ export type LanguageLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2' | 'NONE';
 export type AdminProfileStatus = 'ACTIVE' | 'DRAFT' | 'PENDING' | 'PLACED' | 'SUSPENDED';
 
 export type CandidatesListQuery = {
-  agentId?: number;
-  availabilityStatus?: AvailabilityStatus | '';
-  categoryId?: number;
-  countryCode?: string;
-  educationLevel?: string;
-  experienceRange?: ExperienceRange | '';
-  language?: AdminLanguage | '';
-  languageLevel?: LanguageLevel | '';
+  // ── Sahifa ──────────────────────────────────────────────
   page?: number;
-  professionId?: number;
-  profileStatus?: AdminProfileStatus | '';
-  regionId?: number;
-  /** Hudud nomi bo'yicha qidiruv (qisman moslash) */
-  regionName?: string;
-  /** Ta'lim muassasasi (OTM nomi) — GET query `institutionName` */
-  institutionName?: string;
-  salaryMax?: number;
-  salaryMin?: number;
   size?: number;
   sort?: string;
+
+  // ── Qidiruv ─────────────────────────────────────────────
+  search?: string;
+
+  // ── Profil holati va agent ───────────────────────────────
+  profileStatus?: AdminProfileStatus | '';
+  agentId?: number;
+
+  // ── Hudud (nomzod) ───────────────────────────────────────
+  regionId?: number;
+  regionName?: string;
+  regionCode?: string;
+  districtId?: number;
+  districtCode?: string;
+
+  // ── Kasb ────────────────────────────────────────────────
+  categoryId?: number;
+  professionId?: number;
+
+  // ── Ta'lim ──────────────────────────────────────────────
+  educationLevel?: string;
+  educationCountry?: string;
+  institutionName?: string;
+  universityId?: number;
+  graduationYearMin?: number;
+  graduationYearMax?: number;
+
+  // ── Tajriba ─────────────────────────────────────────────
+  experienceRange?: ExperienceRange | '';
+  experienceYearsMin?: number;
+  experienceYearsMax?: number;
+
+  // ── Xalqaro tajriba ─────────────────────────────────────
+  hasInternationalExperience?: boolean | '';
+  internationalCountry?: string;
+  internationalYearsMin?: number;
+
+  // ── Tayyor bo'lish ───────────────────────────────────────
+  availabilityStatus?: AvailabilityStatus | '';
+
+  // ── Maqsad mamlakat ──────────────────────────────────────
+  countryCode?: string;
+
+  // ── Til ─────────────────────────────────────────────────
+  language?: AdminLanguage | '';
+  languageLevel?: LanguageLevel | '';
+
+  // ── Maosh ───────────────────────────────────────────────
+  salaryMin?: number;
+  salaryMax?: number;
+
+  // ── Yosh ────────────────────────────────────────────────
+  ageMin?: number;
+  ageMax?: number;
+
+  // ── UI uchun qo'shimcha (kandidat hududi / OTM hududi) ───
+  candidateRegionId?: number;
+  candidateRegionName?: string;
+  universityRegionId?: number;
+  universityRegionName?: string;
 };
 
 export type SpringPage<T> = {
@@ -41,39 +85,79 @@ export type SpringPage<T> = {
   size: number;
 };
 
-function cleanQuery(q: CandidatesListQuery): Record<string, string | number> {
-  const out: Record<string, string | number> = {
+function cleanQuery(q: CandidatesListQuery): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {
     page: q.page ?? 0,
     size: q.size ?? 20,
   };
   if (q.sort?.trim()) out.sort = q.sort.trim();
+  if (q.search?.trim()) out.search = q.search.trim();
+
+  // Profil holati va agent
+  if (q.profileStatus) out.profileStatus = q.profileStatus;
   if (q.agentId != null && q.agentId > 0) out.agentId = q.agentId;
-  if (q.categoryId != null && q.categoryId > 0) out.categoryId = q.categoryId;
-  if (q.professionId != null && q.professionId > 0) out.professionId = q.professionId;
-  if (q.regionId != null && q.regionId > 0) out.regionId = q.regionId;
-  const regionName = q.regionName?.trim();
+
+  // Hudud — candidateRegionId ustunlik qiladi, keyin regionId
+  const regionId = q.candidateRegionId ?? q.regionId;
+  if (regionId != null && regionId > 0) out.regionId = regionId;
+  const regionCode = q.regionCode?.trim();
+  if (regionCode) out.regionCode = regionCode;
+  const districtId = q.districtId;
+  if (districtId != null && districtId > 0) out.districtId = districtId;
+  const districtCode = q.districtCode?.trim();
+  if (districtCode) out.districtCode = districtCode;
+  const regionName = (q.candidateRegionName ?? q.regionName)?.trim();
   if (regionName) {
     out.regionName = regionName;
     out.region_name_uz = regionName;
   }
-  const institutionName = q.institutionName?.trim();
-  if (institutionName) {
-    out.institutionName = institutionName;
-    out.institution_name = institutionName;
-  }
+
+  // Kasb
+  if (q.categoryId != null && q.categoryId > 0) out.categoryId = q.categoryId;
+  if (q.professionId != null && q.professionId > 0) out.professionId = q.professionId;
+
+  // Ta'lim
   const educationLevel = q.educationLevel?.trim();
-  if (educationLevel) {
-    out.educationLevel = educationLevel;
-    out.education_level = educationLevel;
-  }
-  if (q.salaryMin != null && q.salaryMin > 0) out.salaryMin = q.salaryMin;
-  if (q.salaryMax != null && q.salaryMax > 0) out.salaryMax = q.salaryMax;
-  if (q.countryCode?.trim()) out.countryCode = q.countryCode.trim();
-  if (q.availabilityStatus) out.availabilityStatus = q.availabilityStatus;
+  if (educationLevel) { out.educationLevel = educationLevel; out.education_level = educationLevel; }
+  const educationCountry = q.educationCountry?.trim();
+  if (educationCountry) out.educationCountry = educationCountry;
+  const institutionName = q.institutionName?.trim();
+  if (institutionName) { out.institutionName = institutionName; out.institution_name = institutionName; }
+  if (q.universityId != null && q.universityId > 0) out.universityId = q.universityId;
+  if (q.graduationYearMin != null && q.graduationYearMin > 0) out.graduationYearMin = q.graduationYearMin;
+  if (q.graduationYearMax != null && q.graduationYearMax > 0) out.graduationYearMax = q.graduationYearMax;
+
+  // Tajriba
   if (q.experienceRange) out.experienceRange = q.experienceRange;
+  if (q.experienceYearsMin != null && q.experienceYearsMin >= 0) out.experienceYearsMin = q.experienceYearsMin;
+  if (q.experienceYearsMax != null && q.experienceYearsMax > 0) out.experienceYearsMax = q.experienceYearsMax;
+
+  // Xalqaro tajriba
+  if (q.hasInternationalExperience === true || q.hasInternationalExperience === false) {
+    out.hasInternationalExperience = q.hasInternationalExperience;
+  }
+  const intlCountry = q.internationalCountry?.trim();
+  if (intlCountry) out.internationalCountry = intlCountry;
+  if (q.internationalYearsMin != null && q.internationalYearsMin > 0) out.internationalYearsMin = q.internationalYearsMin;
+
+  // Tayyor bo'lish
+  if (q.availabilityStatus) out.availabilityStatus = q.availabilityStatus;
+
+  // Maqsad mamlakat
+  if (q.countryCode?.trim()) out.countryCode = q.countryCode.trim();
+
+  // Til
   if (q.language) out.language = q.language;
   if (q.languageLevel) out.languageLevel = q.languageLevel;
-  if (q.profileStatus) out.profileStatus = q.profileStatus;
+
+  // Maosh
+  if (q.salaryMin != null && q.salaryMin > 0) out.salaryMin = q.salaryMin;
+  if (q.salaryMax != null && q.salaryMax > 0) out.salaryMax = q.salaryMax;
+
+  // Yosh
+  if (q.ageMin != null && q.ageMin > 0) out.ageMin = q.ageMin;
+  if (q.ageMax != null && q.ageMax > 0) out.ageMax = q.ageMax;
+
   return out;
 }
 
