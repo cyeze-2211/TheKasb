@@ -4,7 +4,7 @@ import { getAccessTokenFromLoginSession } from '../auth/loginSession';
 
 /**
  * Netlify’da `VITE_API_BASE_URL` berilmasa ishlatiladi.
- * Faqat host (path yo‘q): `https://api.the-kasb.uz`
+ * Faqat host (path yo‘q): `https://api2.the-kasb.uz/`
  */
 const DEFAULT_API_ORIGIN = 'https://4c3a-2a05-45c2-731c-fd00-2c39-3d1f-fd26-40e3.ngrok-free.app';
 

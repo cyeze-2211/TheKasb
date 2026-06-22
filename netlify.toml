@@ -4,7 +4,7 @@
 
 # Vite build vaqtida yig‘iladi — prod’da /api prefiksi bilan mutlaq URL hosil bo‘ladi
 [build.environment]
-  VITE_API_BASE_URL = "https://api.the-kasb.uz"
+  VITE_API_BASE_URL = "https://api2.the-kasb.uz"
 
 # React Router (client-side): barcha yo‘llar index.html ga
 [[redirects]]
