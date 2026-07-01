@@ -45,6 +45,7 @@ import {
   Clock,
   FileCheck2,
   Globe2,
+  Globe,
   Languages,
   Dumbbell,
   Factory,
@@ -72,6 +73,8 @@ import {
   Trash2,
   Wrench,
   Zap,
+  Plus,
+  X,
 } from 'lucide-react';
 import {
   formatNationalDisplay,
@@ -103,6 +106,8 @@ import {
   candidateUploadDocument,
   candidateProcessPassportPhoto,
   candidateFetchProfilePhotoBlob,
+  candidateAddInternationalExperiences,
+  type CandidateInternationalExperienceBody,
   candidateVerifyOtp,
   normalizeCandidateRegionId,
   candidateLocationFieldsFromForm,
@@ -359,7 +364,7 @@ function ScreenFooter({ children }: { children: ReactNode }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Screen = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+type Screen = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
 type View = 'onboarding' | 'home';
 
 /** Til darajasi (CEFR) — backend `level` bilan mos */
@@ -436,6 +441,10 @@ interface FormState {
   educationGraduationYear: number | null;
   educationCountry: string;
   documents: Partial<Record<CandidateDocumentType, File>>;
+  /** Xalqaro tajriba bor yoki yo'q (null = hali tanlanmagan) */
+  hasInternationalExperience: boolean | null;
+  /** POST /candidate/profile/international-experiences uchun yig'ilgan qatorlar */
+  internationalExperiences: CandidateInternationalExperienceBody[];
 }
 
 /** Joriy forma bo‘yicha bitta work-experience obyekti (slug API bilan mos) */
@@ -532,7 +541,7 @@ const SALARY_USD_STEP = 50;
 const SALARY_USD_DEFAULT_MIN = 600;
 const SALARY_USD_DEFAULT_MAX = 3500;
 
-const TOTAL_SCREENS = 9;
+const TOTAL_SCREENS = 11;
 
 const GRADUATION_YEAR_OPTIONS = (() => {
   const y = new Date().getFullYear();
@@ -579,13 +588,15 @@ function InlineNoticeBar({ notice }: { notice: SmsInlineNotice }) {
 
 const PROGRESS_BY_SCREEN: Record<number, number> = {
   2: 12,
-  3: 24,
-  4: 36,
-  5: 48,
-  6: 60,
-  7: 72,
-  8: 86,
-  9: 100,
+  3: 22,
+  4: 33,
+  5: 44,
+  6: 55,
+  7: 64,
+  8: 73,
+  9: 82,
+  10: 91,
+  11: 100,
 };
 
 function experienceRangeFromWorkEntries(entries: CandidateWorkExperienceBody[]): string {
@@ -844,9 +855,10 @@ function stepLabel(screen: Screen): string {
     4: 'Shaxsiy ma’lumotlar',
     5: 'Ta’lim',
     6: 'Kasb tanlash',
-    7: 'Til bilimi',
-    8: 'Qiziqishlar',
-    9: 'Hujjatlar',
+    7: 'Xalqaro tajriba',
+    8: 'Til bilimi',
+    9: 'Qiziqishlar',
+    10: 'Hujjatlar',
   };
   return labels[screen] ?? '';
 }
@@ -3377,6 +3389,297 @@ const FaceCaptureScreen: React.FC<FaceCaptureScreenProps> = ({
 };
 
 
+
+// ScreenIntlExp — Xalqaro ish tajribasi
+// ─────────────────────────────────────────────────────────────────────────────
+function ScreenIntlExp({
+  onNext,
+  onBack,
+  form,
+  setForm,
+  busy = false,
+}: {
+  onNext: () => void | Promise<void>;
+  onBack: () => void;
+  form: FormState;
+  setForm: React.Dispatch<React.SetStateAction<FormState>>;
+  busy?: boolean;
+}) {
+  // Tajriba qo'shish paneli
+  const [showAddPanel, setShowAddPanel] = useState(false);
+  const [draft, setDraft] = useState<CandidateInternationalExperienceBody>({
+    country: '',
+    employer_name: '',
+    position: '',
+    years: undefined,
+    description: '',
+  });
+
+  const hasExp = form.hasInternationalExperience;
+
+  function resetDraft() {
+    setDraft({ country: '', employer_name: '', position: '', years: undefined, description: '' });
+  }
+
+  function addEntry() {
+    if (!draft.country.trim()) {
+      toast.error('Davlatni kiriting.');
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      internationalExperiences: [...f.internationalExperiences, { ...draft }],
+    }));
+    resetDraft();
+    setShowAddPanel(false);
+  }
+
+  function removeEntry(idx: number) {
+    setForm((f) => ({
+      ...f,
+      internationalExperiences: f.internationalExperiences.filter((_, i) => i !== idx),
+    }));
+  }
+
+  const canContinue =
+    hasExp === false || (hasExp === true && form.internationalExperiences.length > 0);
+
+  return (
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ backgroundColor: C.bg }}>
+      <OnboardingHeader onBack={onBack} screen={7} />
+
+      <ScreenScroll className="overflow-y-auto px-5 py-4">
+        {/* Sarlavha */}
+        <div className="mb-5">
+          <p
+            className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em]"
+            style={{ color: C.blueL }}
+          >
+            Xalqaro tajriba
+          </p>
+          <h2 className="text-[22px] font-bold leading-snug" style={{ color: C.text }}>
+            Xorijda ishlagan bo'lsangiz?
+          </h2>
+          <p className="mt-1 text-[13px] leading-relaxed" style={{ color: C.muted }}>
+            Xorijda ish tajribangiz bo'lsa, bu ma'lumot ish beruvchilarga ko'rinadi.
+          </p>
+        </div>
+
+        {/* Bor / Yo'q checkboxlar */}
+        <div className="mb-5 flex flex-col gap-3">
+          <OptionCard
+            selected={hasExp === false}
+            onClick={() => {
+              setForm((f) => ({ ...f, hasInternationalExperience: false, internationalExperiences: [] }));
+              setShowAddPanel(false);
+            }}
+            left={
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+                style={{ backgroundColor: C.card2 }}
+              >
+                <span style={{ fontSize: 20 }}>✗</span>
+              </span>
+            }
+            title="Yo'q, xorijda ishlamaganman"
+          />
+          <OptionCard
+            selected={hasExp === true}
+            onClick={() => {
+              setForm((f) => ({ ...f, hasInternationalExperience: true }));
+            }}
+            left={
+              <span
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px]"
+                style={{ backgroundColor: C.card2 }}
+              >
+                <Globe size={20} strokeWidth={1.8} style={{ color: C.blueL }} />
+              </span>
+            }
+            title="Ha, xorijda ishlaganman"
+          />
+        </div>
+
+        {/* "Bor" tanlanganda — tajriba ro'yxati va qo'shish paneli */}
+        {hasExp === true && (
+          <div className="flex flex-col gap-3">
+            {/* Mavjud tajribalar */}
+            {form.internationalExperiences.map((exp, idx) => (
+              <div
+                key={idx}
+                className="flex items-start gap-3 rounded-[14px] px-4 py-3"
+                style={{ backgroundColor: C.card, border: `1.5px solid ${C.border}` }}
+              >
+                <Globe size={18} strokeWidth={1.8} className="mt-0.5 shrink-0" style={{ color: C.blueL }} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold" style={{ color: C.text }}>
+                    {exp.country}
+                    {exp.years != null && exp.years > 0 ? ` — ${exp.years} yil` : ''}
+                  </p>
+                  {(exp.employer_name || exp.position) && (
+                    <p className="text-[12px]" style={{ color: C.muted }}>
+                      {[exp.position, exp.employer_name].filter(Boolean).join(', ')}
+                    </p>
+                  )}
+                </div>
+                <button
+                  onClick={() => removeEntry(idx)}
+                  className="shrink-0 text-[11px] transition-opacity active:opacity-60"
+                  style={{ color: C.muted }}
+                >
+                  O'chirish
+                </button>
+              </div>
+            ))}
+
+            {/* Qo'shish paneli */}
+            {showAddPanel ? (
+              <div
+                className="flex flex-col gap-3 rounded-[16px] px-4 py-4"
+                style={{ backgroundColor: C.card, border: `1.5px solid ${C.border}` }}
+              >
+                <p className="text-[13px] font-semibold" style={{ color: C.text }}>
+                  Yangi tajriba qo'shish
+                </p>
+
+                {/* Davlat */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium" style={{ color: C.muted }}>
+                    Davlat *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="masalan: Rossiya, Qozog'iston"
+                    value={draft.country}
+                    onChange={(e) => setDraft((d) => ({ ...d, country: e.target.value }))}
+                    className="h-11 w-full rounded-[10px] px-3 text-[14px] outline-none"
+                    style={{
+                      backgroundColor: C.card2,
+                      border: `1.5px solid ${C.border}`,
+                      color: C.text,
+                    }}
+                  />
+                </div>
+
+                {/* Ish beruvchi */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium" style={{ color: C.muted }}>
+                    Ish beruvchi (ixtiyoriy)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="kompaniya nomi"
+                    value={draft.employer_name ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, employer_name: e.target.value }))}
+                    className="h-11 w-full rounded-[10px] px-3 text-[14px] outline-none"
+                    style={{
+                      backgroundColor: C.card2,
+                      border: `1.5px solid ${C.border}`,
+                      color: C.text,
+                    }}
+                  />
+                </div>
+
+                {/* Lavozim */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium" style={{ color: C.muted }}>
+                    Lavozim (ixtiyoriy)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="masalan: Quruvchi"
+                    value={draft.position ?? ''}
+                    onChange={(e) => setDraft((d) => ({ ...d, position: e.target.value }))}
+                    className="h-11 w-full rounded-[10px] px-3 text-[14px] outline-none"
+                    style={{
+                      backgroundColor: C.card2,
+                      border: `1.5px solid ${C.border}`,
+                      color: C.text,
+                    }}
+                  />
+                </div>
+
+                {/* Yillar */}
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium" style={{ color: C.muted }}>
+                    Davomiyligi (yil, ixtiyoriy)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={50}
+                    placeholder="masalan: 2"
+                    value={draft.years ?? ''}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        years: e.target.value ? Number(e.target.value) : undefined,
+                      }))
+                    }
+                    className="h-11 w-full rounded-[10px] px-3 text-[14px] outline-none"
+                    style={{
+                      backgroundColor: C.card2,
+                      border: `1.5px solid ${C.border}`,
+                      color: C.text,
+                    }}
+                  />
+                </div>
+
+                {/* Tugmalar */}
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => {
+                      resetDraft();
+                      setShowAddPanel(false);
+                    }}
+                    className="h-11 flex-1 rounded-[10px] text-[14px] font-semibold transition-all active:scale-[0.98]"
+                    style={{
+                      backgroundColor: C.card2,
+                      border: `1.5px solid ${C.border}`,
+                      color: C.muted,
+                    }}
+                  >
+                    Bekor qilish
+                  </button>
+                  <button
+                    onClick={addEntry}
+                    className="h-11 flex-1 rounded-[10px] text-[14px] font-semibold text-white transition-all active:scale-[0.98]"
+                    style={{ backgroundColor: C.blue }}
+                  >
+                    Qo'shish
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddPanel(true)}
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-[14px] text-[14px] font-semibold transition-all active:scale-[0.98]"
+                style={{
+                  backgroundColor: C.card,
+                  border: `1.5px dashed ${C.border}`,
+                  color: C.blueL,
+                }}
+              >
+                <span style={{ fontSize: 18, lineHeight: 1 }}>+</span>
+                Tajriba qo'shish
+              </button>
+            )}
+          </div>
+        )}
+      </ScreenScroll>
+
+      <ScreenFooter>
+        <PrimaryButton
+          onClick={onNext}
+          disabled={!canContinue || busy}
+          loading={busy}
+        >
+          Keyingi
+        </PrimaryButton>
+      </ScreenFooter>
+    </div>
+  );
+}
 
 // Screen7Documents
 // ─────────────────────────────────────────────────────────────────────────────
@@ -6346,6 +6649,8 @@ export default function CandidatePortal() {
     educationGraduationYear: null,
     educationCountry: 'UZB',
     documents: {},
+    hasInternationalExperience: null,
+    internationalExperiences: [],
   });
   const [smsNoticeScreen2, setSmsNoticeScreen2] = useState<SmsInlineNotice>(null);
   const [smsNoticeScreen3, setSmsNoticeScreen3] = useState<SmsInlineNotice>(null);
@@ -6436,7 +6741,7 @@ export default function CandidatePortal() {
     };
   }, []);
 
-  const goNext = () => setScreen((s) => (Math.min(s + 1, 9) as Screen));
+  const goNext = () => setScreen((s) => (Math.min(s + 1, 10) as Screen));
   const goBack = () => setScreen((s) => (Math.max(s - 1, 1) as Screen));
 
   const phoneE164 = useMemo(() => phoneE164FromNationalDigits(form.phoneNational), [form.phoneNational]);
@@ -6634,6 +6939,34 @@ export default function CandidatePortal() {
     }
   }
 
+  async function saveInternationalExpAndNext() {
+    // Agar "Yo'q" tanlangan bo'lsa — API chaqirmaymiz, shunchaki o'tamiz
+    if (form.hasInternationalExperience === false) {
+      goNext();
+      return;
+    }
+    // "Bor" tanlangan bo'lsa — kamida bitta yozuv bo'lishi kerak
+    if (form.hasInternationalExperience === true) {
+      if (form.internationalExperiences.length === 0) {
+        toast.error("Kamida bitta xalqaro tajriba qo'shing.");
+        return;
+      }
+      setBusy(true);
+      try {
+        await ensureCandidateProfile({ ...PROFILE_ENSURE_BASE });
+        await candidateAddInternationalExperiences(form.internationalExperiences);
+        goNext();
+      } catch (e) {
+        toast.error(candidatePortalError(e, 'Xalqaro tajribani saqlashda xato.'));
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+    // null — hali tanlanmagan
+    toast.error('"Bor" yoki "Yo\u02bcq" ni tanlang.');
+  }
+
   async function saveLanguagesAndNext() {
     if (!form.declaresNoLanguage && form.languageSelections.length === 0) {
       toast.error('Kamida bitta til tanlang yoki «Til bilmayman» ni belgilang.');
@@ -6804,6 +7137,15 @@ export default function CandidatePortal() {
       />
     ),
     7: (
+      <ScreenIntlExp
+        onNext={() => void saveInternationalExpAndNext()}
+        onBack={goBack}
+        form={form}
+        setForm={setForm}
+        busy={busy}
+      />
+    ),
+    8: (
       <Screen6
         onNext={() => saveLanguagesAndNext()}
         onBack={goBack}
@@ -6812,7 +7154,7 @@ export default function CandidatePortal() {
         busy={busy}
       />
     ),
-    8: (
+    9: (
       <Screen8
         onNext={() => void saveCountriesAndNext()}
         onBack={goBack}
@@ -6821,7 +7163,7 @@ export default function CandidatePortal() {
         busy={busy}
       />
     ),
-    9: (
+    10: (
       <Screen7Documents
         onNext={() => void finishDocumentsAndGoHome()}
         onBack={goBack}

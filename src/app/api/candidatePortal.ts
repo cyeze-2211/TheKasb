@@ -1436,6 +1436,28 @@ export async function candidateFetchProfilePhotoBlob(id: number): Promise<Blob> 
   return blob;
 }
 
+/** POST /api/candidate/profile/international-experiences — xalqaro tajribalar ro'yxatini saqlash */
+export type CandidateInternationalExperienceBody = {
+  country: string;
+  description?: string;
+  employer_name?: string;
+  position?: string;
+  years?: number;
+};
+
+export async function candidateAddInternationalExperiences(
+  items: CandidateInternationalExperienceBody[],
+): Promise<void> {
+  const token = getCandidateToken();
+  if (!token) throw new Error('Token yo\'q');
+  const { data } = await authApi.post<unknown>(
+    '/candidate/profile/international-experiences',
+    items,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  assertApiSuccess(data);
+}
+
 /** Profilni yakuniy yuborish — `POST /api/candidate/profile/submit` */
 export async function candidateSubmitProfile(): Promise<void> {
   const token = getCandidateToken();

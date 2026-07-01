@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, Link, useLocation, useNavigate } from 'react-router';
 import {
   adminCandidateIdFromListRow,
@@ -29,10 +30,13 @@ import {
   Pencil,
   Printer,
   RefreshCw,
+  Sparkles,
   Trash2,
   UserCog,
   UserRound,
+  X,
   XCircle,
+  ZoomIn,
 } from 'lucide-react';
 import { Switch } from '../components/ui/switch';
 import { Label } from '../components/ui/label';
@@ -101,6 +105,100 @@ function fmtDateTime(iso?: string): string {
   }
 }
 
+// ─── Image Viewer Modal ───────────────────────────────────────────────────────
+function ImageViewerModal({
+  src,
+  title,
+  isAi,
+  open,
+  onClose,
+}: {
+  src: string;
+  title?: string;
+  isAi?: boolean;
+  open: boolean;
+  onClose: () => void;
+}) {
+  // ESC tugmasini tutish
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const isPdf =
+    src.toLowerCase().includes('.pdf') ||
+    src.toLowerCase().includes('application/pdf');
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="relative mx-4 flex max-h-[90vh] max-w-3xl flex-col overflow-hidden rounded-2xl bg-[#0d1525] shadow-2xl"
+        style={{ minWidth: 280, width: isPdf ? 700 : 'auto' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+          <div className="flex items-center gap-2">
+            {isAi && (
+              <span className="flex items-center gap-1 rounded-full bg-purple-500/20 px-2.5 py-0.5 text-[11px] font-semibold text-purple-300">
+                <Sparkles className="h-3 w-3" aria-hidden />
+                AI Generated
+              </span>
+            )}
+            {title && (
+              <span className="text-[13px] font-medium text-white/70">{title}</span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={src}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+              title="Yangi tabda ochish"
+            >
+              <Link2 className="inline h-3.5 w-3.5" />
+            </a>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
+          {isPdf ? (
+            <iframe
+              src={src}
+              className="h-[70vh] w-full rounded-lg"
+              title={title ?? 'Hujjat'}
+            />
+          ) : (
+            <img
+              src={src}
+              alt={title ?? 'Rasm'}
+              className="max-h-[70vh] max-w-full rounded-lg object-contain"
+            />
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
 function ProfileField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
@@ -130,13 +228,16 @@ function CandidatePhotoAvatar({
   detail,
   name,
   size = 96,
+  onClick,
 }: {
   detail: Record<string, unknown> | null;
   name: string;
   size?: number;
+  onClick?: (blobUrl: string, isAi: boolean) => void;
 }) {
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [photoLoading, setPhotoLoading] = useState(false);
+  const [isAiPhoto, setIsAiPhoto] = useState(false);
   const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -145,6 +246,7 @@ function CandidatePhotoAvatar({
       blobUrlRef.current = null;
     }
     setBlobUrl(null);
+    setIsAiPhoto(false);
 
     if (!detail) return;
 
@@ -152,6 +254,7 @@ function CandidatePhotoAvatar({
     const aiGenerated = detail['ai_photo_generated'] ?? detail['aiPhotoGenerated'];
     const aiFileId = detail['ai_passport_photo_file_id'] ?? detail['aiPassportPhotoFileId'];
 
+    const usingAi = !originalFileId && !!aiGenerated && !!aiFileId;
     const fileId = originalFileId ?? (aiGenerated ? aiFileId : null);
     const numId =
       typeof fileId === 'number' && Number.isFinite(fileId)
@@ -162,6 +265,7 @@ function CandidatePhotoAvatar({
 
     if (numId == null || !Number.isFinite(numId)) return;
 
+    setIsAiPhoto(usingAi);
     let cancelled = false;
     setPhotoLoading(true);
 
@@ -211,12 +315,35 @@ function CandidatePhotoAvatar({
 
   if (blobUrl) {
     return (
-      <img
-        src={blobUrl}
-        alt={name || 'Nomzod'}
-        style={{ width: size, height: size }}
-        className="rounded-full object-cover ring-2 ring-primary/25 ring-offset-2 ring-offset-background"
-      />
+      <div className="relative inline-block">
+        <button
+          type="button"
+          onClick={() => onClick?.(blobUrl, isAiPhoto)}
+          className="block rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          title="Rasmni ko'rish"
+        >
+          <img
+            src={blobUrl}
+            alt={name || 'Nomzod'}
+            style={{ width: size, height: size }}
+            className="rounded-full object-cover ring-2 ring-primary/25 ring-offset-2 ring-offset-background"
+          />
+          {onClick && (
+            <span
+              className="absolute bottom-0 right-0 flex h-6 w-6 items-center justify-center rounded-full bg-primary text-white shadow"
+              style={{ fontSize: 11 }}
+            >
+              <ZoomIn className="h-3 w-3" />
+            </span>
+          )}
+        </button>
+        {isAiPhoto && (
+          <span className="absolute -top-1 -right-1 flex items-center gap-0.5 rounded-full bg-purple-500 px-1.5 py-0.5 text-[9px] font-bold text-white shadow">
+            <Sparkles className="h-2.5 w-2.5" />
+            AI
+          </span>
+        )}
+      </div>
     );
   }
 
@@ -278,6 +405,9 @@ export function CandidateDetail() {
   const [cvLoading, setCvLoading] = useState(false);
   const [cvError, setCvError] = useState<string | null>(null);
   const [cvPrintLoading, setCvPrintLoading] = useState(false);
+
+  // Image viewer modal
+  const [imgModal, setImgModal] = useState<{ src: string; title?: string; isAi?: boolean } | null>(null);
 
   const listRowSnapshot = useMemo((): Record<string, unknown> | null => {
     const st = location.state as { candidateListRow?: Record<string, unknown> } | null;
@@ -754,7 +884,12 @@ export function CandidateDetail() {
                   aria-hidden
                 />
                 <div className="relative">
-                  <CandidatePhotoAvatar detail={detail} name={displayName} size={96} />
+                  <CandidatePhotoAvatar
+                    detail={detail}
+                    name={displayName}
+                    size={96}
+                    onClick={(src, isAi) => setImgModal({ src, title: 'Profil rasmi', isAi })}
+                  />
                 </div>
               </div>
               <h2 className="mb-1 text-center">{displayName || phone || 'Nomzod'}</h2>
@@ -964,9 +1099,15 @@ export function CandidateDetail() {
                             </div>
                           </div>
                           {certUrl && (
-                            <a href={certUrl} target="_blank" rel="noopener noreferrer" className={`${btnSecondary} text-xs`}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setImgModal({ src: certUrl, title: `${langName ? languageLabelUz(langName) : ''} sertifikati` })
+                              }
+                              className={`${btnSecondary} text-xs`}
+                            >
                               Sertifikat
-                            </a>
+                            </button>
                           )}
                         </div>
                       );
@@ -1213,15 +1354,19 @@ export function CandidateDetail() {
                             </div>
                           </div>
                           {fileUrl ? (
-                            <a
-                              href={fileUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setImgModal({
+                                  src: fileUrl,
+                                  title: docType ? uzOrCode(documentTypeUz, docType) : fileName || 'Hujjat',
+                                })
+                              }
                               className={`${btnSecondary} inline-flex shrink-0 items-center gap-2 self-start sm:self-center`}
                             >
-                              <Link2 className="h-4 w-4" strokeWidth={2} aria-hidden />
-                              Ochish
-                            </a>
+                              <ZoomIn className="h-4 w-4" strokeWidth={2} aria-hidden />
+                              Ko'rish
+                            </button>
                           ) : null}
                         </div>
                       );
@@ -1355,6 +1500,17 @@ export function CandidateDetail() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Image viewer modal */}
+      {imgModal && (
+        <ImageViewerModal
+          src={imgModal.src}
+          title={imgModal.title}
+          isAi={imgModal.isAi}
+          open={!!imgModal}
+          onClose={() => setImgModal(null)}
+        />
+      )}
     </div>
   );
 }
